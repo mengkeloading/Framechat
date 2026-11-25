@@ -21,6 +21,8 @@
 | v4 | `resource.read` 打通（build 内联 reference） | skill 装载成为可能 |
 | v5 | dispatcher 支持 local 短路 | 0 请求路径 |
 | v6 | modcheck 启动自检 | 模块错误不再静默 |
+| v12 | Kotlin 侧：模块树抽象（文件/assets）+ 注入 ModuleKit | 19 个模块可在 App 内运行 |
+| v12 | 硬约束 7：`ctx.messages` 与 `data.session` 是两个数据源 | 接 App 时两者都要传 |
 
 ## 模块层新增
 
