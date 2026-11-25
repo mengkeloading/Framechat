@@ -77,9 +77,9 @@ class App : Application() {
                 }
             }
 
-            // 向量模型探针：不参与业务，只把三条余弦值打到 MyChat/Embed
+            // 向量模型探针：不参与业务，结果写 Download/mychat-embed.log
             CoroutineScope(Dispatchers.IO).launch {
-                runCatching { com.simplechat.app.hook.EmbedProbe.run(assets) }
+                runCatching { com.simplechat.app.hook.EmbedProbe.run(this@App) }
                     .onFailure { android.util.Log.w("MyChat/Embed", "probe failed", it) }
             }
         }

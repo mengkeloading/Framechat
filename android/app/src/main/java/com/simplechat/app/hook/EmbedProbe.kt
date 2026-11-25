@@ -1,35 +1,47 @@
 package com.simplechat.app.hook
 
-import android.content.res.AssetManager
+import android.content.Context
 import android.util.Log
 import mychat.framework.embedding.Vectors
 
 /**
- * 只做一件事：在真机上证明 bge-small-zh 能跑通，并把三条余弦值打到日志。
+ * 只做一件事：在真机上证明 bge-small-zh 能跑通，并把三条余弦值写进
+ * `Download/mychat-embed.log`（写不了就落 app 外部私有目录，路径见日志）。
  * 不参与任何业务逻辑，debug 包启动时跑一次。
  */
 object EmbedProbe {
 
     private const val TAG = "MyChat/Embed"
 
-    fun run(assets: AssetManager) {
-        val embedder = OnnxTextEmbedder(assets)
+    fun run(context: Context) {
+        val lines = mutableListOf<String>()
+        val embedder = OnnxTextEmbedder(context.assets)
         try {
-            cosineOf(embedder, "帮我写个故事", "小说写作")
-            cosineOf(embedder, "帮我写个故事", "算一下 12*37")
-            cosineOf(embedder, "这段代码有问题吗", "代码审查")
+            lines += "model=${OnnxTextEmbedder.MODEL_ASSET} dim=${embedder.dimension()}"
+            cosineOf(embedder, "帮我写个故事", "小说写作", lines)
+            cosineOf(embedder, "帮我写个故事", "算一下 12*37", lines)
+            cosineOf(embedder, "这段代码有问题吗", "代码审查", lines)
         } finally {
             embedder.close()
         }
+
+        val path = EmbedLog.append(context, lines)
+        Log.d(TAG, "written -> $path")
+        lines.forEach { Log.d(TAG, it) }
     }
 
-    private fun cosineOf(embedder: OnnxTextEmbedder, left: String, right: String) {
+    private fun cosineOf(
+        embedder: OnnxTextEmbedder,
+        left: String,
+        right: String,
+        lines: MutableList<String>,
+    ) {
         val a = embedder.embed(left)
         val b = embedder.embed(right)
         if (a == null || b == null) {
-            Log.w(TAG, "embed 返回空: left=${a != null} right=${b != null} dim=${a?.size}")
+            lines += "cos($left, $right) = <embed 返回空 left=${a != null} right=${b != null}>"
             return
         }
-        Log.d(TAG, "cos($left, $right) = " + String.format("%.4f", Vectors.cosine(a, b)))
+        lines += "cos($left, $right)=" + String.format("%.4f", Vectors.cosine(a, b))
     }
 }

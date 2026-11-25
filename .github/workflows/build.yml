@@ -59,6 +59,14 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
+      # artifact 的 size 是压缩包，不是 APK 真实体积；这里打一遍
+      - name: 记录 APK 真实体积
+        run: |
+          ls -l app/build/outputs/apk/debug/
+          for f in app/build/outputs/apk/debug/*.apk; do
+            echo "APK_BYTES=$(stat -c %s "$f") $f"
+          done
+
       # 负向验证：框架类必须真的进了编译产物。
       # 历史上 sourceSets 漂移过一次：源码没被编译，但因为没有 import，构建仍然是绿的。
       - name: 验证框架类真的被编译

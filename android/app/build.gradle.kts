@@ -52,6 +52,14 @@ android {
         versionName = appVersionName
         testInstrumentationRunner = "com.simplechat.app.DeviceRegression"
         vectorDrawables { useSupportLibrary = true }
+
+        /*
+         * 只打 arm64-v8a。
+         *
+         * onnxruntime 的 .so 在 APK 里是 **Stored**（不压缩），四个 ABI 加起来
+         * 62.6MB；手机是 arm64，x86/x86_64/armeabi-v7a 这三份纯属白带。
+         */
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     signingConfigs {

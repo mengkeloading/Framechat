@@ -94,9 +94,13 @@ class OnnxTextEmbedder(
         session.close()
     }
 
+    /** bge-small-zh 的隐藏层宽度固定 512。 */
+    fun dimension(): Int = DIMENSION
+
     companion object {
         const val MODEL_ASSET = "models/bge-small-zh.onnx"
         const val VOCAB_ASSET = "models/vocab.txt"
+        private const val DIMENSION = 512
         private const val TAG = "MyChat/Embed"
     }
 }
