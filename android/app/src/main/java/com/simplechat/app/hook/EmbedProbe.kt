@@ -2,34 +2,31 @@ package com.simplechat.app.hook
 
 import android.content.Context
 import android.util.Log
-import mychat.framework.embedding.Vectors
+import mychat.framework.embedding.Candidate
+import mychat.framework.embedding.ModuleRouter
+import mychat.framework.hook.ModuleRegistry
 
 /**
- * 只做一件事：在真机上证明 bge-small-zh 能跑通，并把 8 条余弦值写进
- * `Download/mychat-embed.log`（写不了就落 app 外部私有目录，路径见日志）。
+ * 只做一件事：在真机上验证 bge-small-zh + 模块描述能否把查询路由到正确的模块，
+ * 结果写进 `Download/mychat-embed.log`（写不了就落 app 外部私有目录，路径见日志）。
  * 不参与任何业务逻辑，debug 包启动时跑一次。
  */
 object EmbedProbe {
 
     private const val TAG = "MyChat/Embed"
 
-    private class Case(
-        val query: String,
-        val passage: String,
-        val bound: Float,
-        /** true = 期望大于 bound（应匹配），false = 期望小于（不应匹配）。 */
-        val atLeast: Boolean,
-    )
+    private class Case(val query: String, val expected: String)
 
+    /** 8 条查询，每条都能说出「应该命中谁」。 */
     private val CASES = listOf(
-        Case("帮我写个故事", "小说写作", 0.6f, true),
-        Case("帮我写个故事", "算一下 12*37", 0.35f, false),
-        Case("这段代码有问题吗", "代码审查", 0.6f, true),
-        Case("算一下 12*37", "本地计算", 0.6f, true),
-        Case("算一下 12*37", "小说写作", 0.4f, false),
-        Case("这段代码有问题吗", "小说写作", 0.4f, false),
-        Case("我想做个记录喝水量的App", "产品需求拆解", 0.6f, true),
-        Case("我想做个记录喝水量的App", "代码审查", 0.4f, false),
+        Case("帮我写个故事", "skill_novel"),
+        Case("帮我续写这段对话", "skill_novel"),
+        Case("算一下 12*37", "local_calc"),
+        Case("把 100 华氏度换算成摄氏度", "local_calc"),
+        Case("这段代码有问题吗", "skill_code"),
+        Case("这样写对不对", "skill_code"),
+        Case("我想做个记录喝水量的App", "skill_product"),
+        Case("这个功能怎么设计", "skill_product"),
     )
 
     fun run(context: Context) {
@@ -38,8 +35,19 @@ object EmbedProbe {
         try {
             lines += "model=${OnnxTextEmbedder.MODEL_ASSET} dim=${embedder.dimension()}"
             lines += "prefix=query-only (bge v1.5 official)"
+            lines += "threshold MIN_SCORE=${ModuleRouter.MIN_SCORE} MIN_MARGIN=${ModuleRouter.MIN_MARGIN}"
+
+            // 候选 = assets 里所有带 description 的模块；文档侧不加前缀
+            val scan = ModuleRegistry.scan(AssetModuleTree(context.assets, "modules"))
+            val candidates = scan.registry.all()
+                .filter { it.manifest.description.isNotBlank() }
+                .mapNotNull { pkg ->
+                    embedder.embedPassage(pkg.manifest.description)?.let { Candidate(pkg.id, it) }
+                }
+            lines += "candidates=${candidates.size} problems=${scan.problems.size}"
+
             for (case in CASES) {
-                lines += measure(embedder, case)
+                lines += decideOne(embedder, candidates, case)
             }
         } finally {
             embedder.close()
@@ -50,17 +58,22 @@ object EmbedProbe {
         lines.forEach { Log.d(TAG, it) }
     }
 
-    /** 查询侧走 embedQuery（带前缀），模块描述侧走 embedPassage（不带）。 */
-    private fun measure(embedder: OnnxTextEmbedder, case: Case): String {
-        val q = embedder.embedQuery(case.query)
-        val p = embedder.embedPassage(case.passage)
-        val head = "cos(${case.query}, ${case.passage})"
-        if (q == null || p == null) {
-            return "$head = <embed 返回空 q=${q != null} p=${p != null}>"
-        }
-        val value = Vectors.cosine(q, p)
-        val expect = if (case.atLeast) "期望>${case.bound}" else "期望<${case.bound}"
-        val ok = if (case.atLeast) value > case.bound else value < case.bound
-        return "$head=" + String.format("%.4f", value) + " ($expect) " + if (ok) "OK" else "MISS"
+    private fun decideOne(
+        embedder: OnnxTextEmbedder,
+        candidates: List<Candidate>,
+        case: Case,
+    ): String {
+        val query = embedder.embedQuery(case.query)
+            ?: return "route(${case.query}) = <embed 返回空>"
+        val decision = ModuleRouter.decide(query, candidates)
+        val top1 = decision.top1
+        val name = top1?.name ?: "-"
+        val score = String.format("%.4f", top1?.score ?: 0f)
+        val margin = String.format("%.4f", decision.margin)
+        val top1Ok = decision.module == case.expected
+        val marginOk = decision.module != null && decision.margin > ModuleRouter.MIN_MARGIN
+        return "route(${case.query}) -> $name score=$score margin=$margin " +
+            "TOP1=${if (top1Ok) "Y" else "N"} MARGIN=${if (marginOk) "Y" else "N"} " +
+            "(期望=${case.expected} 原因=${decision.reason})"
     }
 }

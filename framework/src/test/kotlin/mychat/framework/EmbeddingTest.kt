@@ -1,5 +1,7 @@
 package mychat.framework
 
+import mychat.framework.embedding.Candidate
+import mychat.framework.embedding.ModuleRouter
 import mychat.framework.embedding.TextEmbedder
 import mychat.framework.embedding.Vectors
 import mychat.framework.embedding.WordPieceTokenizer
@@ -26,6 +28,7 @@ fun main() {
     vectorTests()
     tokenizerTests()
     routingTests()
+    routingDecisionTests()
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -124,4 +127,52 @@ private fun routingTests() {
     check("routing: 阈值内仍可选", Vectors.top1(unrelated, candidates, threshold = 0.5f) != null)
 
     eq("routing: 空候选返回 null", null, Vectors.top1(story, emptyList()))
+}
+
+// ---------- 相对排序判定 ----------
+
+private fun routingDecisionTests() {
+    val a = Candidate("A", floatArrayOf(1f, 0f, 0f))
+    val b = Candidate("B", floatArrayOf(0.6f, 0.8f, 0f))
+    val c = Candidate("C", floatArrayOf(0f, 1f, 0f))
+    val all = listOf(a, b, c)
+
+    // 1. 明颞胜出
+    val clear = ModuleRouter.decide(floatArrayOf(1f, 0f, 0f), all)
+    eq("router: 明颞胜出选 A", "A", clear.module)
+    eq("router: 原因是 hit", "hit", clear.reason)
+    check("router: margin 大于阈值", clear.margin > ModuleRouter.MIN_MARGIN, "margin=${clear.margin}")
+
+    // 2. 全低：什么都不像，不硬选
+    val none = ModuleRouter.decide(floatArrayOf(0.1f, 0.1f, 0.9f), all)
+    eq("router: 全低不选", null, none.module)
+    eq("router: 原因是 below_min", "below_min", none.reason)
+
+    // 3. 两个差不多：差距不够，不选
+    val tie = listOf(
+        Candidate("X", floatArrayOf(1f, 0f)),
+        Candidate("Y", floatArrayOf(1f, 0.05f)),
+    )
+    val tied = ModuleRouter.decide(floatArrayOf(1f, 0f), tie)
+    eq("router: 并列不选", null, tied.module)
+    eq("router: 原因是 margin", "margin", tied.reason)
+
+    // 4. 只有一个候选且够像 → 选它
+    val single = ModuleRouter.decide(floatArrayOf(1f, 0f, 0f), listOf(a))
+    eq("router: 单候选命中", "A", single.module)
+    eq("router: 单候选 margin 视为无限", 1f, single.margin)
+
+    // 5. 空候选
+    val empty = ModuleRouter.decide(floatArrayOf(1f, 0f), emptyList())
+    eq("router: 空候选不选", null, empty.module)
+    eq("router: 空候选原因是 empty", "empty", empty.reason)
+
+    // 6. 排序降序
+    val ranked = ModuleRouter.rank(floatArrayOf(1f, 0f, 0f), all)
+    eq("router: 排序稳定降序", listOf("A", "B", "C"), ranked.map { it.name })
+    check("router: 分数降序", ranked[0].score >= ranked[1].score && ranked[1].score >= ranked[2].score)
+
+    // 7. 阈值常量是对外契约，写死防止被随手改
+    eq("router: MIN_SCORE", 0.30f, ModuleRouter.MIN_SCORE)
+    eq("router: MIN_MARGIN", 0.05f, ModuleRouter.MIN_MARGIN)
 }
