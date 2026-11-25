@@ -31,6 +31,10 @@ import com.simplechat.app.data.imageAspectRatios
 import com.simplechat.app.data.imageSizeForRatio
 import com.simplechat.app.data.SettingsStore
 import com.simplechat.app.data.StoredSettings
+import mychat.framework.hook.HookAResult
+import mychat.framework.hook.HookRunner
+import mychat.framework.hook.HookSession
+import mychat.framework.hook.Message as HookMessage
 import com.simplechat.app.data.TITLE_MATERIAL_CHARS
 import com.simplechat.app.data.TITLE_MAX_TOKENS
 import com.simplechat.app.data.isAutoTitle
@@ -111,6 +115,7 @@ class ChatViewModel(
     private val settingsStore: SettingsStore,
     private val repository: ChatRepository,
     private val openCodeSessionId: String,
+    private val hookRunner: HookRunner,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -156,6 +161,15 @@ class ChatViewModel(
      * [ensureConversation] 建会话时一并用上。
      */
     private var pendingTitle: String? = null
+
+    /**
+     * 钩子 A 本轮的产物，只活在内存里。
+     *
+     * 重试不会重跑钩子 A（会重复触发模块副作用），所以重试要靠这两个字段带回上下文；
+     * 进程被杀就丢，重试会退化成普通请求 —— 已知妥协，不是 bug。
+     */
+    private var pendingHookExtra: String? = null
+    private var pendingHookAText: String? = null
     private var pendingMemoryEnabled by mutableStateOf(true)
     private var openedMemoryEnabled by mutableStateOf(true)
     val showConversationMemorySetting: Boolean get() = stored.crossChatMemory
@@ -859,6 +873,35 @@ class ChatViewModel(
                 val generation = requestedGeneration
                 val model = settings.model.id
 
+                /*
+                 * 钩子 A：没启用模块时直接跳过 —— 不读历史、不建 dispatcher。
+                 * 落库仍用原文（text），改写后的文本只影响发给上游的内容。
+                 */
+                pendingHookExtra = null
+                pendingHookAText = null
+                var localReply: String? = null
+                if (stored.enabledModules.isNotEmpty()) {
+                    val hookSession = HookSession(
+                        id = conversationId,
+                        title = currentConversationTitle.orEmpty(),
+                        model = model,
+                        systemPrompt = settings.systemPrompt.takeIf { it.isNotBlank() },
+                        activeHardModules = stored.enabledModules.toList(),
+                    )
+                    // 本轮用户消息还没落库，这里读到的就是 demo 里的 historyBase
+                    val historyBase = repository.loadActivePath(conversationId).map {
+                        HookMessage(it.role.name.lowercase(), it.content)
+                    }
+                    when (val hookA = hookRunner.input(hookSession, text, historyBase)) {
+                        is HookAResult.Local -> localReply = hookA.text
+                        is HookAResult.Context -> {
+                            pendingHookAText = hookA.text.takeIf { it != text }
+                            pendingHookExtra = hookA.extra.takeIf { it.isNotBlank() }
+                        }
+                        is HookAResult.Pass -> pendingHookAText = hookA.text.takeIf { it != text }
+                    }
+                }
+
                 val user = repository.appendUserMessage(conversationId, text, attachments)
                 if (generation != switchGeneration || conversationId != currentConversationId) return@launch
                 onPersisted()
@@ -891,6 +934,25 @@ class ChatViewModel(
                      */
                     model = model,
                 )
+
+                // 本地短路：钩子 A 已经给了答案，不发任何请求
+                if (localReply != null) {
+                    val text = localReply
+                    patch(assistantId) { it.copy(content = text, status = MessageStatus.DONE) }
+                    withContext(NonCancellable) {
+                        runCatching {
+                            repository.finishMessage(
+                                id = assistantId,
+                                content = text,
+                                reasoning = null,
+                                status = MessageStatus.DONE,
+                            )
+                            repository.touchConversation(conversationId)
+                        }
+                    }
+                    onPersisted()
+                    return@launch
+                }
 
                 startStream(conversationId, assistantId)
             } catch (error: kotlinx.coroutines.CancellationException) {
@@ -2319,7 +2381,10 @@ class ChatViewModel(
                         }
                     }
                 } else {
-                    val outgoing = buildRequestMessages(systemContext, route, options, textOnly, memoryText, visualFollowUp)
+                    val outgoing = buildRequestMessages(
+                        systemContext, route, options, textOnly, memoryText, visualFollowUp,
+                        hookAExtra = pendingHookExtra, hookAText = pendingHookAText,
+                    )
                     val builtInFlash = route.officialFlash && !textOnly
                     val readLink = builtInFlash && HttpLink.containsMatchIn(latestQuestion)
                     val title = builtInFlash && shouldRequestTitle()
@@ -3042,6 +3107,8 @@ class ChatViewModel(
         research: String, route: StoredSettings, options: ConversationSettings,
         omitAttachmentsAndTools: Boolean, memoryText: String,
         visualFollowUp: Attachment? = null,
+        hookAExtra: String? = null,
+        hookAText: String? = null,
     ): List<OutMessageDto> {
         skippedNoVision = 0; skippedUnreadable = 0; skippedUnsupportedFiles = 0
         val request = mutableListOf<OutMessageDto>()
@@ -3075,6 +3142,11 @@ class ChatViewModel(
             )
         }
 
+        // 钩子 A 的 context：与 demo 组包顺序一致（system 段之后、历史之前）
+        if (!hookAExtra.isNullOrBlank()) {
+            request += OutMessageDto(role = "system", content = MessageContent.text(hookAExtra))
+        }
+
         // 顺序规则见 `orderedOutgoingMessages`（纯函数，有单测钉死）
         val outgoingMessages = orderedOutgoingMessages(messages, active)
         val lastUser = outgoingMessages.lastOrNull { it.role == MessageRole.USER }
@@ -3098,6 +3170,10 @@ class ChatViewModel(
             } else {
                 sendable.content
             }
+            // 钩子 A 的改写只影响发给上游的内容；落库保留用户原文
+            val outgoingBody = if (
+                message.role == MessageRole.USER && message.id == lastUserId && hookAText != null
+            ) hookAText else body
             request += OutMessageDto(
                 role = if (message.role == MessageRole.USER) "user" else "assistant",
                 /*
@@ -3107,9 +3183,9 @@ class ChatViewModel(
                  * 生图结果不直接放在 assistant 消息里；需要看图时只附到本轮 user 消息。
                  */
                 content = if (message.role != MessageRole.USER || sendable.attachments.isEmpty()) {
-                    MessageContent.text(body)
+                    MessageContent.text(outgoingBody)
                 } else {
-                    userContent(body, sendable.attachments)
+                    userContent(outgoingBody, sendable.attachments)
                 },
             )
         }
@@ -3182,10 +3258,11 @@ class ChatViewModel(
             settingsStore: SettingsStore,
             repository: ChatRepository,
             openCodeSessionId: String,
+            hookRunner: HookRunner,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
-                ChatViewModel(chatApi, settingsStore, repository, openCodeSessionId, state).also { viewModel ->
+                ChatViewModel(chatApi, settingsStore, repository, openCodeSessionId, hookRunner, state).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }
             }

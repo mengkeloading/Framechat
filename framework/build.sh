@@ -71,3 +71,6 @@ echo "== 自测：模块树与 assets 同步"
 
 echo "== 自测：ModuleKit 与真模块集成"
 "$JAVA" -Dmychat.repoRoot="$ROOT/.." -cp "$OUT:$STDLIB:$RHINO" mychat.framework.sandbox.ModuleKitIntegrationTestKt
+
+echo "== 自测：HookRunner"
+"$JAVA" -cp "$OUT:$STDLIB" mychat.framework.HookRunnerTestKt

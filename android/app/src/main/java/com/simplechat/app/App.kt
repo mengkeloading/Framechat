@@ -8,6 +8,10 @@ import com.simplechat.app.data.ChatRepository
 import com.simplechat.app.data.LocaleHelper
 import com.simplechat.app.data.Res
 import com.simplechat.app.data.SettingsStore
+import com.simplechat.app.hook.AssetModuleTree
+import mychat.framework.hook.HookRunner
+import mychat.framework.hook.ModuleRegistry
+import mychat.framework.sandbox.RhinoJsExecutor
 import com.simplechat.app.db.AppDatabase
 import com.simplechat.app.net.ChatApi
 import com.simplechat.app.net.SseClient
@@ -39,6 +43,19 @@ class App : Application() {
         com.simplechat.app.data.CrashDiagnostics.install(this)
         Res.init(this)
         container = AppContainer(this)
+
+        /*
+         * 模块表要在主线程扫一次（19 个目录 / 51 个文件，毫秒级）。
+         * debug 包里把结果 Toast 出来：这是「assets 到底扫到了没有」的唯一外部证据。
+         */
+        val modules = container.moduleRegistry
+        if (BuildConfig.DEBUG) {
+            android.widget.Toast.makeText(
+                this,
+                "模块 ${modules.registry.all().size} 个 / 问题 ${modules.problems.size} 条",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }
         // 「后台继续生成」的前台服务需要 application context（见 BackgroundGeneration）
         com.simplechat.app.data.BackgroundGeneration.install(this)
 
@@ -70,6 +87,17 @@ class AppContainer(private val app: Application) {
     val chatApi: ChatApi by lazy { ChatApi(httpClient, sseClient, anthropicApi, json) }
 
     val settingsStore: SettingsStore by lazy { SettingsStore(app) }
+
+    /**
+     * 模块表。assets 不是 File，走 [AssetModuleTree]。
+     * 扫描失败不拦启动 —— 模块是增强，不是主流程。
+     */
+    val moduleRegistry by lazy { ModuleRegistry.scan(AssetModuleTree(app.assets, "modules")) }
+
+    /** 钩子入口：每轮新建 dispatcher，traces 由它累积。 */
+    val hookRunner by lazy {
+        HookRunner(moduleRegistry.registry, RhinoJsExecutor(moduleRegistry.registry))
+    }
 
     val database: AppDatabase by lazy { AppDatabase.build(app) }
 
