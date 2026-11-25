@@ -76,6 +76,12 @@ class App : Application() {
                     ).show()
                 }
             }
+
+            // 向量模型探针：不参与业务，只把三条余弦值打到 MyChat/Embed
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching { com.simplechat.app.hook.EmbedProbe.run(assets) }
+                    .onFailure { android.util.Log.w("MyChat/Embed", "probe failed", it) }
+            }
         }
         // 「后台继续生成」的前台服务需要 application context（见 BackgroundGeneration）
         com.simplechat.app.data.BackgroundGeneration.install(this)

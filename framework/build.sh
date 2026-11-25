@@ -80,3 +80,6 @@ echo "== 自测：Directive 协议"
 
 echo "== 自测：用户输入转义"
 "$JAVA" -cp "$OUT:$STDLIB" mychat.framework.EscapeTestKt
+
+echo "== 自测：向量与分词"
+"$JAVA" -Dmychat.repoRoot="$ROOT/.." -cp "$OUT:$STDLIB" mychat.framework.EmbeddingTestKt

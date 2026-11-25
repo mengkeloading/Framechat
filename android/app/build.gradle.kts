@@ -170,6 +170,7 @@ dependencies {
 
     implementation(libs.okhttp)
     implementation("org.mozilla:rhino:1.7.15")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
     testImplementation("junit:junit:4.13.2")
     implementation(libs.kotlinx.serialization.json)
 
