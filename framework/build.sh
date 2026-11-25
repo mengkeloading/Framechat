@@ -74,3 +74,6 @@ echo "== 自测：ModuleKit 与真模块集成"
 
 echo "== 自测：HookRunner"
 "$JAVA" -cp "$OUT:$STDLIB" mychat.framework.HookRunnerTestKt
+
+echo "== 自测：Directive 协议"
+"$JAVA" -cp "$OUT:$STDLIB" mychat.framework.DirectiveTestKt

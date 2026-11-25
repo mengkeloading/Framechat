@@ -32,6 +32,7 @@ import com.simplechat.app.data.imageAspectRatios
 import com.simplechat.app.data.imageSizeForRatio
 import com.simplechat.app.data.SettingsStore
 import com.simplechat.app.data.StoredSettings
+import mychat.framework.directive.DirectiveEngine
 import mychat.framework.hook.HookAResult
 import mychat.framework.hook.HookBResult
 import mychat.framework.hook.HookRunner
@@ -178,6 +179,9 @@ class ChatViewModel(
      * 目前没有任何 Composable 读它，用 State 只会白白触发重组。
      */
     private var lastHookTrace: String? = null
+
+    /** 指令引擎无状态，直接持有。纯文本指令在这一层落实，不进模块。 */
+    private val directiveEngine = DirectiveEngine()
     private var pendingMemoryEnabled by mutableStateOf(true)
     private var openedMemoryEnabled by mutableStateOf(true)
     val showConversationMemorySetting: Boolean get() = stored.crossChatMemory
@@ -2655,6 +2659,16 @@ class ChatViewModel(
                 recordHookTrace()
             }
 
+            /*
+             * 指令处理：`[[HIDE]]` 这类纯文本指令在这里落实，
+             * 下游的 patch 与落库都只用 finalText。
+             */
+            val directiveResult = directiveEngine.process(shownContent)
+            if (BuildConfig.DEBUG && directiveResult.log.isNotEmpty()) {
+                android.util.Log.d("MyChat/Directive", directiveResult.log.joinToString("\n"))
+            }
+            val finalText = directiveResult.text
+
             val finalReasoning = reasoningText
             /*
              * **真实**思考时长 = 首条思维链 → 首条正文。
@@ -2673,7 +2687,7 @@ class ChatViewModel(
 
             patch(replyId) {
                 it.copy(
-                    content = shownContent,
+                    content = finalText,
                     reasoning = finalReasoning.ifEmpty { null },
                     status = status,
                     errorMessage = failure,
@@ -2694,7 +2708,7 @@ class ChatViewModel(
                     withContext(Dispatchers.IO) {
                         repository.finishMessage(
                             id = replyId,
-                            content = shownContent,
+                            content = finalText,
                             reasoning = finalReasoning,
                             status = status,
                             errorMessage = failure,

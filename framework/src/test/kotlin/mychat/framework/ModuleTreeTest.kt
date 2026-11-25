@@ -26,7 +26,7 @@ private fun eq(name: String, expected: Any?, actual: Any?) =
 fun main() {
     treeEquivalenceTests()
     edgeCaseTests()
-    assetSyncTest()
+    assetHealthTest()
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -185,37 +185,28 @@ private fun edgeCaseTests() {
     eq("edge: 无正文不报问题", emptyList<String>(), bareScan.problems)
 }
 
-// ---------- assets 与 demo 的模块集合必须一致 ----------
+// ---------- assets 自身的健康度（demo 已冻结，不再逐模块对比） ----------
 
-private fun assetSyncTest() {
+private fun assetHealthTest() {
     val repoRoot = System.getProperty("mychat.repoRoot")
     if (repoRoot == null) {
-        println("SKIP  模块同步校验（未设置 -Dmychat.repoRoot）")
+        println("SKIP  assets 健康校验（未设置 -Dmychat.repoRoot）")
         return
     }
-    val demoRoot = File(repoRoot, "chat-demo-main/modules")
     val assetRoot = File(repoRoot, "android/app/src/main/assets/modules")
+    check("assets: 模块目录存在", assetRoot.isDirectory, assetRoot.path)
+    if (!assetRoot.isDirectory) return
 
-    if (!demoRoot.isDirectory || !assetRoot.isDirectory) {
-        check("sync: 两个模块目录都存在", false, "demo=${demoRoot.isDirectory} assets=${assetRoot.isDirectory}")
-        return
-    }
+    val scan = ModuleRegistry.scan(assetRoot)
+    val ids = scan.registry.all().map { it.id }.sorted()
 
-    val demo = ModuleRegistry.scan(demoRoot)
-    val asset = ModuleRegistry.scan(assetRoot)
-    val demoIds = demo.registry.all().map { it.id }.sorted()
-    val assetIds = asset.registry.all().map { it.id }.sorted()
+    check("assets: 能扫描到模块", ids.isNotEmpty())
+    eq("assets: 扫描无问题", emptyList<String>(), scan.problems)
 
-    eq("sync: 模块 id 集合一致", demoIds, assetIds)
-    eq("sync: 模块数量一致", demoIds.size, assetIds.size)
-    eq("sync: assets 侧没有加载问题", emptyList<String>(), asset.problems)
-    eq("sync: demo 侧没有加载问题", emptyList<String>(), demo.problems)
+    // 只钉住「必须有」的关键模块：新增模块直接进 assets，不再与 demo 对比
+    val required = listOf("local_calc", "attach_context", "no_fluff", "debug_ctx")
+    val missing = required - ids.toSet()
+    eq("assets: 关键模块齐全", emptyList<String>(), missing)
 
-    val missing = demoIds - assetIds.toSet()
-    val extra = assetIds - demoIds.toSet()
-    if (missing.isNotEmpty() || extra.isNotEmpty()) {
-        println("  demo 有、assets 没有: $missing")
-        println("  assets 有、demo 没有: $extra")
-    }
-    println("  模块清单（${assetIds.size} 个）: ${assetIds.joinToString(", ")}")
+    println("  模块清单（${ids.size} 个）: ${ids.joinToString(", ")}")
 }
