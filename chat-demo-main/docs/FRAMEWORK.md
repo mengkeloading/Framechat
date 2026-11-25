@@ -61,6 +61,7 @@ capabilities:
 6. **JS 正则不能跨行**，否则 `new Function` 语法错误 → fail-open 静默失效。
 7. **`ctx.messages` 来自 `dispatchInput(session, text, history)` 的第三参数**，不是 `SessionData` 快照。两处数据源分离是有意的：`ctx.messages` 是这一轮组包用的历史，`data.session` 能力给的是宿主快照。接入 App 时**两个都要传**，否则模块看到的历史为空且不报错。
 8. **用户输入在组包时转义 `[[` → `[\[`**，落库保持原文。范围是所有 `role==user` 的消息（含历史），不含 assistant —— 否则模型学不会输出合法指令。已知残留风险：模型复述上一轮自己生成的指令时，会再次执行。
+9. **release 构建引入 R8 后，必须独立验证一次「模块是否生效」**。debug 能跑不代表 release 能跑——反射调用的方法会被改名，而 fail-open 会让整层能力静默离线，界面无任何提示。必须 keep：`HostBridge` 接口、`GatedHostBridge` 公开方法、Rhino、onnxruntime 的 JNI 相关类。
 
 ## 6. 模块包格式
 

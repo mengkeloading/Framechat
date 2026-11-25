@@ -93,6 +93,14 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
 
+      - name: Upload release APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-release
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
+
       # Kotlin 编译错通常只在报告里给出文件名与行号，单独留一份方便贴出来
       - name: 打包编译报告
         if: failure()

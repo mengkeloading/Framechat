@@ -25,6 +25,7 @@
 | v12 | 硬约束 7：`ctx.messages` 与 `data.session` 是两个数据源 | 接 App 时两者都要传 |
 | v13 | 定位文档确立：docs/POSITIONING.md 为功能取舍唯一依据 | A/B 两侧精修层的边界写明 |
 | v13 | 模块只维护 assets 一份，demo 冻结 | 同步断言改为 assets 自身健康度，demo 侧不再参与断言 |
+| v14 | 硬约束 9：R8 后必须独立验证模块是否生效 | 反射方法被改名 → fail-open 静默离线，界面无提示 |
 
 ## 模块层新增
 
