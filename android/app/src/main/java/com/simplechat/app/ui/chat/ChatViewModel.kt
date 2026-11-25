@@ -2627,6 +2627,8 @@ class ChatViewModel(
              * 未启用模块时零开销，不建 dispatcher。
              */
             var shownContent = finalContent
+            // 注意：此判据依赖「生图是当前唯一工具」这一事实。
+            // 新增任何工具时必须同步扩展，否则钩子 B 会在工具轮次被误触发。
             val toolTurn = pendingImageTool || generatedImageAttached || imageToolFailed
             if (!toolTurn && status == MessageStatus.DONE && finalContent.isNotBlank() &&
                 stored.enabledModules.isNotEmpty()
@@ -2638,7 +2640,8 @@ class ChatViewModel(
                     systemPrompt = settings.systemPrompt.takeIf { it.isNotBlank() },
                     activeHardModules = stored.enabledModules.toList(),
                 )
-                // 不带本轮这条回复：钩子 B 看到的是「已有历史 + 本轮输入」
+                // 注意：钩子 A 的 ctx.messages 来自 loadActivePath(DB)，
+                // 这里是内存 UI 消息，两者在未落库时可能不一致。
                 val historyForB = messages.filter { it.id != replyId }.map {
                     HookMessage(it.role.name.lowercase(), it.content)
                 }

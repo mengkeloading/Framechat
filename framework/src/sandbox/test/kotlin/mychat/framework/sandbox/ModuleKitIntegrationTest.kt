@@ -119,6 +119,12 @@ private fun noFluff(dispatcher: ModuleDispatcher, session: HookSession) {
     val greetingKept = dispatcher.dispatchOutput(s, greeting)
     check("no_fluff: 整条寒暄不删", greetingKept is HookBResult.Pass, "实际 ${greetingKept::class.simpleName}")
     eq("no_fluff: 寒暄原样返回", greeting, greetingKept.text)
+
+    // 模型常用单换行分段：没有空行时只看最后一行
+    val singleBreak = "你好！有什么我可以帮你的吗？\n如果你接着想聊 Kotlin 协程，可以说…其他问题也随时问"
+    val single = dispatcher.dispatchOutput(s, singleBreak)
+    check("no_fluff: 单换行也能剪", single is HookBResult.Rewrite, "实际 ${single::class.simpleName}")
+    eq("no_fluff: 只删最后一行", "你好！有什么我可以帮你的吗？", single.text)
 }
 
 /** 真模块 no_fluff 经 HookRunner.output 改写（钩子 B 端到端）。 */

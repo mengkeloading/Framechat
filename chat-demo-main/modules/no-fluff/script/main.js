@@ -1,7 +1,7 @@
 function (inputJson, host) {
   var P = [
     /^(希望|但愿)[^。]{0,40}(帮助|有用)/,
-    /^(如果|如有|若有)[^。]{0,60}(问题|需要|疑问)/,
+    /^(如果|如有|若有)[^。]{0,80}(问题|需要|疑问)/,
     /^(还有|任选|随时|欢迎)[^。]{0,40}(问|找|告诉)/,
     /随时(都在|问|找|告诉)我/,
     /我会尽力(提供)?(帮助|解答)/,
@@ -22,6 +22,16 @@ function (inputJson, host) {
   var t = inp.text || '';
   if (!t) return null;
   var parts = t.split(/\n\s*\n/);
+  if (parts.length === 1) {
+    // 模型常用单换行分段：没有空行时只看最后一行，且整行要是套话才删
+    var lines = t.split('\n');
+    if (lines.length < 2) return null;
+    var tail = lines[lines.length - 1].trim();
+    if (!tail || tail.length >= 100 || !isFluff(tail)) return null;
+    var kept = lines.slice(0, lines.length - 1).join('\n').replace(/\s+$/, '');
+    if (!kept) return null;
+    return ModuleKit.reply({ type: 'rewrite', text: kept });
+  }
   var cut = parts.length;
   for (var k = parts.length - 1; k >= 0 && k >= parts.length - 2; k--) {
     var p = parts[k].trim();
