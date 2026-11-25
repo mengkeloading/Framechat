@@ -525,6 +525,20 @@ class SettingsStore(
         preferences.edit { it[Keys.MODULES_ENABLED] = ids }
     }
 
+    /**
+     * 仅调试包用：key **不存在**时才播种，已存在一律不覆盖。
+     * 返回是否真的写入了。
+     */
+    suspend fun seedDebugModulesIfAbsent(ids: Set<String>): Boolean {
+        var seeded = false
+        preferences.edit { prefs ->
+            if (prefs.contains(Keys.MODULES_ENABLED)) return@edit
+            prefs[Keys.MODULES_ENABLED] = ids
+            seeded = true
+        }
+        return seeded
+    }
+
     suspend fun setUseSimpleCatIcon(enabled: Boolean) {
         preferences.edit { it[Keys.USE_SIMPLE_CAT_ICON] = enabled }
     }

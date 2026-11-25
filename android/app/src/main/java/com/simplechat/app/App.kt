@@ -19,10 +19,14 @@ import com.simplechat.app.net.anthropic.AnthropicApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 
 class App : Application() {
+
+    /** 调试包才会播种的模块：验链路用，release 不碰。 */
+    private val DEBUG_SEED_MODULES = setOf("debug_ctx", "local_calc")
 
     lateinit var container: AppContainer
         private set
@@ -55,6 +59,23 @@ class App : Application() {
                 "模块 ${modules.registry.all().size} 个 / 问题 ${modules.problems.size} 条",
                 android.widget.Toast.LENGTH_LONG,
             ).show()
+
+            /*
+             * 仅调试包：首个启动把两个模块播种进去，好让「诊断ctx / 算一下 12*37」验链路。
+             * key 已存在就不动 —— 用户后来关掉模块，不会被重新打开。
+             */
+            CoroutineScope(Dispatchers.Main).launch {
+                val seeded = withContext(Dispatchers.IO) {
+                    container.settingsStore.seedDebugModulesIfAbsent(DEBUG_SEED_MODULES)
+                }
+                if (seeded) {
+                    android.widget.Toast.makeText(
+                        this@App,
+                        "已启用 " + DEBUG_SEED_MODULES.joinToString(", "),
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
         }
         // 「后台继续生成」的前台服务需要 application context（见 BackgroundGeneration）
         com.simplechat.app.data.BackgroundGeneration.install(this)

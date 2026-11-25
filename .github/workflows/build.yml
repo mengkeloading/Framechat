@@ -59,6 +59,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
+      # 负向验证：框架类必须真的进了编译产物。
+      # 历史上 sourceSets 漂移过一次：源码没被编译，但因为没有 import，构建仍然是绿的。
+      - name: 验证框架类真的被编译
+        run: |
+          set -e
+          FOUND=$(find app/build -name "ModuleDispatcher*.class" | head -5)
+          echo "$FOUND"
+          test -n "$FOUND" || { echo "::error::框架类没有被编译，检查 sourceSets"; exit 1; }
+
       - name: 打包 APK
         if: always()
         uses: actions/upload-artifact@v4
