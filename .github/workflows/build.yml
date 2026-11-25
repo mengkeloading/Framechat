@@ -67,6 +67,15 @@ jobs:
             echo "APK_BYTES=$(stat -c %s "$f") $f"
           done
 
+      # release 走 R8 + resource shrink：debug 从不跑这一段，
+      # 不在这里验一次，proguard 的洞会一直藏到发版那天。
+      - name: assembleRelease
+        run: |
+          ./gradlew assembleRelease --stacktrace
+          for f in app/build/outputs/apk/release/*.apk; do
+            echo "RELEASE_APK_BYTES=$(stat -c %s "$f") $f"
+          done
+
       # 负向验证：框架类必须真的进了编译产物。
       # 历史上 sourceSets 漂移过一次：源码没被编译，但因为没有 import，构建仍然是绿的。
       - name: 验证框架类真的被编译
