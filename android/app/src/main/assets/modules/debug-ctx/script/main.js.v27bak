@@ -1,0 +1,24 @@
+function (inputJson, host) {
+  var inp = ModuleKit.parse(inputJson);
+  var t = (inp.text || '').trim();
+  if (t !== '诊断ctx') return null;
+  var o = [];
+  o.push('phase=' + inp.phase);
+  var keys = [];
+  try {
+    keys = Object.keys(inp.ctx || {});
+  } catch (e) {}
+  o.push('ctx keys: ' + (keys.join(', ') || '(空)'));
+  try {
+    var a = (inp.ctx || {}).attachments;
+    o.push('attachments: ' + (a ? JSON.stringify(a).slice(0, 240) : '无'));
+  } catch (e) {
+    o.push('attachments: 读取失败');
+  }
+  try {
+    var x = (inp.ctx || {}).input;
+    o.push('ctx.input: ' + (x ? String(x).slice(0, 80) : '无'));
+  } catch (e) {}
+  var s = o.join('\n');
+  return ModuleKit.reply({ type: 'local', text: s, content: s, reply: s });
+}

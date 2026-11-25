@@ -55,59 +55,60 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
         fun of(list: List<ModulePackage>): ModuleRegistry =
             ModuleRegistry(list.associateBy { it.id })
 
-        fun scan(root: File): ScanResult {
+        fun scan(root: File): ScanResult = scan(FileModuleTree(root))
+
+        /** 从任意模块树扫描（文件系统 / assets / 内存）。root 为空表示树根。 */
+        fun scan(tree: ModuleTree, root: String = ""): ScanResult {
             val pkgs = LinkedHashMap<String, ModulePackage>()
             val problems = mutableListOf<String>()
-            val dirs = root.listFiles { f -> f.isDirectory }?.sortedBy { it.name }.orEmpty()
-            for (dir in dirs) {
-                val md = File(dir, "MODULE.md")
-                if (!md.isFile) continue
-                val text = try {
-                    md.readText()
-                } catch (e: Exception) {
-                    problems += "${dir.name}: MODULE.md 读取失败"
-                    continue
-                }
+            for (name in tree.list(root).sorted()) {
+                val dir = join(root, name)
+                val text = tree.read(join(dir, "MODULE.md")) ?: continue
                 val fm = FrontMatter.parse(text)
                 if (fm == null) {
-                    problems += "${dir.name}: MODULE.md 缺 front matter"
+                    problems += "$name: MODULE.md 缺 front matter"
                     continue
                 }
-                val manifest = ModuleManifest.from(fm, dir.name)
-                val scripts = readTree(File(dir, "script"))
+                val manifest = ModuleManifest.from(fm, name)
+                val scripts = readTree(tree, join(dir, "script"))
                 if (manifest.hooks.isNotEmpty() && scripts[manifest.entry] == null) {
                     problems += "${manifest.id}: hooks=${manifest.hooks} 但 script/${manifest.entry} 不存在"
                 }
                 if (pkgs.containsKey(manifest.id)) {
-                    problems += "${dir.name}: 重复的模块 id ${manifest.id}"
+                    problems += "$name: 重复的模块 id ${manifest.id}"
                     continue
                 }
                 pkgs[manifest.id] = ModulePackage(
                     manifest = manifest,
                     body = fm.body,
                     scripts = scripts,
-                    references = readTree(File(dir, "reference"))
+                    references = readTree(tree, join(dir, "reference"))
                 )
             }
             return ScanResult(ModuleRegistry(pkgs), problems)
         }
 
-        private fun readTree(dir: File): Map<String, String> {
-            if (!dir.isDirectory) return emptyMap()
+        private fun join(dir: String, name: String): String =
+            if (dir.isEmpty()) name else "$dir/$name"
+
+        private fun readTree(tree: ModuleTree, dir: String): Map<String, String> {
             val out = LinkedHashMap<String, String>()
-            val base = dir.toPath()
-            dir.walkTopDown()
-                .filter { it.isFile }
-                .sortedBy { it.path }
-                .forEach { f ->
-                    val rel = base.relativize(f.toPath()).toString()
-                        .replace(File.separatorChar, '/')
-                    try {
-                        out[rel] = f.readText()
-                    } catch (e: Exception) {
-                        // 单个文件读不到不影响整个包
+            val prefix = "$dir/"
+
+            fun walk(current: String) {
+                for (name in tree.list(current).sorted()) {
+                    val path = join(current, name)
+                    if (tree.list(path).isNotEmpty()) {
+                        walk(path)
+                        continue
+                    }
+                    tree.read(path)?.let { body ->
+                        out[if (path.startsWith(prefix)) path.substring(prefix.length) else path] = body
                     }
                 }
+            }
+
+            walk(dir)
             return out
         }
     }

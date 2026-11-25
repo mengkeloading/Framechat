@@ -1,0 +1,26 @@
+function (inputJson, host) {
+  var inp = ModuleKit.parse(inputJson);
+  var t = (inp.text || '').trim();
+  if (!t || t.length > 60) return null;
+  var m = t.match(
+    /^(?:算一?下?|计算|calc)?\s*([-+*/%().\d\s]+?)\s*=?$/);
+  if (!m) return null;
+  var e = m[1].replace(/\s/g, '');
+  if (e.length < 3 || e.length > 40) return null;
+  if (!/\d/.test(e)) return null;
+  if (!/^[-+*/%().\d]+$/.test(e)) return null;
+  var v;
+  try {
+    v = Function('"use strict";return (' + e + ')')();
+  } catch (err) {
+    return null;
+  }
+  if (typeof v !== "number" || !isFinite(v)) return null;
+  var out = String(Math.round(v * 1e10) / 1e10);
+  return ModuleKit.reply({
+    type: 'local',
+    text: e + ' = ' + out,
+    content: e + ' = ' + out,
+    reply: e + ' = ' + out
+  });
+}

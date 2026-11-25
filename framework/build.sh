@@ -65,3 +65,6 @@ echo "== 自测：核心契约"
 
 echo "== 自测：Rhino 沙箱"
 "$JAVA" -cp "$OUT:$STDLIB:$RHINO" mychat.framework.sandbox.RhinoSelfTestKt
+
+echo "== 自测：模块树与 assets 同步"
+"$JAVA" -Dmychat.repoRoot="$ROOT/.." -cp "$OUT:$STDLIB" mychat.framework.ModuleTreeTestKt

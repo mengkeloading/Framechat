@@ -1,0 +1,32 @@
+function (inputJson, host) {
+  function load(p) {
+    var s = '';
+    try {
+      if (host && host.read) s = host.read(p);
+    } catch (e) {}
+    if (!s) {
+      try {
+        if (host && host.resource && host.resource.read) {
+          s = host.resource.read(p);
+        }
+      } catch (e) {}
+    }
+    return s;
+  }
+  var inp = ModuleKit.parse(inputJson);
+  var t = inp.text || '';
+  if (t.indexOf('小说：') !== 0) return null;
+  var body = t.slice(3).trim();
+  if (!body) return null;
+  var rules = load('reference/SKILL.md');
+  if (!rules) {
+    rules = '（未能读取 reference/SKILL.md，请检查 resource.read 是否已实现）';
+  }
+  var extra = '【写作规范】\n' + rules
+    + '\n\n【本题材】\n' + body;
+  return ModuleKit.reply({
+    type: 'context',
+    text: t,
+    extra: extra
+  });
+}

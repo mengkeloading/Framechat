@@ -108,7 +108,9 @@ data class ModuleManifest(
                 version = fm.scalars["version"] ?: "0.0.0",
                 hooks = hooks,
                 inject = fm.scalars["inject"] ?: "none",
-                entry = fm.scalars["entry"] ?: "main.js",
+                // demo 的 MODULE.md 写的是 `entry: script/main.js`，包内脚本表的 key
+                // 已经是相对 script/ 的路径，这里统一别名。
+                entry = (fm.scalars["entry"] ?: "main.js").removePrefix("script/"),
                 capabilities = caps,
                 tools = parseInlineTools(fm.scalars["tools"])
             )

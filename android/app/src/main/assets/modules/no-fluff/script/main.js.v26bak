@@ -1,0 +1,26 @@
+function (inputJson, host) {
+  function isFluff(l) {
+    if (!l || l.length > 60) return false;
+    if (/^(希望|如果|还有|如需|需要我|要不要我|有什么|总结|综上|以上)/.test(l)) {
+      return true;
+    }
+    return /(随时(问|找|告诉)我|对你有(帮助|用)|还有其他问题)/.test(l);
+  }
+  var inp = ModuleKit.parse(inputJson);
+  var t = inp.text || '';
+  if (!t) return null;
+  var lines = t.split('\n');
+  var n = lines.length;
+  var cut = -1;
+  var i = n - 1;
+  while (i >= 0 && i >= n - 4) {
+    var l = lines[i].trim();
+    if (!l) { i--; continue; }
+    if (isFluff(l)) { cut = i; i--; continue; }
+    break;
+  }
+  if (cut < 0) return null;
+  var out = lines.slice(0, cut).join('\n').replace(/\s+$/, '');
+  if (!out) return null;
+  return ModuleKit.reply({ type: 'rewrite', text: out });
+}
