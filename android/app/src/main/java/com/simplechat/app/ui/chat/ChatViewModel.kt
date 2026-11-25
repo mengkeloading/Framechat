@@ -32,6 +32,7 @@ import com.simplechat.app.data.imageSizeForRatio
 import com.simplechat.app.data.SettingsStore
 import com.simplechat.app.data.StoredSettings
 import mychat.framework.hook.HookAResult
+import mychat.framework.hook.HookBResult
 import mychat.framework.hook.HookRunner
 import mychat.framework.hook.HookSession
 import mychat.framework.hook.Message as HookMessage
@@ -2611,6 +2612,37 @@ class ChatViewModel(
             if ((pendingImageTool && !generatedImageAttached && !imageToolFailed) || localAnswer != null) {
                 timeline = timeline.filterNot { it is ReplyBlock.Text }
             }
+
+            /*
+             * 钩子 B：只改「展示 + 落库」的那一份。
+             * 有 tool_calls 的轮次必须跳过（硬约束 4），否则会断掉工具回环；
+             * 未启用模块时零开销，不建 dispatcher。
+             */
+            var shownContent = finalContent
+            val toolTurn = pendingImageTool || generatedImageAttached || imageToolFailed
+            if (!toolTurn && status == MessageStatus.DONE && finalContent.isNotBlank() &&
+                stored.enabledModules.isNotEmpty()
+            ) {
+                val hookSession = HookSession(
+                    id = conversationId,
+                    title = currentConversationTitle.orEmpty(),
+                    model = options.model.id,
+                    systemPrompt = settings.systemPrompt.takeIf { it.isNotBlank() },
+                    activeHardModules = stored.enabledModules.toList(),
+                )
+                // 不带本轮这条回复：钩子 B 看到的是「已有历史 + 本轮输入」
+                val historyForB = messages.filter { it.id != replyId }.map {
+                    HookMessage(it.role.name.lowercase(), it.content)
+                }
+                val hookB = hookRunner.output(
+                    session = hookSession,
+                    rawText = finalContent,
+                    input = pendingHookAText ?: latestQuestion,
+                    history = historyForB,
+                )
+                if (hookB is HookBResult.Rewrite) shownContent = hookB.text
+            }
+
             val finalReasoning = reasoningText
             /*
              * **真实**思考时长 = 首条思维链 → 首条正文。
@@ -2629,7 +2661,7 @@ class ChatViewModel(
 
             patch(replyId) {
                 it.copy(
-                    content = finalContent,
+                    content = shownContent,
                     reasoning = finalReasoning.ifEmpty { null },
                     status = status,
                     errorMessage = failure,
@@ -2650,7 +2682,7 @@ class ChatViewModel(
                     withContext(Dispatchers.IO) {
                         repository.finishMessage(
                             id = replyId,
-                            content = finalContent,
+                            content = shownContent,
                             reasoning = finalReasoning,
                             status = status,
                             errorMessage = failure,

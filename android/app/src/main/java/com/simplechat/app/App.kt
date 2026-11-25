@@ -26,7 +26,7 @@ import okhttp3.OkHttpClient
 class App : Application() {
 
     /** 调试包才会播种的模块：验链路用，release 不碰。 */
-    private val DEBUG_SEED_MODULES = setOf("debug_ctx", "local_calc")
+    private val DEBUG_SEED_MODULES = setOf("debug_ctx", "local_calc", "no_fluff")
 
     lateinit var container: AppContainer
         private set
@@ -61,12 +61,12 @@ class App : Application() {
             ).show()
 
             /*
-             * 仅调试包：首个启动把两个模块播种进去，好让「诊断ctx / 算一下 12*37」验链路。
-             * key 已存在就不动 —— 用户后来关掉模块，不会被重新打开。
+             * 仅调试包：把验链路要用的模块补进启用集合（并集，不会覆盖用户已有选择）。
+             * 新增模块不必清 App 数据。
              */
             CoroutineScope(Dispatchers.Main).launch {
                 val seeded = withContext(Dispatchers.IO) {
-                    container.settingsStore.seedDebugModulesIfAbsent(DEBUG_SEED_MODULES)
+                    container.settingsStore.ensureDebugModules(DEBUG_SEED_MODULES)
                 }
                 if (seeded) {
                     android.widget.Toast.makeText(

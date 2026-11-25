@@ -1,6 +1,14 @@
 package mychat.framework
 
+import mychat.framework.core.ChatEngine
+import mychat.framework.core.ChatTransport
+import mychat.framework.core.RequestBuilder
+import mychat.framework.core.StreamOutcome
+import mychat.framework.core.ToolRunner
+import mychat.framework.core.TurnResult
+import mychat.framework.hook.AuditLog
 import mychat.framework.hook.Caps
+import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
 import mychat.framework.hook.HookBResult
 import mychat.framework.hook.HookRunner
@@ -8,6 +16,7 @@ import mychat.framework.hook.HookSession
 import mychat.framework.hook.HostBridge
 import mychat.framework.hook.JsExecutor
 import mychat.framework.hook.Message
+import mychat.framework.hook.ModuleDispatcher
 import mychat.framework.hook.ModuleManifest
 import mychat.framework.hook.ModulePackage
 import mychat.framework.hook.ModuleRegistry
@@ -34,6 +43,7 @@ fun main() {
     localShortCircuitTests()
     traceAccumulationTests()
     sessionCapabilityTests()
+    toolTurnSkipsHookBTests()
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -84,6 +94,7 @@ private fun emptyEnabledTests() {
     check("runner: 钩子 B 未启用时放行", out is HookBResult.Pass)
     eq("runner: 钩子 B 未启用时保留原文", "模型输出", out.text)
     eq("runner: 钩子 B 未启用时仍不碰执行器", 0, executor.calls)
+    eq("runner: 钩子 B 未启用时不建 dispatcher（无轨迹）", 0, runner.lastTrace().size)
 
     runner.clearTrace()
     eq("runner: clearTrace 清空", 0, runner.lastTrace().size)
@@ -134,4 +145,39 @@ private fun sessionCapabilityTests() {
 
     val result = runner.input(session, "x", history = listOf(Message("user", "hi")))
     eq("runner: data.session 拿到当轮会话", "sid=sess-abc", result.text)
+}
+
+/**
+ * 硬约束 4：有 tool_calls 的轮次不跑钩子 B。
+ * 用 ChatEngine 跑一个「每轮都冒工具调用」的流，统计模块被以 phase=b 调用的次数。
+ */
+private fun toolTurnSkipsHookBTests() {
+    val source = ModuleRegistry.of(listOf(pkg("fmt", listOf("output"))))
+    var phaseBCalls = 0
+    val executor = JsExecutor { _, inputJson, _ ->
+        if (parseJson(inputJson)?.str("phase") == "b") phaseBCalls++
+        """{"type":"rewrite","text":"不该发生"}"""
+    }
+    val dispatcher = ModuleDispatcher(
+        source = source,
+        executor = executor,
+        bridges = GatedHostBridge.factory(source, AuditLog(), { null })
+    )
+    val engine = ChatEngine(
+        dispatcher = dispatcher,
+        builder = RequestBuilder(source),
+        transport = ChatTransport { _, onLine ->
+            onLine(
+                """data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"calc","arguments":"{}"}}]}}]}"""
+            )
+            StreamOutcome.success()
+        },
+        tools = ToolRunner { _, _ -> "{}" }
+    )
+    val result = engine.runTurn(
+        HookSession(id = "s", activeHardModules = listOf("fmt"), maxToolRounds = 2),
+        "hi"
+    )
+    check("engine: 全是工具轮时被截断", result is TurnResult.Truncated, "实际 ${result::class.simpleName}")
+    eq("hookB: 工具轮次一次都没 dispatchOutput", 0, phaseBCalls)
 }

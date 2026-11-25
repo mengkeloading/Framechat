@@ -4,6 +4,7 @@ import mychat.framework.hook.AuditLog
 import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
 import mychat.framework.hook.HookBResult
+import mychat.framework.hook.HookRunner
 import mychat.framework.hook.HookSession
 import mychat.framework.hook.Message
 import mychat.framework.hook.ModuleDispatcher
@@ -67,6 +68,7 @@ fun main() {
     attachContext(dispatcher, session)
     noFluff(dispatcher, session)
     ctxPassthrough(dispatcher, session)
+    noFluffViaRunner(registry)
 
     // shim 有问题必须暴露，不能靠 fail-open 吞掉
     val swallowed = dispatcher.traces.filter { it.message.contains("执行异常") }
@@ -106,6 +108,17 @@ private fun noFluff(dispatcher: ModuleDispatcher, session: HookSession) {
     val text = result.text
     eq("no_fluff: 只留正文", "这是结论。", text)
     check("no_fluff: 套话被删掉", !text.contains("希望"))
+}
+
+/** 真模块 no_fluff 经 HookRunner.output 改写（钩子 B 端到端）。 */
+private fun noFluffViaRunner(registry: ModuleRegistry) {
+    val runner = HookRunner(registry, RhinoJsExecutor(registry))
+    val session = HookSession(id = "s-b", activeHardModules = listOf("no_fluff"))
+    val raw = "这是结论。\n\n希望这些能对你有帮助。"
+    val result = runner.output(session, raw)
+    check("runner+b: 返回 rewrite", result is HookBResult.Rewrite, "实际 ${result::class.simpleName}")
+    eq("runner+b: 套话被删", "这是结论。", result.text)
+    check("runner+b: 留下 hookB 轨迹", runner.lastTrace().any { it.tag == "hookB" })
 }
 
 /** 真模块 debug-ctx：把看到的 ctx 原样打出来，同时验证信封形态。 */

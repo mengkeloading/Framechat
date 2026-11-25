@@ -526,14 +526,17 @@ class SettingsStore(
     }
 
     /**
-     * 仅调试包用：key **不存在**时才播种，已存在一律不覆盖。
-     * 返回是否真的写入了。
+     * 仅调试包用：保证 [ids] 里的模块都在启用集合里（读现有的 → 并集 → 写回）。
+     * 已存在的不动，新增的补上；返回是否真的写入过。
+     *
+     * 副作用：debug 包里被用户手动关掉的模块会被重新打开 —— 开发期行为，可接受。
      */
-    suspend fun seedDebugModulesIfAbsent(ids: Set<String>): Boolean {
+    suspend fun ensureDebugModules(ids: Set<String>): Boolean {
         var seeded = false
         preferences.edit { prefs ->
-            if (prefs.contains(Keys.MODULES_ENABLED)) return@edit
-            prefs[Keys.MODULES_ENABLED] = ids
+            val current = prefs[Keys.MODULES_ENABLED] ?: emptySet()
+            if (current.containsAll(ids)) return@edit
+            prefs[Keys.MODULES_ENABLED] = current + ids
             seeded = true
         }
         return seeded
