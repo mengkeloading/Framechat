@@ -98,16 +98,27 @@ private fun attachContext(dispatcher: ModuleDispatcher, session: HookSession) {
     check("attach_context: extra 带上附加内容", extra.contains("用英文回答"), "extra=$extra")
 }
 
-/** 真模块 no-fluff：砍掉结尾套话。 */
+/** 真模块 no-fluff：砍掉结尾套话，但不伤正文。 */
 private fun noFluff(dispatcher: ModuleDispatcher, session: HookSession) {
+    val s = session.copy(activeHardModules = listOf("no_fluff"))
     val withFluff = "这是结论。\n\n希望这些能对你有帮助。"
-    val result = dispatcher.dispatchOutput(
-        session.copy(activeHardModules = listOf("no_fluff")), withFluff
-    )
+    val result = dispatcher.dispatchOutput(s, withFluff)
     check("no_fluff: 返回 rewrite", result is HookBResult.Rewrite, "实际 ${result::class.simpleName}")
     val text = result.text
     eq("no_fluff: 只留正文", "这是结论。", text)
     check("no_fluff: 套话被删掉", !text.contains("希望"))
+
+    // 带实质内容的段落（含「核心/是」）一律不剪
+    val substantive = "总之，协程的三个核心是 A、B、C。"
+    val kept = dispatcher.dispatchOutput(s, substantive)
+    check("no_fluff: 「总之…核心是」不删", kept is HookBResult.Pass, "实际 ${kept::class.simpleName}")
+    eq("no_fluff: 实质性段落原样返回", substantive, kept.text)
+
+    // 整条都是寒暄（单段）时，剪掉会变成空串 → 模块返回 null → 原样
+    val greeting = "你好！有什么需要帮忙的吗？直接说就行。"
+    val greetingKept = dispatcher.dispatchOutput(s, greeting)
+    check("no_fluff: 整条寒暄不删", greetingKept is HookBResult.Pass, "实际 ${greetingKept::class.simpleName}")
+    eq("no_fluff: 寒暄原样返回", greeting, greetingKept.text)
 }
 
 /** 真模块 no_fluff 经 HookRunner.output 改写（钩子 B 端到端）。 */

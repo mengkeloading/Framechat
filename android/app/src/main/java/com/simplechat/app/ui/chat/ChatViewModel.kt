@@ -14,6 +14,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.simplechat.app.BuildConfig
 import com.simplechat.app.R
 import com.simplechat.app.data.ApiKey
 import com.simplechat.app.data.BackgroundGeneration
@@ -171,6 +172,12 @@ class ChatViewModel(
      */
     private var pendingHookExtra: String? = null
     private var pendingHookAText: String? = null
+
+    /**
+     * 最近一轮钩子的调度轨迹。只写日志用，**故意不用 State** ——
+     * 目前没有任何 Composable 读它，用 State 只会白白触发重组。
+     */
+    private var lastHookTrace: String? = null
     private var pendingMemoryEnabled by mutableStateOf(true)
     private var openedMemoryEnabled by mutableStateOf(true)
     val showConversationMemorySetting: Boolean get() = stored.crossChatMemory
@@ -901,6 +908,7 @@ class ChatViewModel(
                         }
                         is HookAResult.Pass -> pendingHookAText = hookA.text.takeIf { it != text }
                     }
+                    recordHookTrace()
                 }
 
                 val user = repository.appendUserMessage(conversationId, text, attachments)
@@ -2641,6 +2649,7 @@ class ChatViewModel(
                     history = historyForB,
                 )
                 if (hookB is HookBResult.Rewrite) shownContent = hookB.text
+                recordHookTrace()
             }
 
             val finalReasoning = reasoningText
@@ -3007,6 +3016,13 @@ class ChatViewModel(
     }
 
     /** 只替换目标那一条，其余列表项保持引用不变 —— 避免整列表重组。 */
+    /** 钩子轨迹落到日志：debug 才打，release 里这一整段会被常量折叠掉。 */
+    private fun recordHookTrace() {
+        val trace = hookRunner.lastTrace().joinToString("\n") { it.toString() }
+        lastHookTrace = trace
+        if (BuildConfig.DEBUG) android.util.Log.d("MyChat/Hook", trace)
+    }
+
     private inline fun patch(id: String, transform: (UiMessage) -> UiMessage) {
         val index = messages.indexOfLast { it.id == id }
         if (index >= 0) messages[index] = transform(messages[index])
