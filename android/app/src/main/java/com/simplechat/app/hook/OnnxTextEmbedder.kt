@@ -50,10 +50,10 @@ class OnnxTextEmbedder(
     override fun embed(text: String): FloatArray? = embedQuery(text)
 
     /** 查询侧：带上 bge v1.5 的官方指令前缀，否则相似度会明显偏低。 */
-    fun embedQuery(text: String): FloatArray? = embedWithPrefix(QUERY_PREFIX + text)
+    override fun embedQuery(text: String): FloatArray? = embedWithPrefix(QUERY_PREFIX + text)
 
     /** 文档侧：不加前缀。模块 description 走这里。 */
-    fun embedPassage(text: String): FloatArray? = embedWithPrefix(text)
+    override fun embedPassage(text: String): FloatArray? = embedWithPrefix(text)
 
     private fun embedWithPrefix(text: String): FloatArray? {
         val ids = tokenizer.encode(text)
