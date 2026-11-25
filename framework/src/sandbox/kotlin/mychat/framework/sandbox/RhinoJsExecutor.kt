@@ -38,6 +38,8 @@ class RhinoJsExecutor(
             ctx.optimizationLevel = optimizationLevel
             ctx.languageVersion = Context.VERSION_ES6
             val scope = ctx.initSafeStandardObjects()
+            // 模块依赖的全局：semantics 与 demo 的 js/module/modulekit.js 一致
+            ctx.evaluateString(scope, PRELUDE, "modulekit", 1, null)
             val wrapper = "(function (inputJson, host) {\n" +
                 "var fetch=undefined, XMLHttpRequest=undefined, localStorage=undefined,\n" +
                 "    document=undefined, window=undefined, require=undefined, importScripts=undefined;\n" +
@@ -92,6 +94,35 @@ class RhinoJsExecutor(
     companion object {
         const val DEFAULT_TIMEOUT_MS = 3000L
         private const val INSTRUCTION_CHECK_INTERVAL = 10_000
+
+        /**
+         * 与 demo 的 modulekit.js 同语义：模块只认 parse / reply / isLegal。
+         * 缺了它，19 个模块里 15 个会 ReferenceError，再被 fail-open 吞掉 ——
+         * 表现是「模块明明启用了却什么都不做」。
+         */
+        private const val PRELUDE = """
+            var ModuleKit = {
+              parse: function (inputJson) {
+                if (typeof inputJson !== 'string') return { text: '', phase: 'a', ctx: {} };
+                var t = inputJson.replace(/^\s+/, '');
+                if (t.charAt(0) === '{') {
+                  try {
+                    var o = JSON.parse(t);
+                    if (o && typeof o === 'object' && typeof o.text === 'string') {
+                      return { text: o.text, phase: o.phase || 'a', ctx: o.ctx || {} };
+                    }
+                  } catch (e) { }
+                }
+                return { text: inputJson, phase: 'a', ctx: {} };
+              },
+              reply: function (o) { return JSON.stringify(o); },
+              isLegal: function (type, phase) {
+                var A = ['pass', 'local', 'context'];
+                var B = ['pass', 'rewrite', 'invoke'];
+                return (phase === 'a' ? A : B).indexOf(type) >= 0;
+              }
+            };
+        """
 
         @Volatile
         private var factoryReady = false
