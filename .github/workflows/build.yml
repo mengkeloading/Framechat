@@ -31,6 +31,17 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # AGP 靠环境变量找 SDK（仓库里没有 local.properties）。
+      # runner 镜像本来就设了，这里显式断言一次：设了给下游，没设就当场红，
+      # 而不是等到 assembleDebug 才报 "SDK location not found"。
+      - name: 记录 Android SDK 路径
+        run: |
+          : "${ANDROID_HOME:?runner 没有设置 ANDROID_HOME}"
+          {
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          } >> "$GITHUB_ENV"
+
       # 镜像自带的 SDK 不一定包含 compileSdk 37 / build-tools 37.0.0，显式装一次
       - name: 安装 SDK 37
         run: |
