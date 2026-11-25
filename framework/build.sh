@@ -77,3 +77,6 @@ echo "== 自测：HookRunner"
 
 echo "== 自测：Directive 协议"
 "$JAVA" -cp "$OUT:$STDLIB" mychat.framework.DirectiveTestKt
+
+echo "== 自测：用户输入转义"
+"$JAVA" -cp "$OUT:$STDLIB" mychat.framework.EscapeTestKt

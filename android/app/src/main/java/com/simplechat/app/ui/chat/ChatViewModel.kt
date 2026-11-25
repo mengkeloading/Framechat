@@ -3239,6 +3239,12 @@ class ChatViewModel(
             val outgoingBody = if (
                 message.role == MessageRole.USER && message.id == lastUserId && hookAText != null
             ) hookAText else body
+            // 硬约束 8：user 消息里的 [[ 必须失效，否则用户能自己注入指令；
+            // assistant 不动 —— 模型要见得到合法样例才学得会输出。
+            val sentBody = DirectiveEngine.escapeForRequest(
+                outgoingBody,
+                isUser = message.role == MessageRole.USER,
+            )
             request += OutMessageDto(
                 role = if (message.role == MessageRole.USER) "user" else "assistant",
                 /*
@@ -3248,9 +3254,9 @@ class ChatViewModel(
                  * 生图结果不直接放在 assistant 消息里；需要看图时只附到本轮 user 消息。
                  */
                 content = if (message.role != MessageRole.USER || sendable.attachments.isEmpty()) {
-                    MessageContent.text(outgoingBody)
+                    MessageContent.text(sentBody)
                 } else {
-                    userContent(outgoingBody, sendable.attachments)
+                    userContent(sentBody, sendable.attachments)
                 },
             )
         }

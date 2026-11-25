@@ -151,5 +151,13 @@ class DirectiveEngine(
          * 转义后 `[[` 变成 `[\[`，不再匹配标记正则。
          */
         fun escapeUserInput(text: String): String = text.replace("[[", "[\\[")
+
+        /**
+         * 组包时对**所有 user 消息**（含历史）转义，assistant 不动 ——
+         * 否则模型就见不到合法指令的样例，学不会输出。
+         * 落库走的是原文，这个函数只影响发给上游的 content。
+         */
+        fun escapeForRequest(content: String, isUser: Boolean): String =
+            if (isUser) escapeUserInput(content) else content
     }
 }

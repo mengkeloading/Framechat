@@ -23,6 +23,8 @@
 | v6 | modcheck 启动自检 | 模块错误不再静默 |
 | v12 | Kotlin 侧：模块树抽象（文件/assets）+ 注入 ModuleKit | 19 个模块可在 App 内运行 |
 | v12 | 硬约束 7：`ctx.messages` 与 `data.session` 是两个数据源 | 接 App 时两者都要传 |
+| v13 | 定位文档确立：docs/POSITIONING.md 为功能取舍唯一依据 | A/B 两侧精修层的边界写明 |
+| v13 | 模块只维护 assets 一份，demo 冻结 | 同步断言改为 assets 自身健康度，demo 侧不再参与断言 |
 
 ## 模块层新增
 
