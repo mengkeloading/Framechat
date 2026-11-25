@@ -47,7 +47,15 @@ class OnnxTextEmbedder(
             " outputs=" + session.outputNames.joinToString(","))
     }
 
-    override fun embed(text: String): FloatArray? {
+    override fun embed(text: String): FloatArray? = embedQuery(text)
+
+    /** 查询侧：带上 bge v1.5 的官方指令前缀，否则相似度会明显偏低。 */
+    fun embedQuery(text: String): FloatArray? = embedWithPrefix(QUERY_PREFIX + text)
+
+    /** 文档侧：不加前缀。模块 description 走这里。 */
+    fun embedPassage(text: String): FloatArray? = embedWithPrefix(text)
+
+    private fun embedWithPrefix(text: String): FloatArray? {
         val ids = tokenizer.encode(text)
         if (ids.isEmpty()) return null
         val shape = longArrayOf(1L, ids.size.toLong())
@@ -100,6 +108,7 @@ class OnnxTextEmbedder(
     companion object {
         const val MODEL_ASSET = "models/bge-small-zh.onnx"
         const val VOCAB_ASSET = "models/vocab.txt"
+        const val QUERY_PREFIX = "为这个句子生成表示以用于检索相关文章："
         private const val DIMENSION = 512
         private const val TAG = "MyChat/Embed"
     }

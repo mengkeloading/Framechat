@@ -1,7 +1,7 @@
 ---
 id: skill_product
 name: 需求拆解
-description: 把模糊的产品想法拆成可执行的任务清单
+description: 产品需求拆解。用户说"我想做一个X""这个功能怎么设计""帮我拆一下"时使用。输出目标/用户/MVP/不做/风险。
 version: 1.0.0
 hooks: []
 inject: none

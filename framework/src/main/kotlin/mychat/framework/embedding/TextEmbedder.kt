@@ -8,6 +8,12 @@ interface TextEmbedder {
 
     /** 返回 L2 归一化后的向量；空文本或无法编码时返回 null。 */
     fun embed(text: String): FloatArray?
+
+    /** 查询侧：bge v1.5 要求带指令前缀。默认实现不改写，交给具体实现覆盖。 */
+    fun embedQuery(text: String): FloatArray? = embed(text)
+
+    /** 文档/描述侧：不加前缀。 */
+    fun embedPassage(text: String): FloatArray? = embed(text)
 }
 
 object Vectors {
