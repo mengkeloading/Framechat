@@ -96,7 +96,7 @@ android {
         buildConfig = true
     }
 
-    sourceSets.getByName("main").java.directories.addAll(
+    sourceSets.getByName("main").kotlin.directories.addAll(
         listOf(
             frameworkSrc.resolve("main/kotlin").path,
             frameworkSrc.resolve("sandbox/kotlin").path,
