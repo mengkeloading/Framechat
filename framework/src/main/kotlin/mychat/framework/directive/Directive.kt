@@ -53,7 +53,8 @@ class DirectiveEngine(
     fun process(raw: String): ProcessResult {
         val log = mutableListOf<DirectiveTrace>()
         val text = render(raw, 0, raw.length, depth = 0, log = log)
-        return ProcessResult(text, log)
+        // 删掉指令块后往往会留下一个孤立的换行（「正文\n[[HIDE]]…」）
+        return ProcessResult(text.trimEnd(), log)
     }
 
     private fun render(

@@ -2667,7 +2667,8 @@ class ChatViewModel(
             if (BuildConfig.DEBUG && directiveResult.log.isNotEmpty()) {
                 android.util.Log.d("MyChat/Directive", directiveResult.log.joinToString("\n"))
             }
-            val finalText = directiveResult.text
+            // 整条都被指令删光时回到原文：宁可多显示一行套话，也不要一条空回复
+            val finalText = directiveResult.text.ifBlank { shownContent }
 
             val finalReasoning = reasoningText
             /*

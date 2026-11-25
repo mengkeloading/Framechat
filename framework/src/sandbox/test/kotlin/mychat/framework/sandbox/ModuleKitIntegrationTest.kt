@@ -1,5 +1,6 @@
 package mychat.framework.sandbox
 
+import mychat.framework.directive.DirectiveEngine
 import mychat.framework.hook.AuditLog
 import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
@@ -69,6 +70,7 @@ fun main() {
     noFluff(dispatcher, session)
     ctxPassthrough(dispatcher, session)
     noFluffViaRunner(registry)
+    directiveEndToEnd(registry)
 
     // shim 有问题必须暴露，不能靠 fail-open 吞掉
     val swallowed = dispatcher.traces.filter { it.message.contains("执行异常") }
@@ -98,33 +100,41 @@ private fun attachContext(dispatcher: ModuleDispatcher, session: HookSession) {
     check("attach_context: extra 带上附加内容", extra.contains("用英文回答"), "extra=$extra")
 }
 
-/** 真模块 no-fluff：砍掉结尾套话，但不伤正文。 */
+/** 真模块 no-fluff：把结尾套话包成 [[HIDE]]，由指令引擎删掉。 */
 private fun noFluff(dispatcher: ModuleDispatcher, session: HookSession) {
     val s = session.copy(activeHardModules = listOf("no_fluff"))
     val withFluff = "这是结论。\n\n希望这些能对你有帮助。"
     val result = dispatcher.dispatchOutput(s, withFluff)
     check("no_fluff: 返回 rewrite", result is HookBResult.Rewrite, "实际 ${result::class.simpleName}")
     val text = result.text
-    eq("no_fluff: 只留正文", "这是结论。", text)
-    check("no_fluff: 套话被删掉", !text.contains("希望"))
+    eq(
+        "no_fluff: 产出 HIDE 包裹",
+        "这是结论。\n[[HIDE]]希望这些能对你有帮助。[[/HIDE]]",
+        text
+    )
+    check("no_fluff: 不再当场删（原文仍在）", text.contains("希望这些能对你有帮助"))
 
-    // 带实质内容的段落（含「核心/是」）一律不剪
+    // 带实质内容的段落（含「核心/是」）一律不包
     val substantive = "总之，协程的三个核心是 A、B、C。"
     val kept = dispatcher.dispatchOutput(s, substantive)
-    check("no_fluff: 「总之…核心是」不删", kept is HookBResult.Pass, "实际 ${kept::class.simpleName}")
+    check("no_fluff: 「总之…核心是」不包", kept is HookBResult.Pass, "实际 ${kept::class.simpleName}")
     eq("no_fluff: 实质性段落原样返回", substantive, kept.text)
 
-    // 整条都是寒暄（单段）时，剪掉会变成空串 → 模块返回 null → 原样
+    // 整条都是寒暄（单段）时，包了会变成整条 HIDE → 模块返回 null
     val greeting = "你好！有什么需要帮忙的吗？直接说就行。"
     val greetingKept = dispatcher.dispatchOutput(s, greeting)
-    check("no_fluff: 整条寒暄不删", greetingKept is HookBResult.Pass, "实际 ${greetingKept::class.simpleName}")
+    check("no_fluff: 整条寒暄不包", greetingKept is HookBResult.Pass, "实际 ${greetingKept::class.simpleName}")
     eq("no_fluff: 寒暄原样返回", greeting, greetingKept.text)
 
     // 模型常用单换行分段：没有空行时只看最后一行
     val singleBreak = "你好！有什么我可以帮你的吗？\n如果你接着想聊 Kotlin 协程，可以说…其他问题也随时问"
     val single = dispatcher.dispatchOutput(s, singleBreak)
-    check("no_fluff: 单换行也能剪", single is HookBResult.Rewrite, "实际 ${single::class.simpleName}")
-    eq("no_fluff: 只删最后一行", "你好！有什么我可以帮你的吗？", single.text)
+    check("no_fluff: 单换行也包", single is HookBResult.Rewrite, "实际 ${single::class.simpleName}")
+    eq(
+        "no_fluff: 只包最后一行",
+        "你好！有什么我可以帮你的吗？\n[[HIDE]]如果你接着想聊 Kotlin 协程，可以说…其他问题也随时问[[/HIDE]]",
+        single.text
+    )
 }
 
 /** 真模块 no_fluff 经 HookRunner.output 改写（钩子 B 端到端）。 */
@@ -134,8 +144,34 @@ private fun noFluffViaRunner(registry: ModuleRegistry) {
     val raw = "这是结论。\n\n希望这些能对你有帮助。"
     val result = runner.output(session, raw)
     check("runner+b: 返回 rewrite", result is HookBResult.Rewrite, "实际 ${result::class.simpleName}")
-    eq("runner+b: 套话被删", "这是结论。", result.text)
+    check("runner+b: 输出包含 [[HIDE]]", result.text.contains("[[HIDE]]"))
+    eq(
+        "runner+b: 正文 + 包裹后的套话",
+        "这是结论。\n[[HIDE]]希望这些能对你有帮助。[[/HIDE]]",
+        result.text
+    )
     check("runner+b: 留下 hookB 轨迹", runner.lastTrace().any { it.tag == "hookB" })
+}
+
+/** 端到端：真模块产出 HIDE → 真引擎删掉 → 只剩正文。 */
+private fun directiveEndToEnd(registry: ModuleRegistry) {
+    val runner = HookRunner(registry, RhinoJsExecutor(registry))
+    val session = HookSession(id = "s-e2e", activeHardModules = listOf("no_fluff"))
+
+    val hooked = runner.output(session, "正文\n\n希望这些能对你有帮助。")
+    eq(
+        "e2e: 模块产出 HIDE 包裹",
+        "正文\n[[HIDE]]希望这些能对你有帮助。[[/HIDE]]",
+        hooked.text
+    )
+
+    val result = DirectiveEngine().process(hooked.text)
+    eq("e2e: 引擎处理后只剩正文", "正文", result.text)
+    check(
+        "e2e: 有 HIDE applied 记录",
+        result.log.any { it.name == "HIDE" && it.status == "applied" }
+    )
+    check("e2e: 套话确实不在结果里", !result.text.contains("希望"))
 }
 
 /** 真模块 debug-ctx：把看到的 ctx 原样打出来，同时验证信封形态。 */

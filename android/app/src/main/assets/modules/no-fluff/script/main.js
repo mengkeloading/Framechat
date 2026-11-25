@@ -23,14 +23,17 @@ function (inputJson, host) {
   if (!t) return null;
   var parts = t.split(/\n\s*\n/);
   if (parts.length === 1) {
-    // 模型常用单换行分段：没有空行时只看最后一行，且整行要是套话才删
+    // 模型常用单换行分段：没有空行时只看最后一行，且整行要是套话才包
     var lines = t.split('\n');
     if (lines.length < 2) return null;
     var tail = lines[lines.length - 1].trim();
     if (!tail || tail.length >= 100 || !isFluff(tail)) return null;
-    var kept = lines.slice(0, lines.length - 1).join('\n').replace(/\s+$/, '');
-    if (!kept) return null;
-    return ModuleKit.reply({ type: 'rewrite', text: kept });
+    var keptLine = lines.slice(0, lines.length - 1).join('\n').replace(/\s+$/, '');
+    if (!keptLine) return null;
+    return ModuleKit.reply({
+      type: 'rewrite',
+      text: keptLine + '\n[[HIDE]]' + tail + '[[/HIDE]]'
+    });
   }
   var cut = parts.length;
   for (var k = parts.length - 1; k >= 0 && k >= parts.length - 2; k--) {
@@ -40,7 +43,12 @@ function (inputJson, host) {
     break;
   }
   if (cut >= parts.length) return null;
-  var out = parts.slice(0, cut).join('\n\n').replace(/\s+$/, '');
-  if (!out) return null;
-  return ModuleKit.reply({ type: 'rewrite', text: out });
+  var keptParts = parts.slice(0, cut).join('\n\n').replace(/\s+$/, '');
+  if (!keptParts) return null;
+  var fluffParts = parts.slice(cut).filter(function (x) { return x.trim(); });
+  if (!fluffParts.length) return null;
+  return ModuleKit.reply({
+    type: 'rewrite',
+    text: keptParts + '\n[[HIDE]]' + fluffParts.join('\n\n') + '[[/HIDE]]'
+  });
 }
