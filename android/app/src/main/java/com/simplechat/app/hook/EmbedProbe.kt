@@ -3,6 +3,7 @@ package com.simplechat.app.hook
 import android.content.Context
 import android.util.Log
 import mychat.framework.embedding.Candidate
+import mychat.framework.embedding.ModuleDocuments
 import mychat.framework.embedding.ModuleRouter
 import mychat.framework.hook.ModuleRegistry
 
@@ -42,7 +43,8 @@ object EmbedProbe {
             val candidates = scan.registry.all()
                 .filter { it.manifest.description.isNotBlank() }
                 .mapNotNull { pkg ->
-                    embedder.embedPassage(pkg.manifest.description)?.let { Candidate(pkg.id, it) }
+                    embedder.embedPassage(ModuleDocuments.textOf(pkg))
+                        ?.let { Candidate(pkg.id, it) }
                 }
             lines += "candidates=${candidates.size} problems=${scan.problems.size}"
 

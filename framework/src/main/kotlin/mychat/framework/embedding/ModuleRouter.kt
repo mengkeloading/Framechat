@@ -47,6 +47,10 @@ object ModuleRouter {
             .map { Scored(it.name, Vectors.cosine(query, it.vector)) }
             .sortedByDescending { it.score }
 
+    /**
+     * 返回空列表**不等于“不激活任何模块”**：调用方应当回退到全量注入
+     * （注入所有启用模块的 SKILL.md）。路由是优化，不是必需。
+     */
     fun decide(query: FloatArray, candidates: List<Candidate>): RouteDecision {
         if (candidates.isEmpty()) return RouteDecision(emptyList(), null, null, "empty")
         val sorted = rank(query, candidates)

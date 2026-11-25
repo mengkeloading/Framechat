@@ -1,10 +1,14 @@
 package mychat.framework
 
 import mychat.framework.embedding.Candidate
+import mychat.framework.embedding.ModuleDocuments
 import mychat.framework.embedding.ModuleRouter
 import mychat.framework.embedding.TextEmbedder
 import mychat.framework.embedding.Vectors
 import mychat.framework.embedding.WordPieceTokenizer
+import mychat.framework.hook.ModuleManifest
+import mychat.framework.hook.ModulePackage
+import mychat.framework.hook.ModuleRegistry
 import java.io.File
 import kotlin.math.abs
 import kotlin.system.exitProcess
@@ -29,6 +33,7 @@ fun main() {
     tokenizerTests()
     routingTests()
     routingDecisionTests()
+    moduleDocumentTests()
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -93,6 +98,48 @@ private fun tokenizerTests() {
         tokenizer.basicTokens("你好，world")
     )
     check("token: 拉丁词按词表贪心切分", tokenizer.wordPieces("coroutine").isNotEmpty())
+}
+
+// ---------- 模块向量化文本 ----------
+
+private fun pkgOf(name: String, description: String, body: String) = ModulePackage(
+    manifest = ModuleManifest(id = name, name = name, description = description),
+    body = body,
+    scripts = emptyMap(),
+    references = emptyMap()
+)
+
+private fun moduleDocumentTests() {
+    val pkg = pkgOf("周报排版", "把清单排成周报", "## 它做什么\n整理周报")
+    eq(
+        "doc: name/description/body 三段拼起来",
+        "周报排版\n把清单排成周报\n## 它做什么\n整理周报",
+        ModuleDocuments.textOf(pkg)
+    )
+
+    val long = pkgOf("长文", "描述", "字".repeat(1000))
+    val longText = ModuleDocuments.textOf(long)
+    eq("doc: 正文截断到 600", 600, longText.substringAfterLast('\n').length)
+
+    val noBody = pkgOf("空正文", "描述", "")
+    eq("doc: 无正文时只有两行", "空正文\n描述", ModuleDocuments.textOf(noBody))
+    eq("doc: 无正文不多个空行", 1, ModuleDocuments.textOf(noBody).count { it == '\n' })
+
+    // 真模块：确认正文真的进了向量文本（不是只拼了 description）
+    val repoRoot = System.getProperty("mychat.repoRoot")
+    if (repoRoot != null) {
+        val registry = ModuleRegistry.scan(
+            File(repoRoot, "android/app/src/main/assets/modules")
+        ).registry
+        val novel = registry.getPackage("skill_novel")
+        check("doc: 真模块 skill_novel 能扫到", novel != null)
+        if (novel != null) {
+            val text = ModuleDocuments.textOf(novel)
+            check("doc: 真模块含 name", text.contains(novel.manifest.name))
+            check("doc: 真模块含 description", text.contains(novel.manifest.description))
+            check("doc: 真模块含正文", text.contains(novel.body.take(20).trim()))
+        }
+    }
 }
 
 // ---------- 路由逻辑（不依赖真模型） ----------

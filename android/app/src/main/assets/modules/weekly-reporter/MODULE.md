@@ -1,7 +1,7 @@
 ---
 id: weekly_reporter
 name: 周报排版
-description: 把任务清单整理成周报，格式规则放在 reference/style.md，按需加载
+description: 周报排版。用户说"写个周报""整理成周报""这周做了什么"时使用。把已有清单按格式排好，不负责规划任务、不负责拆需求。
 version: 1.0.0
 hooks: [output]
 inject: summary
