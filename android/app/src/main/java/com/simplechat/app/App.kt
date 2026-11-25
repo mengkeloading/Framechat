@@ -26,7 +26,7 @@ import okhttp3.OkHttpClient
 class App : Application() {
 
     /** 调试包才会播种的模块：验链路用，release 不碰。 */
-    private val DEBUG_SEED_MODULES = setOf("debug_ctx", "local_calc", "no_fluff")
+    private val DEBUG_SEED_MODULES = setOf("debug_ctx", "local_calc", "no_fluff", "usage_declare")
 
     lateinit var container: AppContainer
         private set
@@ -47,6 +47,7 @@ class App : Application() {
         com.simplechat.app.data.CrashDiagnostics.install(this)
         Res.init(this)
         container = AppContainer(this)
+        com.simplechat.app.hook.UsageLog.install(this)
 
         /*
          * 模块表要在主线程扫一次（19 个目录 / 51 个文件，毫秒级）。

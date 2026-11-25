@@ -2670,6 +2670,22 @@ class ChatViewModel(
             // 整条都被指令删光时回到原文：宁可多显示一行套话，也不要一条空回复
             val finalText = directiveResult.text.ifBlank { shownContent }
 
+            /*
+             * 模块使用声明：模型在末尾写的 [[USED:x]] 已经在上面被剥掉了，
+             * 这里只把结果记下来 —— 用来判断“加载了但没用”还是“用了但没声明”。
+             */
+            if (BuildConfig.DEBUG) {
+                val used = directiveResult.meta[DirectiveEngine.META_USED].orEmpty()
+                val line = "loaded=" + stored.enabledModules.joinToString(",") +
+                    " used=" + used.joinToString(",")
+                android.util.Log.d("MyChat/Used", line)
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        com.simplechat.app.hook.UsageLog.record(line)
+                    }
+                }
+            }
+
             val finalReasoning = reasoningText
             /*
              * **真实**思考时长 = 首条思维链 → 首条正文。

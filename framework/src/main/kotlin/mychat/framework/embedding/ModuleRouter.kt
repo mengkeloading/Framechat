@@ -42,6 +42,15 @@ object ModuleRouter {
     /** 最多激活几个模块。 */
     const val MAX_MODULES = 2
 
+    /**
+     * 不参与路由的模块：它自己就是兜底路径（全量注入）。
+     * 描述是「把所有技能规范注入本轮，由模型自己判断」，天然和所有查询沾边，
+     * 放进来只会制造假 margin。无条件排除，不看分数。
+     */
+    val EXCLUDED_IDS = setOf("skill_hub")
+
+    fun isRoutable(id: String): Boolean = id !in EXCLUDED_IDS
+
     fun rank(query: FloatArray, candidates: List<Candidate>): List<Scored> =
         candidates
             .map { Scored(it.name, Vectors.cosine(query, it.vector)) }
@@ -52,8 +61,9 @@ object ModuleRouter {
      * （注入所有启用模块的 SKILL.md）。路由是优化，不是必需。
      */
     fun decide(query: FloatArray, candidates: List<Candidate>): RouteDecision {
-        if (candidates.isEmpty()) return RouteDecision(emptyList(), null, null, "empty")
-        val sorted = rank(query, candidates)
+        val routable = candidates.filter { isRoutable(it.name) }
+        if (routable.isEmpty()) return RouteDecision(emptyList(), null, null, "empty")
+        val sorted = rank(query, routable)
         val top1 = sorted[0]
         val top2 = sorted.getOrNull(1)
 

@@ -110,22 +110,38 @@ private fun pkgOf(name: String, description: String, body: String) = ModulePacka
 )
 
 private fun moduleDocumentTests() {
-    val pkg = pkgOf("周报排版", "把清单排成周报", "## 它做什么\n整理周报")
+    // MODULE.md 正文里的「何时使用」
+    val withSection = pkgOf(
+        "周报排版", "把清单排成周报",
+        "## 何时使用\n用户说写周报时\n\n## 流程\n读 style 文件"
+    )
     eq(
-        "doc: name/description/body 三段拼起来",
-        "周报排版\n把清单排成周报\n## 它做什么\n整理周报",
-        ModuleDocuments.textOf(pkg)
+        "doc: name/description/何时使用",
+        "周报排版\n把清单排成周报\n用户说写周报时",
+        ModuleDocuments.textOf(withSection)
+    )
+    check("doc: 不含后续小节", !ModuleDocuments.textOf(withSection).contains("读 style"))
+    eq(
+        "doc: 节提取截止到下一个标题",
+        "用户说写周报时",
+        ModuleDocuments.sectionOf(withSection.body, ModuleDocuments.SECTION_HEADING)
     )
 
-    val long = pkgOf("长文", "描述", "字".repeat(1000))
-    val longText = ModuleDocuments.textOf(long)
-    eq("doc: 正文截断到 600", 600, longText.substringAfterLast('\n').length)
+    // SKILL.md 优先于正文
+    val withSkill = ModulePackage(
+        manifest = ModuleManifest(id = "s", name = "技能", description = "描述"),
+        body = "## 何时使用\n正文里的",
+        scripts = emptyMap(),
+        references = mapOf("SKILL.md" to "## 何时使用\n技能里的\n\n## 流程\nx")
+    )
+    eq("doc: SKILL.md 优先", "技能里的", ModuleDocuments.whenSection(withSkill))
 
-    val noBody = pkgOf("空正文", "描述", "")
-    eq("doc: 无正文时只有两行", "空正文\n描述", ModuleDocuments.textOf(noBody))
-    eq("doc: 无正文不多个空行", 1, ModuleDocuments.textOf(noBody).count { it == '\n' })
+    // 都没有 → 只有两行
+    val bare = pkgOf("无节", "描述", "## 流程\n只有流程")
+    eq("doc: 无节时只剩两行", "无节\n描述", ModuleDocuments.textOf(bare))
+    eq("doc: 无节时不多空行", 1, ModuleDocuments.textOf(bare).count { it == '\n' })
 
-    // 真模块：确认正文真的进了向量文本（不是只拼了 description）
+    // 真模块：skill_novel 的「何时使用」写在 reference/SKILL.md 里
     val repoRoot = System.getProperty("mychat.repoRoot")
     if (repoRoot != null) {
         val registry = ModuleRegistry.scan(
@@ -137,7 +153,7 @@ private fun moduleDocumentTests() {
             val text = ModuleDocuments.textOf(novel)
             check("doc: 真模块含 name", text.contains(novel.manifest.name))
             check("doc: 真模块含 description", text.contains(novel.manifest.description))
-            check("doc: 真模块含正文", text.contains(novel.body.take(20).trim()))
+            check("doc: 真模块取到 SKILL.md 的何时使用", text.contains("写小说片段"))
         }
     }
 }
@@ -233,7 +249,17 @@ private fun routingDecisionTests() {
     val ranked = ModuleRouter.rank(floatArrayOf(1f, 0f), all)
     eq("router: 排序降序", listOf("A", "B", "C"), ranked.map { it.name })
 
-    // 9. 常量是对外契约
+    // 9. skill_hub 不参与路由（它自己就是兜底路径）
+    eq("router: skill_hub 不可路由", false, ModuleRouter.isRoutable("skill_hub"))
+    eq("router: 普通模块可路由", true, ModuleRouter.isRoutable("local_calc"))
+    val withHub = listOf(
+        Candidate("skill_hub", floatArrayOf(1f, 0f)),
+        Candidate("real", floatArrayOf(0.9f, 0.4359f)),
+    )
+    val hubDecision = ModuleRouter.decide(floatArrayOf(1f, 0f), withHub)
+    eq("router: 候选里带 skill_hub 也会被过滤", listOf("real"), hubDecision.modules)
+
+    // 10. 常量是对外契约
     eq("router: MIN_SCORE", 0.30f, ModuleRouter.MIN_SCORE)
     eq("router: MIN_MARGIN", 0.05f, ModuleRouter.MIN_MARGIN)
     eq("router: SECOND_WINDOW", 0.15f, ModuleRouter.SECOND_WINDOW)

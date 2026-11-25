@@ -15,13 +15,20 @@ interface Directive {
 
 data class DirectiveTrace(
     val name: String,
-    /** applied | unknown | unclosed | depth */
+    /** applied | unknown | unclosed | depth | ignored */
     val status: String,
     /** 在原始文本里的区间；未识别的闭合标记只记标记本身。 */
-    val range: IntRange?
+    val range: IntRange?,
+    /** 元信息型指令携带的值（如 USED 的模块 id 列表）。 */
+    val value: String? = null
 )
 
-data class ProcessResult(val text: String, val log: List<DirectiveTrace>)
+data class ProcessResult(
+    val text: String,
+    val log: List<DirectiveTrace>,
+    /** 元信息型指令的产出，例如 used=[skill_code, skill_novel]。 */
+    val meta: Map<String, List<String>> = emptyMap()
+)
 
 /** 删除 `[[HIDE]]…[[/HIDE]]` 之间的内容。 */
 object HideDirective : Directive {
@@ -52,9 +59,41 @@ class DirectiveEngine(
      */
     fun process(raw: String): ProcessResult {
         val log = mutableListOf<DirectiveTrace>()
-        val text = render(raw, 0, raw.length, depth = 0, log = log)
+        val meta = LinkedHashMap<String, MutableList<String>>()
+        // 自闭合的元信息指令先处理掉，剩下的才是成对指令
+        val withoutMeta = extractUsed(raw, log, meta)
+        val text = render(withoutMeta, 0, withoutMeta.length, depth = 0, log = log)
         // 删掉指令块后往往会留下一个孤立的换行（「正文\n[[HIDE]]…」）
-        return ProcessResult(text.trimEnd(), log)
+        return ProcessResult(text.trimEnd(), log, meta)
+    }
+
+    /** `[[USED:a,b]]`：删标记、把 id 收进 meta。不是包裹型，不需要闭合。 */
+    private fun extractUsed(
+        raw: String,
+        log: MutableList<DirectiveTrace>,
+        meta: MutableMap<String, MutableList<String>>,
+    ): String {
+        if (!raw.contains("[[" + USED_NAME + ":")) return raw
+        val out = StringBuilder(raw.length)
+        var cursor = 0
+        for (m in USED_PATTERN.findAll(raw)) {
+            out.append(raw, cursor, m.range.first)
+            val ids = m.groupValues[1]
+                .split(',')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+            if (ids.isEmpty()) {
+                log += DirectiveTrace(USED_NAME, "ignored", m.range)
+            } else {
+                val used = meta.getOrPut(META_USED) { mutableListOf() }
+                for (id in ids) if (id !in used) used += id
+                log += DirectiveTrace(USED_NAME, "applied", m.range, ids.joinToString(","))
+            }
+            cursor = m.range.last + 1
+        }
+        out.append(raw, cursor, raw.length)
+        return out.toString()
     }
 
     private fun render(
@@ -145,7 +184,11 @@ class DirectiveEngine(
     companion object {
         const val MAX_DEPTH = 5
 
+        const val USED_NAME = "USED"
+        const val META_USED = "used"
+
         private val MARKER = Regex("\\[\\[(/?)([A-Za-z][A-Za-z0-9]*)\\]\\]")
+        private val USED_PATTERN = Regex("\\[\\[USED:([^\\]]+)\\]\\]")
 
         /**
          * 用户输入里的 `[[` 必须失效，否则用户能自己写 `[[HIDE]]` 把上下文删掉。

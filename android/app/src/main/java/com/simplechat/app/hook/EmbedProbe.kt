@@ -41,6 +41,7 @@ object EmbedProbe {
             // 候选 = assets 里所有带 description 的模块；文档侧不加前缀
             val scan = ModuleRegistry.scan(AssetModuleTree(context.assets, "modules"))
             val candidates = scan.registry.all()
+                .filter { ModuleRouter.isRoutable(it.id) }
                 .filter { it.manifest.description.isNotBlank() }
                 .mapNotNull { pkg ->
                     embedder.embedPassage(ModuleDocuments.textOf(pkg))

@@ -20,25 +20,25 @@ object EmbedLog {
 
     private const val NAME = "mychat-embed.log"
 
-    fun append(context: Context, lines: List<String>): String {
+    fun append(context: Context, lines: List<String>, name: String = NAME): String {
         val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
         val body = buildString {
             for (line in lines) append('[').append(now).append("] ").append(line).append('\n')
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val path = writeToDownloads(context, body)
+            val path = writeToDownloads(context, body, name)
             if (path != null) return path
         }
 
         val dir = context.getExternalFilesDir(null) ?: context.filesDir
-        val file = File(dir, NAME)
+        val file = File(dir, name)
         file.appendText(body)
         return file.absolutePath
     }
 
     /** 同名文件存在就追加，不存在就新建；任何一步失败返回 null，交给调用方回退。 */
-    private fun writeToDownloads(context: Context, body: String): String? = runCatching {
+    private fun writeToDownloads(context: Context, body: String, name: String): String? = runCatching {
         val resolver = context.contentResolver
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
 
@@ -46,7 +46,7 @@ object EmbedLog {
             collection,
             arrayOf(MediaStore.MediaColumns._ID),
             MediaStore.MediaColumns.DISPLAY_NAME + "=?",
-            arrayOf(NAME),
+            arrayOf(name),
             null,
         )?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
 
@@ -54,7 +54,7 @@ object EmbedLog {
             ContentUris.withAppendedId(collection, existingId)
         } else {
             val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, NAME)
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                 put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             }
@@ -63,6 +63,6 @@ object EmbedLog {
 
         resolver.openOutputStream(uri, "wa")?.use { it.write(body.toByteArray()) }
             ?: error("openOutputStream failed")
-        "Download/$NAME"
+        "Download/$name"
     }.getOrNull()
 }

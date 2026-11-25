@@ -71,10 +71,45 @@ fun main() {
     eq("log: 两条记录", 2, r8.log.size)
     eq("log: 名字齐全", listOf("HIDE", "BAR"), r8.log.map { it.name })
 
+    usedTests(engine)
+
     println()
     println("PASS $passed / ${passed + failures.size}")
     if (failures.isNotEmpty()) {
         failures.forEach { println("  - $it") }
         exitProcess(1)
     }
+}
+
+/** USED 是自闭合的元信息指令：删标记、id 进 meta，不影响其他指令。 */
+private fun usedTests(engine: DirectiveEngine) {
+    val one = engine.process("答案正文[[USED:a]]")
+    eq("used: 标记被移除", "答案正文", one.text)
+    eq("used: meta 记一个 id", listOf("a"), one.meta[DirectiveEngine.META_USED])
+    eq("used: log 带值", "a", one.log.singleOrNull()?.value)
+
+    val two = engine.process("[[USED:a,b]]")
+    eq("used: 逗号分隔多个", listOf("a", "b"), two.meta["used"])
+    eq("used: 只剩标记时正文为空", "", two.text)
+
+    val middle = engine.process("开头[[USED:x]]中间")
+    eq("used: 开头/中间也能移除", "开头中间", middle.text)
+
+    val merged = engine.process("正文[[USED:a]][[USED:b]][[USED:a]]")
+    eq("used: 多个 USED 合并并去重", listOf("a", "b"), merged.meta["used"])
+
+    // 未知指令不能误伤
+    val unknown = engine.process("x[[FOO]]y")
+    eq("used: 未知指令仍原样保留", "x[[FOO]]y", unknown.text)
+    eq("used: 未知指令不产生 meta", null, unknown.meta["used"])
+
+    // 转义过的标记不解析（复用既有转义）
+    val escaped = DirectiveEngine.escapeUserInput("[[USED:a]]")
+    val escapedResult = engine.process(escaped)
+    eq("used: 转义后不解析", null, escapedResult.meta["used"])
+
+    // USED 与成对指令共存
+    val both = engine.process("[[HIDE]]隐[[/HIDE]]正文[[USED:z]]")
+    eq("used: 与 HIDE 共存", "正文", both.text)
+    eq("used: 共存时 meta 仍记", listOf("z"), both.meta["used"])
 }
