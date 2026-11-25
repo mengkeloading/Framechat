@@ -1,7 +1,7 @@
 ---
 id: math_guard
 name: 计算守门
-description: 输入含「算一下」时注入分步计算的附加要求
+description: 数学错误检查。当回答里出现计算过程、单位、数量对比时，用于核对是否有算错的地方。它不负责计算，只负责发现错误。
 version: 1.0.0
 hooks: [input]
 inject: none

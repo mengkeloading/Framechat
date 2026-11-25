@@ -70,9 +70,10 @@ object EmbedProbe {
         val name = top1?.name ?: "-"
         val score = String.format("%.4f", top1?.score ?: 0f)
         val margin = String.format("%.4f", decision.margin)
-        val top1Ok = decision.module == case.expected
-        val marginOk = decision.module != null && decision.margin > ModuleRouter.MIN_MARGIN
-        return "route(${case.query}) -> $name score=$score margin=$margin " +
+        val top1Ok = decision.primary == case.expected
+        val marginOk = decision.modules.isNotEmpty() && decision.margin > ModuleRouter.MIN_MARGIN
+        val also = decision.modules.drop(1).joinToString(",").ifEmpty { "-" }
+        return "route(${case.query}) -> $name score=$score margin=$margin also=$also " +
             "TOP1=${if (top1Ok) "Y" else "N"} MARGIN=${if (marginOk) "Y" else "N"} " +
             "(期望=${case.expected} 原因=${decision.reason})"
     }

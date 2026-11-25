@@ -132,47 +132,63 @@ private fun routingTests() {
 // ---------- 相对排序判定 ----------
 
 private fun routingDecisionTests() {
-    val a = Candidate("A", floatArrayOf(1f, 0f, 0f))
-    val b = Candidate("B", floatArrayOf(0.6f, 0.8f, 0f))
-    val c = Candidate("C", floatArrayOf(0f, 1f, 0f))
+    val a = Candidate("A", floatArrayOf(1f, 0f))
+    val b = Candidate("B", floatArrayOf(0.60f, 0.80f))   // cos 0.60
+    val c = Candidate("C", floatArrayOf(0f, 1f))          // cos 0
     val all = listOf(a, b, c)
 
-    // 1. 明颞胜出
-    val clear = ModuleRouter.decide(floatArrayOf(1f, 0f, 0f), all)
-    eq("router: 明颞胜出选 A", "A", clear.module)
+    // 1. 明颞胜出且第二名差距 > 0.15 → 只收一个
+    val clear = ModuleRouter.decide(floatArrayOf(1f, 0f), all)
+    eq("router: 明颞胜出只选一个", listOf("A"), clear.modules)
     eq("router: 原因是 hit", "hit", clear.reason)
-    check("router: margin 大于阈值", clear.margin > ModuleRouter.MIN_MARGIN, "margin=${clear.margin}")
 
-    // 2. 全低：什么都不像，不硬选
-    val none = ModuleRouter.decide(floatArrayOf(0.1f, 0.1f, 0.9f), all)
-    eq("router: 全低不选", null, none.module)
+    // 2. 第二名落在 0.15 窗口内 → 两个都要（协作）
+    val near = listOf(
+        Candidate("calc", floatArrayOf(1f, 0f)),
+        Candidate("guard", floatArrayOf(0.92f, 0.3919f)),   // cos ≈ 0.92
+    )
+    val pair = ModuleRouter.decide(floatArrayOf(1f, 0f), near)
+    eq("router: 窗口内收两个", listOf("calc", "guard"), pair.modules)
+    check("router: 顺序按分数降序", pair.top1!!.score >= pair.top2!!.score)
+
+    // 3. 全低 → 空，交给全量注入兜底
+    val far = listOf(a, Candidate("E", floatArrayOf(0.2f, -0.9798f)))
+    val none = ModuleRouter.decide(floatArrayOf(0f, 1f), far)
+    eq("router: 全低返回空", emptyList<String>(), none.modules)
     eq("router: 原因是 below_min", "below_min", none.reason)
 
-    // 3. 两个差不多：差距不够，不选
-    val tie = listOf(
-        Candidate("X", floatArrayOf(1f, 0f)),
-        Candidate("Y", floatArrayOf(1f, 0.05f)),
-    )
-    val tied = ModuleRouter.decide(floatArrayOf(1f, 0f), tie)
-    eq("router: 并列不选", null, tied.module)
-    eq("router: 原因是 margin", "margin", tied.reason)
-
-    // 4. 只有一个候选且够像 → 选它
-    val single = ModuleRouter.decide(floatArrayOf(1f, 0f, 0f), listOf(a))
-    eq("router: 单候选命中", "A", single.module)
+    // 4. 只有一个候选且够像 → 一个
+    val single = ModuleRouter.decide(floatArrayOf(1f, 0f), listOf(a))
+    eq("router: 单候选返回一个", listOf("A"), single.modules)
     eq("router: 单候选 margin 视为无限", 1f, single.margin)
 
     // 5. 空候选
     val empty = ModuleRouter.decide(floatArrayOf(1f, 0f), emptyList())
-    eq("router: 空候选不选", null, empty.module)
+    eq("router: 空候选返回空", emptyList<String>(), empty.modules)
     eq("router: 空候选原因是 empty", "empty", empty.reason)
 
-    // 6. 排序降序
-    val ranked = ModuleRouter.rank(floatArrayOf(1f, 0f, 0f), all)
-    eq("router: 排序稳定降序", listOf("A", "B", "C"), ranked.map { it.name })
-    check("router: 分数降序", ranked[0].score >= ranked[1].score && ranked[1].score >= ranked[2].score)
+    // 6. 三个都在窗口内 → 最多两个
+    val triple = listOf(
+        Candidate("t1", floatArrayOf(1f, 0f)),
+        Candidate("t2", floatArrayOf(0.95f, 0.3122f)),
+        Candidate("t3", floatArrayOf(0.90f, 0.4359f)),
+    )
+    eq("router: 最多两个", 2, ModuleRouter.decide(floatArrayOf(1f, 0f), triple).modules.size)
 
-    // 7. 阈值常量是对外契约，写死防止被随手改
+    // 7. 窗口外的不收：0.80 与 top1 差 0.20
+    val outside = listOf(
+        Candidate("near", floatArrayOf(1f, 0f)),
+        Candidate("far", floatArrayOf(0.80f, 0.60f)),
+    )
+    eq("router: 窗口外不收", listOf("near"), ModuleRouter.decide(floatArrayOf(1f, 0f), outside).modules)
+
+    // 8. 排序降序
+    val ranked = ModuleRouter.rank(floatArrayOf(1f, 0f), all)
+    eq("router: 排序降序", listOf("A", "B", "C"), ranked.map { it.name })
+
+    // 9. 常量是对外契约
     eq("router: MIN_SCORE", 0.30f, ModuleRouter.MIN_SCORE)
     eq("router: MIN_MARGIN", 0.05f, ModuleRouter.MIN_MARGIN)
+    eq("router: SECOND_WINDOW", 0.15f, ModuleRouter.SECOND_WINDOW)
+    eq("router: MAX_MODULES", 2, ModuleRouter.MAX_MODULES)
 }
