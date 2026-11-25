@@ -1,0 +1,219 @@
+/* chatviewmodel.js — 对应 ChatViewModel.kt（文档 7.7）
+ * 已修：tempId 占位带 pending；定型时清 pending；D8 第二轮不重复传 userInput
+ */
+(function (global) {
+  'use strict';
+
+  var S = {
+    IDLE: { type: 'idle' },
+    SENDING: { type: 'sending' },
+    STREAMING: { type: 'streaming' },
+    EXECUTING_TOOL: { type: 'executing_tool' },
+    EXECUTING_LOCAL: { type: 'executing_local' }
+  };
+  function errState(message, retryable) {
+    return { type: 'error', message: message, retryable: !!retryable };
+  }
+
+  function ToolCallAccumulator(index) {
+    this.index = index; this.id = ''; this.name = ''; this.args = '';
+  }
+  ToolCallAccumulator.prototype.build = function () {
+    return {
+      index: this.index, id: this.id, name: this.name,
+      args: this.args.trim() ? this.args : '{}'
+    };
+  };
+
+  function ChatViewModel(deps) {
+    this.db = deps.db;
+    this.dispatcher = deps.dispatcher;
+    this.requestBuilder = deps.requestBuilder;
+    this.apiClient = deps.apiClient;
+    this.jsExecutor = deps.jsExecutor;
+    this.state = S.IDLE;
+            this.aborted = false;
+            this.pendingAttachments = [];
+    this.listeners = [];
+  }
+
+  ChatViewModel.prototype.subscribe = function (fn) { this.listeners.push(fn); };
+  ChatViewModel.prototype.setState = function (s) {
+    this.state = s;
+    for (var i = 0; i < this.listeners.length; i++) this.listeners[i]();
+  };
+  ChatViewModel.prototype.messages = function (sessionId) {
+    return this.db.messageDao.getBySession(sessionId);
+  };
+
+  ChatViewModel.prototype.send = async function (sessionId, userInput) {
+    if (this.state.type !== 'idle') return;
+    var session = this.db.sessionDao.get(sessionId);
+    if (!session) throw new Error('session_not_found');
+    var historyBase = this.db.messageDao.getContextForRequest(sessionId);
+    await this.runChatLoop(session, userInput, historyBase);
+  };
+
+  ChatViewModel.prototype.runChatLoop = async function (session, userInput, historyBase) {
+    var sessionId = session.id;
+    var round = 0;
+    var truncated = false;
+    var pendingToolMessages = [];
+
+    try {
+      /* 1. 钩子 A */
+      var hookA = await this.dispatcher.dispatchInput(
+        session, userInput, this.pendingAttachments, this.list);
+
+      if (hookA.type === 'local') {
+        this.setState(S.EXECUTING_LOCAL);
+        this.db.messageDao.insert({
+          sessionId: sessionId, role: 'assistant', content: hookA.text, local: true
+        });
+        return;
+      }
+
+      var effectiveInput = hookA.text || userInput;
+              /* 自动标题 */
+              var nom = /^(|新对话|会话\s*\d+)$/.test(session.title || '');
+              if (nom) {
+                var ttl = String(effectiveInput).slice(0, 12);
+                if (ttl) {
+                  session.title = ttl;
+                  this.db.sessionDao.update(sessionId, { title: ttl });
+                }
+              }
+      var hookAExtra = hookA.type === 'context' ? (hookA.extra || null) : null;
+
+      /* 2. 落库用户消息 */
+      this.db.messageDao.insert({ sessionId: sessionId, role: 'user', content: effectiveInput });
+
+      while (true) {
+        if (round >= session.maxToolRounds) { truncated = true; break; }
+        round += 1;
+
+        /* 4. 组包（D8：仅第一轮传 userInput） */
+        var history = (round === 1) ? historyBase
+                                    : this.db.messageDao.getContextForRequest(sessionId);
+        var request = await this.requestBuilder.build(
+          session, history, (round === 1) ? effectiveInput : null,
+          hookAExtra, pendingToolMessages);
+
+        /* 5. 流式 */
+        this.setState(S.SENDING);
+        var tempId = uuid();
+        this.db.messageDao.insert({
+          sessionId: sessionId, role: 'assistant', content: '', id: tempId, pending: true
+        });
+        this.setState(S.STREAMING);
+
+        var fragments = {};
+        var content = '';
+        var wasCancelled = false;
+                for await (var line of this.apiClient.streamChat(session.providerId, request)) {
+          if (this.aborted) { wasCancelled = true; break; }
+          var delta = SseParser.extractDelta(line);
+          if (delta) {
+            content += delta;
+            this.db.messageDao.update(tempId, { content: content });
+            this.setState(S.STREAMING);
+          }
+          var frag = SseParser.extractToolCalls(line);
+          if (frag) {
+            if (!fragments[frag.index]) fragments[frag.index] = new ToolCallAccumulator(frag.index);
+            var acc = fragments[frag.index];
+            if (frag.id) acc.id = frag.id;
+            if (frag.name) acc.name = frag.name;
+            acc.args += frag.argumentsFragment;
+          }
+        }
+
+                        if (wasCancelled) {
+                  this.aborted = false;
+                  this.db.messageDao.update(tempId, {
+                    content: content, pending: false, stopped: true
+                  });
+                  return { cancelled: true, chars: content.length };
+                }
+                /* 6. 钩子 B */
+        var rawText = content;
+        var hookB = await this.dispatcher.dispatchOutput(session, rawText,
+          { sessionId: sessionId, input: effectiveInput });
+        var finalText = (hookB.type === 'rewrite') ? hookB.text : rawText;
+
+        var toolCalls = Object.keys(fragments).map(function (k) {
+          return fragments[k].build();
+        });
+
+        if (toolCalls.length) {
+          this.db.messageDao.update(tempId, { content: finalText, pending: false });
+          this.setState(S.EXECUTING_TOOL);
+          pendingToolMessages = [];
+          for (var i = 0; i < toolCalls.length; i++) {
+            var tc = toolCalls[i];
+            var recordId = this.db.toolCallDao.insert({
+              messageId: tempId, rawRequestJson: tc.args
+            });
+            var resultJson, ok = true, errMsg = null;
+            try {
+              resultJson = await this.jsExecutor.execute(tc.name, tc.args);
+            } catch (e) {
+              var mapped = ErrorMapper.mapJsError(e);
+              resultJson = mapped.json; ok = false; errMsg = mapped.err;
+            }
+            this.db.toolCallDao.update(recordId, {
+              rawResultJson: resultJson, success: ok, errorMessage: errMsg
+            });
+            var toolMsgId = this.db.messageDao.insert({
+              sessionId: sessionId, role: 'tool', content: resultJson, toolCallId: tc.id
+            });
+            pendingToolMessages.push({
+              content: resultJson, toolCallId: tc.id, id: toolMsgId
+            });
+          }
+          continue;
+        }
+
+        this.db.messageDao.update(tempId, { content: finalText, pending: false, rewritten: (hookB.type === 'rewrite') });
+        break;
+      }
+
+      if (truncated) {
+        this.db.messageDao.insert({
+          sessionId: sessionId, role: 'system',
+          content: '工具调用次数达到上限，对话已中断'
+        });
+      }
+    } catch (e) {
+      this.setState(errState(ErrorMapper.map(e), true));
+    } finally {
+      if (this.state.type !== 'error') this.setState(S.IDLE);
+    }
+  };
+
+    ChatViewModel.prototype.cancel = function () {
+    if (this.state.type === 'streaming' || this.state.type === 'sending') {
+      this.aborted = true;
+    }
+  };
+
+  /* 重试：删掉最后一条 user 及其后的残留，再走一遍正常发送 */
+  ChatViewModel.prototype.retry = async function (sessionId) {
+    if (this.state.type !== 'error') return null;
+    var rows = this.db.messageDao.getBySession(sessionId);
+    var lastUser = null;
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].role === 'user') { lastUser = rows[i]; break; }
+    }
+    if (!lastUser) return null;
+    var text = lastUser.content;
+    this.db.messageDao.deleteAfter(sessionId, lastUser.id);
+    this.db.messageDao.remove(lastUser.id);
+    this.setState(S.IDLE);
+    await this.send(sessionId, text);
+    return { retried: true };
+  };
+
+  ChatViewModel.STATES = S;
+  global.ChatViewModel = ChatViewModel;
+})(window);

@@ -1,0 +1,132 @@
+package mychat.framework.hook
+
+import mychat.framework.json.JsonValue
+import mychat.framework.json.parseJson
+
+/**
+ * MODULE.md 的 front matter。只支持模块用得到的 YAML 子集：
+ * 标量、`- item` 列表、一层嵌套映射（capabilities）。
+ * 手写解析是为了零依赖；遇到无法理解的结构不报错，留空由 manifest 兜底。
+ */
+data class FrontMatter(
+    val scalars: Map<String, String>,
+    val lists: Map<String, List<String>>,
+    val maps: Map<String, Map<String, String>>,
+    val body: String
+) {
+    companion object {
+        fun parse(text: String): FrontMatter? {
+            val norm = text.replace("\r\n", "\n").replace('\r', '\n')
+            val lines = norm.split('\n')
+            if (lines.isEmpty() || lines[0].trim() != "---") return null
+            var end = -1
+            for (i in 1 until lines.size) {
+                if (lines[i].trim() == "---") {
+                    end = i
+                    break
+                }
+            }
+            if (end < 0) return null
+
+            val scalars = LinkedHashMap<String, String>()
+            val lists = LinkedHashMap<String, MutableList<String>>()
+            val maps = LinkedHashMap<String, MutableMap<String, String>>()
+            var current: String? = null
+
+            for (i in 1 until end) {
+                val line = lines[i]
+                if (line.isBlank()) continue
+                val indented = line[0] == ' ' || line[0] == '\t'
+                val trimmed = line.trim()
+                if (indented && current != null) {
+                    if (trimmed.startsWith("-")) {
+                        lists.getOrPut(current) { mutableListOf() }
+                            .add(unquote(trimmed.removePrefix("-").trim()))
+                    } else {
+                        val c = trimmed.indexOf(':')
+                        if (c > 0) {
+                            val k = trimmed.substring(0, c).trim()
+                            val v = unquote(trimmed.substring(c + 1).trim())
+                            maps.getOrPut(current) { mutableMapOf() }[k] = v
+                        }
+                    }
+                    continue
+                }
+                val c = line.indexOf(':')
+                if (c <= 0) {
+                    current = null
+                    continue
+                }
+                val k = line.substring(0, c).trim()
+                val v = unquote(line.substring(c + 1).trim())
+                if (v.isEmpty()) {
+                    current = k
+                } else {
+                    scalars[k] = v
+                    current = null
+                }
+            }
+
+            val body = lines.subList(end + 1, lines.size).joinToString("\n").trim()
+            return FrontMatter(scalars, lists, maps.mapValues { it.value.toMap() }, body)
+        }
+
+        private fun unquote(v: String): String {
+            if (v.length >= 2 && (v[0] == '"' || v[0] == '\'') && v.last() == v[0]) {
+                return v.substring(1, v.length - 1)
+            }
+            return v
+        }
+    }
+}
+
+data class ModuleManifest(
+    val id: String,
+    val name: String,
+    val description: String = "",
+    val version: String = "0.0.0",
+    val hooks: List<String> = emptyList(),
+    val inject: String = "none",
+    val entry: String = "main.js",
+    val capabilities: Map<String, Int> = emptyMap(),
+    val tools: List<JsonValue> = emptyList()
+) {
+    /** phase 用 "input" / "output"，与 MODULE.md 里的写法一致。 */
+    fun handles(phase: String): Boolean = hooks.contains(phase)
+
+    companion object {
+        fun from(fm: FrontMatter, fallbackId: String): ModuleManifest {
+            val id = fm.scalars["id"] ?: fallbackId
+            val hooks = fm.lists["hooks"] ?: parseInlineList(fm.scalars["hooks"])
+            val caps = fm.maps["capabilities"].orEmpty()
+                .mapNotNull { (k, v) -> v.toIntOrNull()?.let { k to it } }
+                .toMap()
+            return ModuleManifest(
+                id = id,
+                name = fm.scalars["name"] ?: id,
+                description = fm.scalars["description"] ?: "",
+                version = fm.scalars["version"] ?: "0.0.0",
+                hooks = hooks,
+                inject = fm.scalars["inject"] ?: "none",
+                entry = fm.scalars["entry"] ?: "main.js",
+                capabilities = caps,
+                tools = parseInlineTools(fm.scalars["tools"])
+            )
+        }
+
+        private fun parseInlineList(raw: String?): List<String> {
+            if (raw == null) return emptyList()
+            val t = raw.trim()
+            if (!t.startsWith("[") || !t.endsWith("]")) return listOf(t).filter { it.isNotEmpty() }
+            val inner = t.substring(1, t.length - 1).trim()
+            if (inner.isEmpty()) return emptyList()
+            return inner.split(',').map { it.trim().trim('"', '\'') }.filter { it.isNotEmpty() }
+        }
+
+        private fun parseInlineTools(raw: String?): List<JsonValue> {
+            if (raw == null) return emptyList()
+            val arr = parseJson(raw.trim()) as? JsonValue.Arr ?: return emptyList()
+            return arr.items.filterIsInstance<JsonValue.Obj>()
+        }
+    }
+}

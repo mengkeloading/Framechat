@@ -1,0 +1,111 @@
+window.log && window.log('chat.js loaded');
+
+// 消息渲染 + 发送 + 流式请求
+window.loadChat = function(id) {
+  const chat = AppState.chats.find(c => c.id === id);
+  if (!chat) return;
+  AppState.currentChatId = id;
+  const box = document.getElementById('chat-box');
+  box.innerHTML = '';
+  if (chat.messages.length === 0) {
+    box.innerHTML = `<div class="welcome" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;margin-top:-60px;"><h1 style="font-size:18px;font-weight:500;">一起对话，开始创作吧</h1></div>`;
+  } else {
+    chat.messages.forEach(m => appendMsg(m.role, m.content));
+  }
+};
+
+window.appendMsg = function(role, text) {
+  const welcome = document.querySelector('.welcome');
+  if (welcome) welcome.remove();
+  const box = document.getElementById('chat-box');
+  const row = document.createElement('div');
+  row.className = `msg-row ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerText = text;
+  row.appendChild(bubble);
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+  return bubble;
+};
+
+window.toggleTTS = function() {
+  AppState.isTTSEnabled = !AppState.isTTSEnabled;
+  const btn = document.getElementById('tts-btn');
+  if (AppState.isTTSEnabled) btn.classList.add('active');
+  else { btn.classList.remove('active'); window.speechSynthesis.cancel(); }
+};
+
+window.sendMessage = async function() {
+  const input = document.getElementById('userInput');
+  const text = input.value.trim();
+  if (!text) return;
+  if (!AppState.config.apiKey) { alert('请先配置 API Key'); openSubPage('api-page'); return; }
+
+  input.value = '';
+  const chat = AppState.getCurrentChat();
+  if (chat.messages.length === 0) chat.title = text.substring(0, 10);
+  chat.messages.push({ role: 'user', content: text });
+  AppState.saveChats();
+  appendMsg('user', text);
+
+  const aRes = await hookA(text);
+  if (aRes.type === 'local') {
+    chat.messages.push({ role: 'assistant', content: aRes.text });
+    AppState.saveChats();
+    appendMsg('assistant', aRes.text);
+    return;
+  }
+  let extraContext = '';
+  if (aRes.type === 'context' && aRes.extra) {
+    extraContext = aRes.extra;
+  }
+
+  const bubble = appendMsg('assistant', '正在生成...');
+  let rawReply = "";
+  try {
+    const res = await fetch("https://api.deepseek.com/chat/completions", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${AppState.config.apiKey}` },
+      body: JSON.stringify({ model: 'deepseek-chat', messages: (() => {
+        const msgs = [...chat.messages];
+        if (extraContext) msgs.push({ role: 'system', content: extraContext });
+        return msgs;
+      })(), stream: true })
+    });
+    if (!res.ok) throw new Error("API 响应异常");
+
+    bubble.innerText = "";
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          try {
+            const data = JSON.parse(line.slice(6));
+            const content = data.choices[0]?.delta?.content || "";
+            if (content) {
+              rawReply += content;
+              bubble.innerText = rawReply;
+              document.getElementById('chat-box').scrollTop = document.getElementById('chat-box').scrollHeight;
+            }
+          } catch(e) {}
+        }
+      }
+    }
+
+    const bRes = await hookB(rawReply);
+    if (bRes.type === 'rewrite') { rawReply = bRes.text; bubble.innerText = rawReply; }
+
+    chat.messages.push({ role: 'assistant', content: rawReply });
+    AppState.saveChats();
+    if (AppState.isTTSEnabled && 'speechSynthesis' in window) {
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(rawReply));
+    }
+  } catch (error) {
+    bubble.innerText = "请求失败: " + error.message;
+  }
+};

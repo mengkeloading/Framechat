@@ -1,0 +1,520 @@
+﻿# MyChat 技术文档（详细版）
+> 阅前说明：本文档面向所有 AI 与人类开发者。每个文件按“是什么 / 负责什么 / 输入输出 / 内部逻辑 / 不负责什么 / 和谁交互”展开。所有类型为 Kotlin 伪代码，可直接作为 Cursor 的编码依据。
+---
+## 0. 术语表
+| 术语 | 说明 |
+|---|---|
+| 模块 | 在对话流关键节点挂钩子、钩取输入与回传文字、按自身设计处理的增强工具。不是对话主体。 |
+| 软模块 | 提示词文本（md），拼入 system。不执行代码。 |
+| 硬模块 | 脚本（js），经钩子或 tool_calls 调用，执行确定性文字处理。 |
+| 钩子 A | 输入钩子。用户输入到达、请求发出前调用。 |
+| 钩子 B | 回传钩子。模型流式返回时调用。 |
+| 返回语义 | 模块在钩子返回值中声明的去向：PASS / LOCAL / CONTEXT / REWRITE / INVOKE。 |
+| 处理痕迹 | 模块对上下文做的处理结果（标注、索引、中间产物），与上下文一起存，默认不随上下文发出。 |
+| 宿主桥接 | 框架暴露给模块的受控能力入口。 |
+| JsExecutor | 执行硬模块脚本的接口，当前无状态契约。 |
+| tempId | 流式期间为 assistant 消息生成的临时标识，先 insert 占位，后 update。 |
+---
+## 1. 产品定位与当前范围
+- 轻量级 Android 原生聊天 App，前期只对接 DeepSeek Chat Completions（`https://api.deepseek.com/chat/completions`）。
+- 核心永远是大模型。模块只做输入信息与回传信息的处理（分辨、预处理、后处理），是增强工具。
+- 模块不生成对话内容、不代替模型回复、不追加请求轮次。
+- 当前模块只处理文字；非文字通道契约预留，当前不实现。
+---
+## 2. 架构分层
+```
+┌─────────────────────────────────────────────┐
+│ Compose UI 层（Kotlin）                      │
+│  渲染 ChatUiState，发出用户输入事件           │
+└──────────────────┬──────────────────────────┘
+                   ↕ StateFlow / 事件
+┌──────────────────▼──────────────────────────┐
+│ 编排层 ChatViewModel（Kotlin）              │
+│  钩子调度、状态机、tool 循环、tempId 对账     │
+└───┬──────────────┬──────────────────┬───────┘
+    ↕              ↕                  ↕
+┌───▼────┐  ┌──────▼───────┐  ┌───────▼──────┐
+│网络层   │  │模块执行层     │  │存储层 Room   │
+│OkHttp   │  │JsExecutor    │  │(Kotlin)     │
+│SseParser│  │+ Sandbox 实现 │  │             │
+└────────┘  └──────┬───────┘  └──────────────┘
+                   ↕
+            ┌──────▼───────┐
+            │硬模块脚本 (JS)│
+            │沙箱内执行     │
+            └──────────────┘
+```
+Kotlin 管“连接世界”：网络、存储、UI、文件、流程控制、全部错误捕获。
+JS 管“处理文字”：输入文字、输出文字或文字指令。
+---
+## 3. 框架设计总纲（顶层约束）
+1. 框架只提供钩子、传递信息、执行模块返回语义。
+2. 信息默认文字，通道预留扩展；模块能力不穷举。
+3. 新能力走契约内扩展或向后兼容的契约扩展，不重写框架。
+4. 框架不内置“模块能不能碰历史 / 能不能发历史给模型”这类策略——由模块自身设计决定。
+5. 模块处理痕迹与上下文一起存，取用时分离，处理痕迹默认不进入请求。
+---
+## 4. 数据模型（Room）
+### 4.1 实体定义
+```kotlin
+@Entity(tableName = "sessions")
+data class ChatSession(
+    @PrimaryKey val id: String,
+    val title: String,
+    val providerId: String = "deepseek",
+    val activeSoftModules: List<String> = emptyList(), // 软模块文件名
+    val activeHardModules: List<String> = emptyList(), // 硬模块文件名
+    val maxToolRounds: Int = 3,                        // 本会话 tool 循环上限
+    val createdAt: Long
+)
+@Entity(tableName = "messages")
+data class ChatMessage(
+    @PrimaryKey val id: String,          // tempId 或正式 id
+    val sessionId: String,
+    val role: String,                    // "user" | "assistant" | "system" | "tool"
+    val content: String,
+    val toolCallId: String? = null,      // 仅 role="tool" 时有值
+    val timestamp: Long
+)
+@Entity(tableName = "tool_call_records")
+data class ToolCallRecord(
+    @PrimaryKey val id: String,
+    val messageId: String,               // 外键 → messages.id
+    val rawRequestJson: String,          // 工具调用参数（JSON）
+    val rawResultJson: String? = null,   // 执行结果（执行前为 null）
+    val success: Boolean? = null,        // null = 执行中
+    val errorMessage: String? = null,
+    val timestamp: Long
+)
+```
+### 4.2 存储规则
+- 模块处理痕迹与上下文**关联存放**（可放 messages 的附加字段或关联表）。
+- 取用时区分“上下文原文”与“处理痕迹”，后者默认不进入请求。
+- tool_calls 明细单独存 `tool_call_records`，不挂在 messages 的 content 里。
+### 4.3 读写归属
+| 表 | 谁写 | 谁读 |
+|---|---|---|
+| sessions | ViewModel（创建/更新配置） | ViewModel（激活对话时） |
+| messages | ViewModel（占位 insert、流式 update、落库） | UI（读历史）、RequestBuilder（取上下文原文） |
+| tool_call_records | ViewModel（执行前 insert、执行后 update） | 调试/对账用；**不进入 messages** |
+---
+## 5. 状态机
+### 5.1 状态枚举
+```kotlin
+sealed class ChatUiState {
+    object Idle : ChatUiState()
+    object Sending : ChatUiState()
+    object Streaming : ChatUiState()
+    object ExecutingTool : ChatUiState()
+    object ExecutingLocal : ChatUiState()
+    data class Error(val message: String, val retryable: Boolean) : ChatUiState()
+}
+```
+### 5.2 流转规则
+```
+IDLE
+  → 用户输入 text
+  → 钩子 A 调度（Section 7.1）
+      ├─ LOCAL(text')       → EXECUTING_LOCAL → 展示/落库 → IDLE（不请求模型）
+      ├─ CONTEXT(text',extra)→ SENDING（extra 拼入本轮请求）
+      └─ PASS(text')/未命中  → SENDING
+SENDING
+  → 请求发出，等首字节
+  → 收到首个 delta       → STREAMING
+  → 请求异常             → ERROR（保留错误信息）
+STREAMING
+  → 逐 delta 更新 UI（tempId）
+  → 流结束
+      → 钩子 B 调度（Section 7.2）
+      → 检查 tool_calls
+          ├─ 无：REWRITE/PASS → 落库 → IDLE
+          └─ 有：EXECUTING_TOOL
+EXECUTING_TOOL
+  → 逐 tool_call：执行前 insert record → 执行 JS → 更新 record → insert tool 消息
+  → 本轮 tool 结果组包 → SENDING（下一轮）
+  → 每轮检查 round 与 maxToolRounds
+  → 超限：插入系统消息并落库 → IDLE
+ERROR
+  → 展示 message，retryable 决定是否显示重试
+  → 用户操作后 → IDLE（ERROR 态不被 finally 自动覆盖）
+```
+### 5.3 关键约束
+- `finally` 中**仅当 state != Error 时**重置 Idle。
+- 超限判定用 `truncated` 标志区分“正常 break”与“因轮数上限退出”，避免 off-by-one 误报。
+---
+## 6. 钩子契约（详细）
+### 6.1 返回语义类型
+```kotlin
+sealed class HookAResult {
+    data class Pass(val text: String) : HookAResult()
+    data class Local(val text: String) : HookAResult()
+    data class Context(val text: String, val extra: String?) : HookAResult()
+}
+sealed class HookBResult {
+    data class Pass(val text: String) : HookBResult()
+    data class Rewrite(val text: String) : HookBResult()
+    data class Invoke(val moduleName: String, val payload: String) : HookBResult()
+}
+```
+### 6.2 显式返回的含义
+- 显式返回 = **声明本轮处理结果去向**（给模型 / 给用户 / 仅留存）。
+- 不声明去向 ≠ 白处理：处理痕迹仍随上下文存储，后续模块自取。
+- 框架不猜测去向，不因未声明去向而丢弃已存储的处理痕迹。
+### 6.3 通道规则
+- 默认传递文字。
+- 契约预留非文字通道位置，当前不实现、不启用。
+- 未来若有模块处理非文字，经**扩展返回值类型**接入，不改变钩子结构，不重写框架。
+---
+## 7. 文件清单（逐个详细）
+### 7.1 ModuleDispatcher.kt（钩子调度器）
+**是什么**：把输入/回传交给已启用模块链，收集返回语义的调度组件。
+**负责什么**：
+- 钩子 A：按会话 `activeHardModules`/`activeSoftModules` 顺序调用模块，合并返回语义。
+- 钩子 B：同理，对模型回传文字调用模块链。
+**输入输出**：
+```kotlin
+class ModuleDispatcher(
+    private val loader: ModuleLoader,
+    private val jsExecutor: JsExecutor
+) {
+    // 钩子 A
+    suspend fun dispatchInput(
+        session: ChatSession,
+        rawInput: String
+    ): HookAResult
+    // 钩子 B
+    suspend fun dispatchOutput(
+        session: ChatSession,
+        rawText: String
+    ): HookBResult
+}
+```
+**内部逻辑（钩子 A）**：
+1. 若 `activeHardModules` 为空 → 返回 `Pass(rawInput)`。
+2. 按顺序对每个硬模块调用 `jsExecutor.execute(name, inputJson=rawInput)`。
+3. 解析脚本返回的 JSON，映射为 `HookAResult`。
+4. 多模块时：`LOCAL` 短路（命中即返回）；`CONTEXT` 的 extra 累积；最终返回累积结果。
+5. 任一模块执行异常 → 记入处理痕迹，继续下一个模块（不阻断主流程）。
+**内部逻辑（钩子 B）**：同上，返回 `HookBResult`；`INVOKE` 时递归调用指定模块，结果按模块定义继续流转（设递归深度上限防死循环）。
+**不负责什么**：不执行网络、不写库、不判断模块能不能碰历史。
+**和谁交互**：被 ChatViewModel 调用；依赖 ModuleLoader 取脚本、JsExecutor 执行。
+---
+### 7.2 JsExecutor.kt
+**是什么**：执行硬模块脚本的接口。
+```kotlin
+interface JsExecutor {
+    suspend fun execute(scriptName: String, inputJson: String): String
+}
+```
+**负责什么**：按脚本名执行，传入 JSON 字符串，返回 JSON 字符串。
+**不负责什么**：不表达跨调用保持状态（当前无状态契约）；不处理网络/存储/UI；不分类错误（交 ErrorMapper）。
+**注记**：未来若需有状态能力，**新增接口方法或新接口**（如 `StatefulJsExecutor`），不得在实现类内隐藏状态，以免 ViewModel 层无感知。
+**和谁交互**：被 ModuleDispatcher 调用；实现类 SandboxJsExecutor。
+---
+### 7.3 SandboxJsExecutor.kt
+**是什么**：JsExecutor 的当前实现，基于 `androidx.javascriptengine.JavaScriptSandbox`。
+**负责什么**：
+- 创建 sandbox 与 isolate。
+- 从 ModuleLoader 取脚本内容，`evaluateJavaScriptAsync` 执行。
+- 把 `inputJson` 作为输入传入，取回返回值字符串。
+- 包裹超时（建议 3000ms）防死循环。
+**输入输出**：
+```kotlin
+class SandboxJsExecutor(
+    private val context: Context,
+    private val loader: ModuleLoader,
+    private val hostBridge: HostBridge
+) : JsExecutor {
+    override suspend fun execute(scriptName: String, inputJson: String): String
+}
+```
+**内部逻辑**：
+1. 从 loader 取脚本文本（缓存命中则直接用）。
+2. 创建/复用 isolate（当前实现可每次新建，注意释放）。
+3. 执行 `evaluateJavaScriptAsync(scriptText + "\n" + callWithInput(inputJson))`。
+4. 取回 `ListenableFuture<String>` 结果，`withTimeout(3000)`。
+5. 异常向上抛，由 ErrorMapper 分类。
+**不负责什么**：不碰网络、存储、UI；不判断脚本语义是否正确。
+**和谁交互**：实现 JsExecutor；依赖 ModuleLoader、HostBridge。
+---
+### 7.4 ModuleLoader.kt
+**是什么**：模块文件内容缓存与取用入口。
+```kotlin
+class ModuleLoader(private val context: Context) {
+    private val softCache = mutableMapOf<String, String>()
+    private val hardCache = mutableMapOf<String, String>()
+    suspend fun getSoftModule(name: String): String?   // assets/modules/soft/{name}.md
+    suspend fun getHardModule(name: String): String?   // assets/modules/hard/{name}.js
+}
+```
+**负责什么**：全局模块文件**按文件名只读一次**并缓存；提供按名取内容接口。
+**不负责什么**：不装配对话、不常驻进任何对话级对象、不参与请求组包的历史部分、不执行脚本。
+**和谁交互**：被 ModuleDispatcher（取脚本）、RequestBuilder（取软模块内容）、SandboxJsExecutor 调用。
+---
+### 7.5 RequestBuilder.kt
+**是什么**：组装请求 messages 的组件。
+```kotlin
+class RequestBuilder(private val loader: ModuleLoader) {
+    suspend fun build(
+        session: ChatSession,
+        history: List<ChatMessage>,   // 已按策略取好的上下文原文
+        userInput: String,
+        hookAExtra: String?,          // 钩子 A 返回的 extra
+        pendingToolMessages: List<ChatMessage> // 本轮新产生的 tool 消息
+    ): JSONObject
+}
+```
+**负责什么**：
+- 无模块时：**对齐 DeepSeek Chat 的上下文处理方式**，框架不自行发明截取策略；只取上下文原文，处理痕迹不进入 messages。
+- 有模块时：按钩子 A 返回的 `CONTEXT/extra` **原样拼入**，不审查内容。
+- 组装 `messages`、注入 `tools` 定义（若有硬模块）。
+- 注入软模块内容为第一条 `role:system`（一条，不累积）。
+**内部逻辑**：
+```
+messages = []
+若有软模块启用 → 取内容，append {role:"system", content: 软模块内容}
+append 上下文原文（history，不含处理痕迹、不含历史 tool 明细）
+append {role:"user", content: userInput}
+若 hookAExtra != null → append {role:"user" 或独立字段, content: hookAExtra}（原样，不审查）
+若 pendingToolMessages 非空 → append 本轮 tool 结果消息
+若有硬模块 → 注入 tools 定义
+```
+**不负责什么**：不判断模块该不该碰历史；不决定模块返回的上下文该不该发给模型；不整包上传历史。
+**和谁交互**：被 ChatViewModel 调用；依赖 ModuleLoader。
+---
+### 7.6 SseParser.kt
+**是什么**：SSE 单行解析器。
+```kotlin
+object SseParser {
+    fun extractDelta(event: String): String?          // 提取 delta.content
+    fun extractToolCalls(event: String): ToolCallFragment? // 提取单条 tool_call 分片
+}
+```
+**负责什么**：仅提取**单行**数据。`extractToolCalls` 返回单条分片（含 index、id、name、arguments 片段）。
+**不负责什么**：不负责 tool_calls 分片合并（由 ViewModel 的累加器做）；不负责网络发送；不处理 `[DONE]` 之外的业务。
+**和谁交互**：被 ChatViewModel 在收集流时调用。
+---
+### 7.7 ChatViewModel.kt（核心）
+**是什么**：编排层核心，驱动钩子调度、状态机与 tool 循环。
+**输入输出**：
+- 输入：用户输入事件、UI 事件（重试、切换会话）。
+- 输出：`StateFlow<ChatUiState>`、`StateFlow<List<ChatMessage>>`。
+**内部数据结构**：
+```kotlin
+data class ToolCallFragment(
+    val index: Int,
+    val id: String?,
+    val name: String?,
+    val argumentsFragment: String
+)
+class ToolCallAccumulator(
+    val index: Int,
+    var id: String = "",
+    var name: String = "",
+    val argsBuilder: StringBuilder = StringBuilder()
+) {
+    fun build(): ToolCall {
+        val args = argsBuilder.toString().ifBlank { "{}" } // 空参兜底
+        return ToolCall(id = id, name = name, args = args)
+    }
+}
+```
+**核心函数 runChatLoop 详细逻辑**：
+```kotlin
+private suspend fun runChatLoop(sessionId: String, userInput: String) {
+    var round = 0
+    var truncated = false
+    try {
+        // 1. 钩子 A 调度
+        val hookA = moduleDispatcher.dispatchInput(session, userInput)
+        when (hookA) {
+            is HookAResult.Local -> {
+                updateState(ExecutingLocal)
+                // 本地结果展示/落库（标注为本地处理，非模型回复）
+                messageDao.insert(ChatMessage(id = uuid(), role = "assistant",
+                    content = hookA.text, ...))
+                return  // 不请求模型
+            }
+            else -> { /* 继续正常流程 */ }
+        }
+        val effectiveInput = when (hookA) {
+            is HookAResult.Pass -> hookA.text
+            is HookAResult.Context -> hookA.text
+            else -> userInput
+        }
+        val hookAExtra = (hookA as? HookAResult.Context)?.extra
+        // 2. 落库用户消息
+        messageDao.insert(ChatMessage(id = uuid(), role = "user",
+            content = effectiveInput, ...))
+        while (true) {
+            // 3. 轮数上限检查（循环体内、执行前）
+            if (round >= session.maxToolRounds) { truncated = true; break }
+            round++
+            // 4. 组包
+            val history = messageDao.getContextForRequest(sessionId) // 上下文原文，不含处理痕迹
+            val request = requestBuilder.build(session, history, effectiveInput,
+                hookAExtra, pendingToolMessages)
+            // 5. 发起流式请求
+            updateState(Sending)
+            val tempId = UUID.randomUUID().toString()
+            messageDao.insert(ChatMessage(id = tempId, sessionId, role = "assistant",
+                content = "", toolCallId = null, timestamp = now())) // 先 insert 占位
+            updateState(Streaming)
+            val fragments = mutableMapOf<Int, ToolCallAccumulator>()
+            val contentBuilder = StringBuilder()
+            apiClient.streamChat(session.provider, request)
+                .onEach { event ->
+                    SseParser.extractDelta(event)?.let { delta ->
+                        contentBuilder.append(delta)
+                        messageDao.update(tempId, content = contentBuilder.toString()) // 节流
+                    }
+                    SseParser.extractToolCalls(event)?.let { frag ->
+                        val acc = fragments.getOrPut(frag.index) {
+                            ToolCallAccumulator(frag.index)
+                        }
+                        frag.id?.let { acc.id = it }
+                        frag.name?.let { acc.name = it }
+                        acc.argsBuilder.append(frag.argumentsFragment)
+                    }
+                }
+                .collect()
+            // 6. 流结束，钩子 B 调度
+            val rawText = contentBuilder.toString()
+            val hookB = moduleDispatcher.dispatchOutput(session, rawText)
+            val finalText = when (hookB) {
+                is HookBResult.Pass -> hookB.text
+                is HookBResult.Rewrite -> hookB.text
+                is HookBResult.Invoke -> { /* 执行指定模块，结果按定义流转 */ rawText }
+            }
+            val toolCalls = fragments.values.map { it.build() }
+            if (toolCalls.isNotEmpty()) {
+                // 7. 有 tool_calls
+                messageDao.update(tempId, content = finalText)
+                updateState(ExecutingTool)
+                for (tc in toolCalls) {
+                    // 执行前 insert record，success=null
+                    val recordId = toolCallDao.insert(ToolCallRecord(
+                        id = uuid(), messageId = tempId, rawRequestJson = tc.args,
+                        rawResultJson = null, success = null, errorMessage = null,
+                        timestamp = now()))
+                    val result = try {
+                        jsExecutor.execute(tc.name, tc.args)
+                    } catch (e: Exception) {
+                        errorMapper.mapJsError(e) // 转成错误 JSON
+                    }
+                    val ok = !result.isError
+                    toolCallDao.update(recordId, rawResultJson = result.json,
+                        success = ok, errorMessage = result.err)
+                    messageDao.insert(ChatMessage(id = uuid(), role = "tool",
+                        content = result.json, toolCallId = tc.id, ...))
+                }
+                pendingToolMessages = 本轮新产生的 tool 消息
+                continue // 进入下一轮
+            } else {
+                // 8. 无 tool_calls，正常结束
+                messageDao.update(tempId, content = finalText)
+                break
+            }
+        }
+        // 9. 超限兜底
+        if (truncated) {
+            messageDao.insert(ChatMessage(id = uuid(), role = "system",
+                content = "工具调用次数达到上限，对话已中断", ...))
+        }
+    } catch (e: Exception) {
+        updateState(Error(message = errorMapper.map(e), retryable = true))
+    } finally {
+        // 仅非 ERROR 时重置 IDLE
+        if (uiState.value !is ChatUiState.Error) updateState(Idle)
+    }
+}
+```
+**负责什么**：钩子调度、tempId 先 insert 后 update、tool_calls 累加、空参兜底 `{}`、tool 明细执行前 insert 执行后 update、每轮检查 maxToolRounds、超限插系统消息、finally 条件重置。
+**不负责什么**：不直接发网络请求（交 ApiClient）；不直接执行 JS（交 JsExecutor）；不硬编码模块能力类别。
+**和谁交互**：UI、ApiClient、ModuleDispatcher、RequestBuilder、JsExecutor、各 Dao、ErrorMapper。
+---
+### 7.8 ApiClient.kt
+**是什么**：网络请求层（OkHttp + SSE）。
+```kotlin
+class ApiClient {
+    fun streamChat(provider: ProviderConfig, requestBody: JSONObject): Flow<String>
+}
+```
+**负责什么**：POST `https://api.deepseek.com/chat/completions`，`stream: true`，用 OkHttp `ResponseBody.source()` 逐行读取 SSE，返回 `Flow<String>`（每行一个事件）。401/429/超时抛异常。
+**不负责什么**：不解析业务（交 SseParser）；不合并 tool_calls 分片。
+---
+### 7.9 ErrorMapper.kt
+**是什么**：错误分类与转换。
+```kotlin
+object ErrorMapper {
+    fun map(e: Throwable): String
+    fun mapJsError(e: Exception): JsErrorResult  // { json, isError, err }
+}
+```
+**负责什么**：网络超时/401/429、SSE 解析失败、JS 语法与运行时异常、工具结果格式不符，统一捕获、分类、转成 UI 可展示错误或回传 tool 结果。
+**不负责什么**：不让 JS 自己处理错误；不在模块层做错误分类。
+---
+### 7.10 HostBridge.kt
+**是什么**：框架暴露给模块的受控能力入口。
+```kotlin
+interface HostBridge {
+    suspend fun requestLocalAction(action: String, payload: String): String
+}
+```
+**负责什么**：以协程挂起方式向模块提供本地动作能力（`suspendCancellableCoroutine`），不硬阻塞。
+**不负责什么**：不代替模块做处理决策；不开放网络/存储/UI 的无限制访问。
+---
+## 8. 模块规范
+**软模块**：md 文本，放 `assets/modules/soft/`。本轮组包时若会话启用，取内容拼入 system（一条，不累积）。
+**硬模块**：js 脚本，放 `assets/modules/hard/`。仅在钩子 A 命中或钩子 B 触发 INVOKE 时按名取用、执行一次、即用即弃。
+**硬模块输入输出契约**：
+- 输入：JSON 字符串（由钩子传入）。
+- 输出：JSON 字符串，结构对应 `HookAResult` / `HookBResult` 的序列化。
+- 例：`{"type":"rewrite","text":"..."}` 或 `{"type":"invoke","moduleName":"x","payload":"..."}`。
+- 执行失败：抛异常或返回 `{"type":"pass","text":原文本}`，**绝不阻断主流程**。
+**当前能力示例（非穷举）**：处理输入文字后经 CONTEXT/extra 发给模型；截留输入经 LOCAL/INVOKE 启动本地功能；经 REWRITE 整理排版回传文字。框架不硬编码这些类别。
+**人机交互**：输入侧用 Kotlin 层确定性规则匹配（正则/前缀）截留；输出侧关键词匹配仅作建议触发，命中后仍由 Kotlin 校验，校验失败丢弃触发、原文正常展示。
+---
+## 9. 三条铁律
+1. 模块只处理文字，不生成对话内容，不参与“理解和回复”。
+2. 错误全部由 Kotlin 捕获与分类，JS 只管抛异常或返回结果。
+3. 先跑通最小闭环（发消息→收响应），再加软模块、硬模块、数据库。
+---
+## 10. 非文字通道预留说明
+钩子默认传递文字。契约预留非文字通道位置，当前不实现、不启用。未来若有模块能处理非文字，经扩展返回值类型接入，不改变钩子结构，不重写框架。
+---
+## 11. 文件目录结构
+```
+app/src/main/java/com/mychat/
+├── ui/            ChatScreen.kt, ChatUiState.kt
+├── vm/            ChatViewModel.kt
+├── network/       ApiClient.kt, RequestBuilder.kt, SseParser.kt
+├── module/        ModuleDispatcher.kt, ModuleLoader.kt, HookResults.kt
+├── js/            JsExecutor.kt, SandboxJsExecutor.kt
+├── bridge/        HostBridge.kt
+├── data/          ChatSession.kt, ChatMessage.kt, ToolCallRecord.kt,
+│                  Daos.kt, AppDatabase.kt
+├── error/         ErrorMapper.kt
+└── MainActivity.kt
+app/src/main/assets/modules/
+├── soft/          simp-module.md ...
+└── hard/          analyze_chat.js ...
+```
+---
+
+
+
+
+
+
+给 Cursor 使用时，建议这样组织：
+1. **项目根目录放 `ARCHITECTURE.md`**——就是那份详细技术文档，Cursor 每次开工先读它。
+2. **分文件下发**——不要一次让 Cursor 写整个 App。按文档第 7 节的顺序，一次只给它一个文件的任务，比如：
+   - 先给 `ChatMessage.kt` / `ChatSession.kt` / `ToolCallRecord.kt` + Dao + Database
+   - 再给 `SseParser.kt`、`ApiClient.kt`
+   - 再给 `JsExecutor.kt`、`ModuleLoader.kt`、`SandboxJsExecutor.kt`
+   - 再给 `ModuleDispatcher.kt`、`RequestBuilder.kt`
+   - 最后给 `ChatViewModel.kt`（最复杂，依赖前面全部就位）
+3. **每次下发的提示词模板**：
+   > “这是 MyChat 项目的架构文档（附 ARCHITECTURE.md 或相关节选）。现在只实现 `Xxx.kt`。请严格按文档里这个文件的‘负责什么 / 输入输出 / 内部逻辑 / 不负责什么’来写，不要扩展职责，不要碰文档里写明‘不负责’的部分。给我完整可运行代码，不要省略。”
+4. **验收标准**：每写完一个文件，对照文档那一节检查——输入输出签名对不对、内部逻辑有没有漏（尤其 tempId 先 insert 后 update、tool 明细执行前 insert、空参兜底 `{}`、finally 条件重置、超限用 truncated 标志），漏了就让它补。

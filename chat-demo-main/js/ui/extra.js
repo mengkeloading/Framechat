@@ -1,0 +1,498 @@
+(function () {
+  'use strict';
+  var vm = window.__vm, db = window.__db, screen = window.__screen;
+  if (!vm || !db || !screen) return;
+
+  function $(id) { return document.getElementById(id); }
+  var Tts = window.Tts;
+
+  /* 覆盖 ChatScreen 的 TTS 方法，统一走 Tts */
+  if (window.ChatScreen && Tts) {
+    window.ChatScreen.prototype.speak = function (t) { return Tts.speak(t); };
+    window.ChatScreen.prototype.stopSpeak = function () { Tts.stop(); };
+    window.ChatScreen.prototype.isSpeaking = function () {
+      return Tts.speaking();
+    };
+  }
+
+  var drawer = $('drawer'), scrim = $('scrim');
+
+  function close() {
+    drawer.classList.remove('on');
+    scrim.classList.remove('on');
+  }
+
+  function buildList() {
+    var box = $('sessionList');
+    if (!box) return;
+    box.innerHTML = '';
+    var cur = window.__currentId;
+    var rows = db.sessionDao.rows.slice().reverse();
+    rows.forEach(function (s) {
+      var d = document.createElement('div');
+      d.className = 'ditem' + (s.id === cur ? ' on' : '');
+      d.textContent = s.title || '未命名';
+      d.onclick = function () {
+        if (window.__switchTo) window.__switchTo(s.id);
+        close();
+      };
+      box.appendChild(d);
+    });
+    var c = db.sessionDao.get(cur);
+    var t = $('sessionTitle');
+    if (t && c) t.textContent = c.title || '新对话';
+  }
+
+  function openDrawer() {
+    buildList();
+    drawer.classList.add('on');
+    scrim.classList.add('on');
+  }
+
+  $('menuBtn').onclick = openDrawer;
+  scrim.onclick = close;
+
+  /* 新对话：只切到空白，不落库 */
+  function createSession() {
+    if (window.__switchTo) window.__switchTo(null);
+    buildList();
+    close();
+  }
+
+  /* 首次发送时才创建会话 */
+  var realSend = screen.sendCurrent.bind(screen);
+  screen.sendCurrent = function () {
+    if (!input.value.trim()) return;
+    if (!window.__currentId) {
+      var id = window.__newSession('');
+      window.__switchTo(id);
+    }
+    return realSend();
+  };
+
+  $('newSessionBtn').onclick = createSession;
+  $('newBtn').onclick = createSession;
+
+  /* ---------- 发送 / 停止 ---------- */
+  var send = $('send'), voice = $('voiceBtn'), input = $('input');
+
+  var ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff"' +
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M12 19.5V4.8M5.8 11 12 4.8 18.2 11"/></svg>';
+  var STOP = '<svg viewBox="0 0 24 24" fill="#fff">' +
+    '<rect x="8" y="8" width="8" height="8" rx="1.5"/></svg>';
+
+  function busy() {
+    var s = vm.state.type;
+    return s === 'sending' || s === 'streaming' ||
+           s === 'executing_tool';
+  }
+
+  function sync() {
+    if (!send) return;
+    if (busy()) {
+      send.innerHTML = STOP;
+      send.style.display = 'flex';
+      if (voice) voice.style.display = 'none';
+      send.onclick = function () { vm.cancel(); };
+      return;
+    }
+    send.innerHTML = ARROW;
+    send.onclick = function () { screen.sendCurrent(); };
+    var has = input.value.trim().length > 0;
+    send.style.display = has ? 'flex' : 'none';
+    send.classList.toggle('ready', has);
+    if (voice) voice.style.display = has ? 'none' : 'flex';
+  }
+
+  vm.subscribe(sync);
+  if (input) input.addEventListener('input', sync);
+  sync();
+
+  /* ---------- 顶栏喇叭：读最后一条 / 停止 ---------- */
+  /* 喇叭图标：可用=正常，不可用=带斜杠 */
+  var SPK = '<svg viewBox="0 0 24 24" width="20" height="20"'
+    + ' fill="none" stroke="#0f0f0f" stroke-width="1.8"'
+    + ' stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M11 5 6 9H3v6h3l5 4V5z"/>'
+    + '<path d="M14.6 9.4a3.6 3.6 0 0 1 0 5.2"/></svg>';
+  var SPK_OFF = '<svg viewBox="0 0 24 24" width="20" height="20"'
+    + ' fill="none" stroke="#0f0f0f" stroke-width="1.8"'
+    + ' stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M11 5 6 9H3v6h3l5 4V5z"/>'
+    + '<path d="M16 9l5 6M21 9l-5 6"/></svg>';
+  var sbtn = document.getElementById('soundBtn');
+  if (sbtn) {
+    var ok = !!(Tts && Tts.available());
+    sbtn.innerHTML = ok ? SPK : SPK_OFF;
+    if (!ok) sbtn.classList.add('muted');
+  }
+
+  $('soundBtn').onclick = function () {
+    if (!Tts || !Tts.available()) {
+      alert('当前浏览器不支持朗读\n（speechSynthesis 不可用，\n换 Chrome 试试；Kotlin 里用系统 TTS）');
+      return;
+    }
+    if (Tts.speaking()) { Tts.stop(); return; }
+    var rows = vm.messages(window.__currentId);
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].role === 'assistant' && rows[i].content) {
+        Tts.speak(rows[i].content);
+        return;
+      }
+    }
+    alert('还没有可朗读的回复');
+  };
+
+  /* ---------- 会话操作 ---------- */
+  var rn = $('btnRename');
+  if (rn) rn.onclick = function () {
+    var id = window.__currentId;
+    var s = db.sessionDao.get(id);
+    var name = prompt('会话名称', s ? s.title : '');
+    if (!name) return;
+    db.sessionDao.update(id, { title: name.trim() });
+    var t = $('sessionTitle');
+    if (t) t.textContent = name.trim();
+    buildList();
+    if (window.Persist) window.Persist.save(db);
+  };
+
+  var del = $('btnDelete');
+  if (del) del.onclick = function () {
+    if (!confirm('删除这个会话？')) return;
+    db.removeSession(window.__currentId);
+    if (window.Persist) window.Persist.save(db);
+    location.reload();
+  };
+
+  var ex = $('btnExport');
+  if (ex) ex.onclick = function () {
+    var md = window.ExportSession.markdown(db, window.__currentId);
+    var box = $('exportBox'), ta = $('exportText');
+    if (!box || !ta) return;
+    ta.value = md;
+    box.style.display = 'block';
+  };
+
+  var cp = $('btnCopyExport');
+  if (cp) cp.onclick = function () {
+    var ta = $('exportText');
+    ta.select();
+    try { document.execCommand('copy'); cp.textContent = '已复制'; }
+    catch (e) { cp.textContent = '请长按选择'; }
+    setTimeout(function () { cp.textContent = '复制'; }, 1400);
+  };
+
+  /* 回到底部 */
+  var listEl = document.getElementById('list');
+  var jumpBtn = document.getElementById('jumpBtn');
+  if (listEl && jumpBtn) {
+    listEl.addEventListener('scroll', function () {
+      var gap = listEl.scrollHeight - listEl.scrollTop
+        - listEl.clientHeight;
+      jumpBtn.style.display = gap > 200 ? 'flex' : 'none';
+    });
+    jumpBtn.onclick = function () {
+      listEl.scrollTo({ top: listEl.scrollHeight,
+        behavior: 'smooth' });
+    };
+  }
+
+  /* ---------- toast ---------- */
+  var tEl = document.getElementById('toast');
+  var tTimer = null;
+  function toast(msg) {
+    if (!tEl) return;
+    tEl.textContent = msg;
+    tEl.classList.add('on');
+    clearTimeout(tTimer);
+    tTimer = setTimeout(function () { tEl.classList.remove('on'); }, 1600);
+  }
+
+  /* ---------- 模块开关 ---------- */
+  function renderModules() {
+    var box = document.getElementById('moduleList');
+    if (!box || !window.ModuleLoader) return;
+    var sid = window.__currentId;
+    var s = sid ? (db.sessionDao.get(sid) || {}) : {};
+    var hard = (s.activeHardModules || []).slice();
+    var soft = (s.activeSoftModules || []).slice();
+
+    box.innerHTML = '';
+    window.ModuleLoader.listPackages().forEach(function (p) {
+      var isSoft = !p.entry;
+      var on = isSoft ? soft.indexOf(p.id) >= 0
+                      : hard.indexOf(p.id) >= 0;
+
+      var row = document.createElement('div');
+      row.className = 'mod' + (on ? ' on' : '');
+
+      var main = document.createElement('div');
+      main.className = 'modMain';
+      var name = document.createElement('div');
+      name.className = 'modName';
+      name.textContent = p.name || p.id;
+      var desc = document.createElement('div');
+      desc.className = 'modDesc';
+      desc.textContent = p.description || '';
+      main.appendChild(name);
+      main.appendChild(desc);
+
+      var sw = document.createElement('div');
+      sw.className = 'modSw';
+      sw.textContent = on ? '开' : '关';
+
+      row.appendChild(main);
+      row.appendChild(sw);
+
+      row.onclick = function () {
+        if (!sid) { toast('先发一条消息创建会话'); return; }
+        var cur = db.sessionDao.get(sid) || {};
+        var h = (cur.activeHardModules || []).slice();
+        var sf = (cur.activeSoftModules || []).slice();
+        if (isSoft) {
+          var i = sf.indexOf(p.id);
+          if (i >= 0) sf.splice(i, 1); else sf.push(p.id);
+        } else {
+          var j = h.indexOf(p.id);
+          if (j >= 0) h.splice(j, 1); else h.push(p.id);
+        }
+        db.sessionDao.update(sid, {
+          activeHardModules: h, activeSoftModules: sf
+        });
+        if (window.Persist) window.Persist.save(db);
+        row.className = 'mod' + (on ? '' : ' on');
+        sw.textContent = on ? '关' : '开';
+        if (window.Persist) window.Persist.save(db);
+        toast((on ? '已关闭 ' : '已开启 ') + (p.name || p.id));
+      };
+      box.appendChild(row);
+    });
+  }
+
+  var setBtn = document.getElementById('setBtn');
+  if (setBtn) {
+    var origOpen = setBtn.onclick;
+    setBtn.onclick = function () {
+      if (origOpen) origOpen();
+      renderModules();
+    };
+  }
+
+  /* ---------- 全局模块默认 ---------- */
+  var prefsNow = (window.Persist && Persist.loadPrefs()) || {};
+  var gHard = prefsNow.globalHard ||
+    ['attach_context', 'time_local', 'task_rewrite', 'router'];
+  var gSoft = prefsNow.globalSoft || ['simp-module'];
+
+  function saveGlobal() {
+    if (!window.Persist) return;
+    var p = Persist.loadPrefs() || {};
+    p.globalHard = gHard;
+    p.globalSoft = gSoft;
+    Persist.savePrefs(p);
+  }
+
+  /* ---------- 本对话模块面板 ---------- */
+  var mpPanel = document.getElementById('modPanel');
+  var mpList = document.getElementById('mpList');
+  var modBtn = document.getElementById('modBtn');
+
+  function renderPanel() {
+    if (!mpList || !window.ModuleLoader) return;
+    var sid = window.__currentId;
+    var s = sid ? (db.sessionDao.get(sid) || {}) : {};
+    var hard = (s.activeHardModules || []).slice();
+    var soft = (s.activeSoftModules || []).slice();
+    mpList.innerHTML = '';
+    ModuleLoader.listPackages().forEach(function (p) {
+      var isSoft = !p.entry;
+      var on = isSoft ? soft.indexOf(p.id) >= 0 : hard.indexOf(p.id) >= 0;
+      var row = document.createElement('div');
+      row.className = 'mpItem' + (on ? ' on' : '');
+      var main = document.createElement('div');
+      main.className = 'mpMain';
+      var n = document.createElement('div');
+      n.className = 'mpName';
+      n.textContent = p.name || p.id;
+      var d = document.createElement('div');
+      d.className = 'mpDesc';
+      d.textContent = p.description || '';
+      main.appendChild(n);
+      main.appendChild(d);
+      var sw = document.createElement('div');
+      sw.className = 'mpSw';
+      sw.textContent = on ? '开' : '关';
+      row.appendChild(main);
+      row.appendChild(sw);
+      row.onclick = function () {
+        if (!sid) { toast('先发一条消息创建会话'); return; }
+        var cur = db.sessionDao.get(sid) || {};
+        var h = (cur.activeHardModules || []).slice();
+        var sf = (cur.activeSoftModules || []).slice();
+        if (isSoft) {
+          var i = sf.indexOf(p.id);
+          if (i >= 0) sf.splice(i, 1); else sf.push(p.id);
+          row.className = 'mpItem' + (i >= 0 ? '' : ' on');
+          sw.textContent = i >= 0 ? '关' : '开';
+        } else {
+          var j = h.indexOf(p.id);
+          if (j >= 0) h.splice(j, 1); else h.push(p.id);
+          row.className = 'mpItem' + (j >= 0 ? '' : ' on');
+          sw.textContent = j >= 0 ? '关' : '开';
+        }
+        db.sessionDao.update(sid, {
+          activeHardModules: h, activeSoftModules: sf
+        });
+        if (window.Persist) window.Persist.save(db);
+        toast((on ? '已关闭 ' : '已开启 ') + (p.name || p.id));
+      };
+      mpList.appendChild(row);
+    });
+  }
+
+  if (modBtn) {
+    modBtn.onclick = function () {
+      if (!mpPanel) return;
+      var opening = !mpPanel.classList.contains('on');
+      mpPanel.classList.toggle('on');
+      if (opening) renderPanel();
+    };
+  }
+
+  /* ---------- 设置：三层 + 全局模块 ---------- */
+  function buildSettings() {
+    var sheet = document.getElementById('sheet');
+    if (!sheet || sheet.dataset.built) return;
+    sheet.dataset.built = '1';
+
+    var nodes = Array.prototype.slice.call(sheet.children);
+    var groups = { provider: [], modules: [], defaults: [] };
+    nodes.forEach(function (n) {
+      if (!n.classList || !n.classList.contains('f')) return;
+      var label = n.querySelector('label');
+      var text = label ? label.textContent : '';
+      if (/供应商|模型|Base Url|路径/.test(text)) groups.provider.push(n);
+      else if (/模块/.test(text)) groups.modules.push(n);
+      else groups.defaults.push(n);
+    });
+
+    var root = document.createElement('div');
+    root.id = 'setRoot';
+    root.innerHTML =
+      '<div class="setItem" data-p="provider">供应商配置<span>›</span></div>' +
+      '<div class="setItem" data-p="modules">模块（全局默认）<span>›</span></div>' +
+      '<div class="setItem" data-p="defaults">对话默认<span>›</span></div>';
+    sheet.insertBefore(root, sheet.firstChild);
+
+    var pages = {};
+    ['provider', 'modules', 'defaults'].forEach(function (key) {
+      var page = document.createElement('div');
+      page.className = 'setPage';
+      page.id = 'pg_' + key;
+      var back = document.createElement('div');
+      back.className = 'setBack';
+      back.textContent = '‹ 返回';
+      back.onclick = function () { showRoot(); };
+      page.appendChild(back);
+      groups[key].forEach(function (n) { page.appendChild(n); });
+      sheet.insertBefore(page, root.nextSibling);
+      pages[key] = page;
+    });
+
+    /* 模块页：全局默认开关 */
+    var gm = document.createElement('div');
+    gm.id = 'globalMods';
+    pages.modules.insertBefore(gm, pages.modules.children[1]);
+
+    function renderGlobal() {
+      if (!window.ModuleLoader) return;
+      gm.innerHTML = '<div class="mpHead">新建对话时默认启用</div>';
+      ModuleLoader.listPackages().forEach(function (p) {
+        var isSoft = !p.entry;
+        var on = isSoft ? gSoft.indexOf(p.id) >= 0
+                        : gHard.indexOf(p.id) >= 0;
+        var row = document.createElement('div');
+        row.className = 'mpItem' + (on ? ' on' : '');
+        var main = document.createElement('div');
+        main.className = 'mpMain';
+        var n = document.createElement('div');
+        n.className = 'mpName';
+        n.textContent = p.name || p.id;
+        main.appendChild(n);
+        var sw = document.createElement('div');
+        sw.className = 'mpSw';
+        sw.textContent = on ? '开' : '关';
+        row.appendChild(main);
+        row.appendChild(sw);
+        row.onclick = function () {
+          var list = isSoft ? gSoft : gHard;
+          var i = list.indexOf(p.id);
+          if (i >= 0) list.splice(i, 1); else list.push(p.id);
+          saveGlobal();
+          renderGlobal();
+          toast((i >= 0 ? '已关闭 ' : '已开启 ') + (p.name || p.id));
+        };
+        gm.appendChild(row);
+      });
+    }
+
+    function showRoot() {
+      root.style.display = 'block';
+      Object.keys(pages).forEach(function (k) {
+        pages[k].classList.remove('on');
+      });
+    }
+
+    root.querySelectorAll('.setItem').forEach(function (it) {
+      it.onclick = function () {
+        var key = it.getAttribute('data-p');
+        root.style.display = 'none';
+        Object.keys(pages).forEach(function (k) {
+          pages[k].classList.toggle('on', k === key);
+        });
+        if (key === 'modules') renderGlobal();
+      };
+    });
+
+    sheet.__showRoot = showRoot;
+  }
+
+  var setBtn2 = document.getElementById('setBtn');
+  if (setBtn2) {
+    var prevOpen = setBtn2.onclick;
+    setBtn2.onclick = function () {
+      if (prevOpen) prevOpen();
+      buildSettings();
+      var sheet = document.getElementById('sheet');
+      if (sheet && sheet.__showRoot) sheet.__showRoot();
+    };
+  }
+
+  /* ---------- 上下文弹层 ---------- */
+  var ctxBtn = document.getElementById('ctxBtn');
+  var ctxPop = document.getElementById('ctxPop');
+
+  function renderCtx() {
+    if (!ctxPop) return;
+    var sid = window.__currentId;
+    var s = sid ? (db.sessionDao.get(sid) || {}) : {};
+    var rows = sid ? db.messageDao.getBySession(sid) : [];
+    var hard = (s.activeHardModules || []).length;
+    var soft = (s.activeSoftModules || []).length;
+    var budget = (typeof s.contextBudget === 'number')
+      ? s.contextBudget : 4000;
+    var lines = [];
+    lines.push('供应商 <b>' + (s.providerId || 'deepseek') + '</b>'
+      + ' · 模型 <b>' + (s.model || '默认') + '</b>');
+    lines.push('上下文预算 <b>' + budget + '</b>'
+      + ' · 工具轮数 <b>' + (s.maxToolRounds || 3) + '</b>');
+    lines.push('硬模块 <b>' + hard + '</b> · 软模块 <b>' + soft + '</b>');
+    lines.push('消息 <b>' + rows.length + '</b> 条');
+    if (s.systemPrompt) lines.push('系统提示词：已覆盖');
+    ctxPop.innerHTML = lines.join('<br>');
+  }
+
+  /* ctxBtn 由 ui/panel.js 统一接管 */
+})();

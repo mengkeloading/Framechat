@@ -1,0 +1,83 @@
+/* modcheck.js — 模块健康检查。启动时自动跑，有问题在顶部弹红条。 */
+(function (global) {
+  'use strict';
+
+  var ACT = /requestLocalAction\(\s*['"]([\w.]+)['"]/g;
+
+  function checkOne(p) {
+    var out = [];
+    var entry = p.entry || 'main.js';
+    var src = null;
+    try {
+      src = ModuleLoader.getScript(p.id, entry);
+    } catch (e) {
+      out.push('script 读取异常');
+    }
+    if (p.hooks && p.hooks.length && !src) {
+      out.push('hooks=' + p.hooks.join(',') + ' 但脚本加载不到');
+    }
+    if (src) {
+      try {
+        new Function('inputJson', 'host',
+          'return (' + src + ')(inputJson, host);');
+      } catch (e) {
+        out.push('语法错误: ' + (e && e.message || e));
+      }
+      var caps = p.capabilities || {};
+      var m;
+      ACT.lastIndex = 0;
+      while ((m = ACT.exec(src)) !== null) {
+        if (typeof caps[m[1]] !== 'number') {
+          out.push('未声明的能力: ' + m[1]);
+        }
+      }
+    }
+    if (!p.entry && p.hooks && p.hooks.length) {
+      out.push('缺 entry');
+    }
+    return out;
+  }
+
+  function run() {
+    if (!global.ModuleLoader) return;
+    var bad = [];
+    var list = ModuleLoader.listPackages();
+    for (var i = 0; i < list.length; i++) {
+      var errs = checkOne(list[i]);
+      if (errs.length) {
+        bad.push(list[i].id + ' -> ' + errs.join('; '));
+      }
+    }
+    global.__moduleHealth = bad;
+    if (!bad.length) {
+      console.log('[modcheck] 全部通过, ' + list.length + ' 个模块');
+      var ok = document.createElement('div');
+      ok.style.cssText = 'position:fixed;left:50%;top:8px;'
+        + 'transform:translateX(-50%);z-index:99999;'
+        + 'background:#1E8E3E;color:#fff;font:12px monospace;'
+        + 'padding:6px 14px;border-radius:16px;'
+        + 'pointer-events:none';
+      ok.textContent = 'MODOK ' + list.length;
+      document.body.appendChild(ok);
+      setTimeout(function () {
+        if (ok.parentNode) ok.parentNode.removeChild(ok);
+      }, 2600);
+      return;
+    }
+    console.error('[modcheck]', bad);
+    var bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;'
+      + 'z-index:99999;background:#D93025;color:#fff;'
+      + 'font:12px/1.6 monospace;padding:8px 12px;'
+      + 'white-space:pre-wrap;max-height:40vh;overflow:auto';
+    bar.textContent = '[模块检查] ' + bad.length + ' 个问题（点此关闭）\n' + bad.join('\n');
+    bar.onclick = function () { bar.parentNode.removeChild(bar); };
+    document.body.appendChild(bar);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+})(window);

@@ -1,0 +1,88 @@
+function (inputJson, host) {
+  function rep(s) {
+    return ModuleKit.reply({
+      type: 'local', text: s, content: s, reply: s });
+  }
+  function fmt(x) {
+    return String(Math.round(x * 1e6) / 1e6);
+  }
+  var inp = ModuleKit.parse(inputJson);
+  var t = String(inp.text || '').trim();
+  if (!t || t.length > 60) return null;
+
+  // 1) 纯算式
+  var m = t.match(
+    /^(?:算一?下?|计算|calc)?\s*([-+*/%().\d\s]+?)\s*=?$/);
+  if (m) {
+    var e = m[1].replace(/\s/g, '');
+    if (e.length >= 3 && e.length <= 40 && /\d/.test(e)
+        && /^[-+*/%().\d]+$/.test(e)) {
+      var v = null;
+      try {
+        v = Function('"use strict";return (' + e + ')')();
+      } catch (err) { v = null; }
+      if (typeof v === 'number' && isFinite(v)) {
+        return rep(e + ' = ' + fmt(v));
+      }
+    }
+  }
+
+  // 2) 进制
+  m = t.match(
+    /^(?:0x([0-9a-fA-F]+)|(\d+))\s*(?:转|换成|to|->)\s*(\d+)\s*进制$/);
+  if (m) {
+    var n = m[1] ? parseInt(m[1], 16) : parseInt(m[2], 10);
+    var b = parseInt(m[3], 10);
+    if (b >= 2 && b <= 36 && isFinite(n)) {
+      return rep(n + ' → ' + n.toString(b) + '（' + b + ' 进制）');
+    }
+  }
+
+  // 3) 百分比
+  m = t.match(/^([\d.]+)\s*%\s*(?:的|of)\s*([\d.]+)$/);
+  if (m) {
+    return rep(m[1] + '% × ' + m[2] + ' = '
+      + fmt(parseFloat(m[1]) * parseFloat(m[2]) / 100));
+  }
+
+  // 4) 温度
+  m = t.match(
+    /^([\d.-]+)\s*(?:度|℃|c|摄氏)\s*(?:转|换成|to|->)\s*
+    (?:度|℉|f|华氏)$/i);
+  if (m) {
+    var c = parseFloat(m[1]);
+    return rep(c + '℃ = ' + fmt(c * 9 / 5 + 32) + '℉');
+  }
+  m = t.match(
+    /^([\d.-]+)\s*(?:℉|f|华氏)\s*(?:转|换成|to|->)\s*
+    (?:度|℃|c|摄氏)$/i);
+  if (m) {
+    var f2 = parseFloat(m[1]);
+    return rep(f2 + '℉ = ' + fmt((f2 - 32) * 5 / 9) + '℃');
+  }
+
+  // 5) 长度 / 重量
+  var U = {
+    '公里': 1000, km: 1000, '千米': 1000,
+    '米': 1, m: 1,
+    '厘米': 0.01, cm: 0.01,
+    '毫米': 0.001, mm: 0.001,
+    '英里': 1609.344, mile: 1609.344,
+    '英尺': 0.3048, ft: 0.3048,
+    '千克': 1000, kg: 1000, '克': 1, g: 1,
+    '斤': 500, '磅': 453.592, lb: 453.592
+  };
+  m = t.match(
+    /^([\d.]+)\s*([a-zA-Z\u4e00-\u9fa5]+)\s*
+    (?:转|换成|to|->)\s*([a-zA-Z\u4e00-\u9fa5]+)$/);
+  if (m) {
+    var a = U[m[2]];
+    var c2 = U[m[3]];
+    if (a && c2) {
+      return rep(m[1] + ' ' + m[2] + ' = '
+        + fmt(parseFloat(m[1]) * a / c2) + ' ' + m[3]);
+    }
+  }
+
+  return null;
+}

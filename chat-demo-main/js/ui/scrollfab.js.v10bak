@@ -1,0 +1,84 @@
+/* 跳到最新消息 FAB —— 唯一入口 */
+(function () {
+  'use strict';
+  var fab = null;
+  var sc = null;
+  var tick = false;
+
+  function pick() {
+    var l = document.getElementById('list');
+    if (l && l.scrollHeight > l.clientHeight + 4) return l;
+    return document.scrollingElement || document.documentElement;
+  }
+
+  function gap() {
+    return sc.scrollHeight - sc.scrollTop - sc.clientHeight;
+  }
+
+  function refresh() {
+    if (!fab) return;
+    var tall = sc.scrollHeight > sc.clientHeight + 240;
+    fab.classList.toggle(
+      'on', tall && gap() > 200);
+  }
+
+  function down() {
+    try {
+      sc.scrollTo({ top: sc.scrollHeight, behavior: 'smooth' });
+    } catch (e) {
+      sc.scrollTop = sc.scrollHeight;
+    }
+  }
+
+  function align() {
+    var f = document.querySelector('footer');
+    var ta = document.querySelector('footer textarea');
+    if (!f || !ta || !fab) return;
+    var card = ta;
+    while (card.parentElement && card.parentElement !== f) {
+      card = card.parentElement;
+    }
+    var d = Math.round(
+      f.getBoundingClientRect().right -
+      card.getBoundingClientRect().right);
+    if (d >= 0 && d < 60) fab.style.right = d + "px";
+  }
+
+  function later() {
+    if (tick) return;
+    tick = true;
+    requestAnimationFrame(function () {
+      tick = false;
+      refresh();
+      align();
+    });
+  }
+
+  function mount() {
+    var f = document.querySelector('footer');
+    if (!f || fab) return;
+    fab = document.createElement('button');
+    fab.type = 'button';
+    fab.className = 'scroll-fab';
+    fab.setAttribute('aria-label', '跳到最新');
+    fab.innerHTML = '<i></i>';
+    f.appendChild(fab);
+    fab.addEventListener('click', down);
+    sc = pick();
+    sc.addEventListener('scroll', refresh, { passive: true });
+    window.addEventListener('resize', later);
+    if (window.MutationObserver) {
+      new MutationObserver(later).observe(
+        document.body, { childList: true, subtree: true });
+    }
+    align();
+    refresh();
+    window.__scrollFabReady = true;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mount);
+  } else {
+    mount();
+  }
+})();

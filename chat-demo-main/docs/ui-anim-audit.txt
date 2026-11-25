@@ -1,0 +1,192 @@
+--- js/ui/extra.js  L293-303 ---
+ 293|     p.globalSoft = gSoft;
+ 294|     Persist.savePrefs(p);
+ 295|   }
+ 296| 
+ 297|   /* ---------- 本对话模块面板 ---------- */
+ 298|   var mpPanel = document.getElementById('modPanel');
+ 299|   var mpList = document.getElementById('mpList');
+ 300|   var modBtn = document.getElementById('modBtn');
+ 301| 
+ 302|   function renderPanel() {
+ 303|     if (!mpList || !window.ModuleLoader) return;
+
+--- js/ui/extra.js  L470-483 ---
+ 470|     };
+ 471|   }
+ 472| 
+ 473|   /* ---------- 上下文弹层 ---------- */
+ 474|   var ctxBtn = document.getElementById('ctxBtn');
+ 475|   var ctxPop = document.getElementById('ctxPop');
+ 476| 
+ 477|   function renderCtx() {
+ 478|     if (!ctxPop) return;
+ 479|     var sid = window.__currentId;
+ 480|     var s = sid ? (db.sessionDao.get(sid) || {}) : {};
+ 481|     var rows = sid ? db.messageDao.getBySession(sid) : [];
+ 482|     var hard = (s.activeHardModules || []).length;
+ 483|     var soft = (s.activeSoftModules || []).length;
+
+--- js/ui/extra.js  L489-506 ---
+ 489|     lines.push('上下文预算 <b>' + budget + '</b>'
+ 490|       + ' · 工具轮数 <b>' + (s.maxToolRounds || 3) + '</b>');
+ 491|     lines.push('硬模块 <b>' + hard + '</b> · 软模块 <b>' + soft + '</b>');
+ 492|     lines.push('消息 <b>' + rows.length + '</b> 条');
+ 493|     if (s.systemPrompt) lines.push('系统提示词：已覆盖');
+ 494|     ctxPop.innerHTML = lines.join('<br>');
+ 495|   }
+ 496| 
+ 497|   if (ctxBtn) {
+ 498|     ctxBtn.onclick = function () {
+ 499|       if (!ctxPop) return;
+ 500|       var opening = !ctxPop.classList.contains('on');
+ 501|       ctxPop.classList.toggle('on');
+ 502|       if (opening) renderCtx();
+ 503|     };
+ 504|   }
+ 505| })();
+
+--- js/ui/panel.js  L14-53 ---
+  14|     document.body.appendChild(el);
+  15|     el.style.cssText = '';
+  16|     return el;
+  17|   }
+  18| 
+  19|   var panel = adopt('modPanel');
+  20|   var ctxPop = adopt('ctxPop');
+  21|   var mask = adopt('modMask');
+  22| 
+  23|   function dbg(msg) {
+  24|     var s = document.getElementById('state');
+  25|     if (s) s.textContent = msg;
+  26|   }
+  27|   dbg('panel ready');
+  28|   window.__panelReady = true;
+  29| 
+  30|   /* ---------- 抽屉开关 ---------- */
+  31|   function closeSheets() {
+  32|     panel.classList.remove('on');
+  33|     ctxPop.classList.remove('on');
+  34|     mask.classList.remove('on');
+  35|     var f = document.querySelector('footer');
+  36|     if (f) f.style.transform = '';
+  37|     dbg('closed');
+  38|   }
+  39| 
+  40|   function openSheet(el) {
+  41|     panel.classList.remove('on');
+  42|     ctxPop.classList.remove('on');
+  43|     el.classList.add('on');
+  44|     mask.classList.add('on');
+  45|     var f = document.querySelector('footer');
+  46|     if (f) {
+  47|       var h = el.getBoundingClientRect().height || 0;
+  48|       f.style.transform = 'translateY(-' + (h + 8) + 'px)';
+  49|     }
+  50|     dbg('open');
+  51|   }
+  52| 
+  53|   mask.addEventListener('click', closeSheets);
+
+--- js/ui/panel.js  L272-297 ---
+ 272|       '</b> · 工具轮数 <b style="color:#0f0f0f">' +
+ 273|       (s.maxToolRounds || 3) + '</b><br>' +
+ 274|       '硬模块 <b style="color:#0f0f0f">' + hard + '</b> · 软模块 <b style="color:#0f0f0f">' +
+ 275|       soft + '</b><br>' +
+ 276|       '消息 <b style="color:#0f0f0f">' + rows.length + '</b> 条';
+ 277|     ctxPop.innerHTML = '';
+ 278|     ctxPop.appendChild(box);
+ 279|   }
+ 280| 
+ 281|   /* ---------- 事件委托 ---------- */
+ 282|   document.addEventListener('click', function (e) {
+ 283|     var t = e.target;
+ 284|     while (t && t !== document.body) {
+ 285|       if (t.id === 'modBtn') {
+ 286|         if (panel.classList.contains('on')) closeSheets();
+ 287|         else { render(); openSheet(panel); }
+ 288|         return;
+ 289|       }
+ 290|       if (t.id === 'ctxBtn') {
+ 291|         if (ctxPop.classList.contains('on')) closeSheets();
+ 292|         else { renderCtx(); openSheet(ctxPop); }
+ 293|         return;
+ 294|       }
+ 295|       t = t.parentNode;
+ 296|     }
+ 297|   }, true);
+
+--- ui/shell.html  L174-209 ---
+ 174| .modSw{flex:0 0 auto;font-size:12px;color:#8e9094;border:1px solid #e5e5e5;border-radius
+ 175| .mod.on .modSw{color:#426efe;border-color:#cfe0ff;background:#eaf1ff}
+ 176| #toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:rgba(20
+ 177| #toast.on{opacity:1}
+ 178| 
+ 179| #modPanel{max-height:0;overflow:hidden;transition:max-height .22s ease;background:#fff;b
+ 180| #modPanel.on{max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+ 181| .mpHead{font-size:12px;color:#8e9094;padding:10px 14px 4px}
+ 182| .mpItem{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px sol
+ 183| .mpMain{flex:1;min-width:0}
+ 184| .mpName{font-size:14px;color:#0f0f0f}
+ 185| .mpDesc{font-size:11px;color:#8e9094;white-space:nowrap;overflow:hidden;text-overflow:el
+ 186| .mpSw{font-size:11px;color:#8e9094;border:1px solid #e5e5e5;border-radius:9px;padding:2p
+ 187| .mpItem.on .mpSw{color:#426efe;border-color:#cfe0ff;background:#eaf1ff}
+ 188| #sheet{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+ 189| #list,#drawer,#modPanel{touch-action:pan-y}
+ 190| .setItem{display:flex;align-items:center;justify-content:space-between;padding:14px 4px;
+ 191| .setItem span{color:#b9babb}
+ 192| .setBack{display:flex;align-items:center;gap:8px;padding:4px 0 12px;color:#8e9094;font-s
+ 193| .setPage{display:none}
+ 194| .setPage.on{display:block}
+ 195| 
+ 196| .caps{gap:8px}
+ 197| .cap{width:32px;height:32px;padding:0;justify-content:center;white-space:nowrap;font-siz
+ 198| .cap svg{width:17px;height:17px}
+ 199| #ctxPop{position:absolute;left:8px;right:8px;bottom:100%;margin-bottom:6px;background:#f
+ 200| #ctxPop.on{display:block}
+ 201| #ctxPop b{color:#0f0f0f;font-weight:500}
+ 202| footer{position:relative}
+ 203| 
+ 204| #modPanel{display:none;background:#fff;border-top:1px solid #f0f0f0;max-height:52vh;over
+ 205| .pnl{padding:14px}
+ 206| .pnl+ .pnl{border-top:1px solid #f5f5f5}
+ 207| .pnlH{font-size:12px;color:#8e9094;margin-bottom:8px;display:flex;justify-content:space-
+ 208| .pnlInput{width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:9px 12px;font-s
+ 209| .preset{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f7f7f7}
+
+--- ui/shell.html  L223-257 ---
+ 223| 
+ 224| #send{background:#e5e5e5;transition:background .15s}
+ 225| #send.ready{background:#426efe}
+ 226| #voiceBtn{border:1.5px solid #0f0f0f}
+ 227| 
+ 228| #modPanel{position:fixed;left:0;right:0;bottom:0;max-height:52vh;background:#fff;border-
+ 229| #modPanel.on{transform:translateY(0)}
+ 230| #modMask{position:fixed;inset:0;background:rgba(0,0,0,.32);opacity:0;pointer-events:none
+ 231| #modMask.on{opacity:1;pointer-events:auto}
+ 232| footer{transition:transform .22s cubic-bezier(.2,0,0,1)}
+ 233| #ctxPop{max-height:40vh;overflow-y:auto}
+ 234| 
+ 235| #modPanel,#ctxPop{position:fixed;left:0;right:0;bottom:0;max-height:52vh;background:#fff
+ 236| #modPanel.on,#ctxPop.on{transform:translateY(0)}
+ 237| #modMask{position:fixed;inset:0;background:rgba(0,0,0,.32);opacity:0;pointer-events:none
+ 238| #modMask.on{opacity:1;pointer-events:auto}
+ 239| footer{transition:transform .22s cubic-bezier(.2,0,0,1)}
+ 240| 
+ 241| /* 与输入框等宽：输入框左右各留 8px */
+ 242| #modPanel,#ctxPop{left:8px;right:8px;bottom:8px;border-radius:18px;max-height:50vh}
+ 243| 
+ 244| /* V5-ANIM */
+ 245| #modMask{background:transparent!important;
+ 246|   backdrop-filter:none!important;
+ 247|   -webkit-backdrop-filter:none!important;}
+ 248| footer,#modPanel,#ctxPop{
+ 249|   transition:transform .22s cubic-bezier(.2,.8,.2,1),
+ 250|     bottom .22s cubic-bezier(.2,.8,.2,1),
+ 251|     opacity .18s linear!important;}
+ 252| #modPanel,#ctxPop{will-change:transform,bottom;}
+ 253| </style></head>
+ 254| <body>
+ 255| 
+ 256| <div id="pane-chat">
+ 257|   <header>

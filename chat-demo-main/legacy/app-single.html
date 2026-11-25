@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SimpleChat</title>
+<style>
+:root {
+  --bg-main: #ffffff; --bg-input: #f4f4f5; --bg-sidebar: #f9f9f9;
+  --text-main: #1a1a1a; --text-sub: #888888; --border-l1: #f0f0f0; --border-l2: #e5e5e5;
+  --primary: #4d6bfe;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
+body { background: var(--bg-main); color: var(--text-main); height: 100vh; height: 100dvh; display: flex; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+
+/* ===== 主界面 ===== */
+.main-layout { flex: 1; display: flex; flex-direction: column; height: 100%; position: relative; width: 100%; }
+.header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; height: 56px; flex-shrink: 0; }
+.header-title { font-size: 17px; font-weight: 500; text-align: center; flex: 1; }
+.icon-btn { display: flex; justify-content: center; align-items: center; cursor: pointer; width: 24px; height: 24px; }
+.icon-btn svg { fill: none; stroke: var(--text-main); }
+
+/* 欢迎页 */
+.chat-box { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; padding: 20px 16px 140px; align-items: center; justify-content: center; }
+.welcome-text { font-size: 20px; font-weight: 600; margin-top: 30vh; }
+
+/* 底部输入区 */
+.bottom-area { position: absolute; bottom: 0; left: 0; right: 0; padding: 12px 16px 24px; background: linear-gradient(to top, var(--bg-main) 85%, transparent); display: flex; flex-direction: column; gap: 12px; }
+.capsule-row { display: flex; gap: 8px; padding: 0 4px; }
+.capsule { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: 20px; border: 1px solid var(--border-l2); background: #fff; color: #333; font-size: 13px; cursor: pointer; height: 34px; white-space: nowrap; }
+.capsule.active { background: #edf3fe; color: var(--primary); border-color: var(--primary); }
+.capsule svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+.input-card { display: flex; flex-direction: column; width: 100%; border-radius: 24px; border: 1px solid var(--border-l2); background: var(--bg-input); overflow: hidden; }
+textarea { display: block; width: 100%; min-height: 48px; padding: 14px 16px 0 16px; border: none; font: inherit; line-height: 24px; background: transparent; color: var(--text-main); resize: none; outline: none; }
+textarea::placeholder { color: var(--text-sub); }
+.input-tools { display: flex; justify-content: space-between; align-items: center; padding: 0 12px 12px 16px; }
+.tool-icon { display: flex; justify-content: center; align-items: center; padding-bottom: 8px; color: var(--text-sub); cursor: pointer; }
+.tool-icon svg { width: 24px; height: 24px; fill: none; stroke: var(--text-main); stroke-width: 2; stroke-linecap: round; }
+.send-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #1a1a1a; border: none; cursor: pointer; }
+.send-btn.disabled { background: #e5e5e5; }
+.send-btn svg { width: 18px; height: 18px; fill: none; stroke: #fff; stroke-width: 2; }
+.send-btn.disabled svg { stroke: #888; }
+
+/* ===== 侧边栏 ===== */
+#drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 90; display: none; }
+#drawer { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: var(--bg-sidebar); z-index: 100; transition: left 0.2s ease; display: flex; flex-direction: column; border-right: 1px solid var(--border-l2); }
+.drawer-content { display: flex; flex-direction: column; height: 100%; padding: 16px 12px 0; }
+.drawer-title { font-size: 20px; font-weight: 600; color: var(--primary); padding-left: 4px; margin-bottom: 16px; }
+.new-chat-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 40px; border-radius: 100px; background: #fff; border: 1px solid var(--border-l2); font-size: 14px; cursor: pointer; margin-bottom: 24px; }
+.drawer-item { padding: 12px 10px; border-radius: 10px; font-size: 14px; cursor: pointer; margin-bottom: 2px; }
+.drawer-item:hover { background: #f0f0f0; }
+.drawer-item.active { background: #e8edff; color: var(--primary); }
+.drawer-footer { height: 58px; display: flex; align-items: center; border-top: 1px solid var(--border-l1); cursor: pointer; font-size: 16px; padding-left: 10px; margin-top: auto; }
+
+/* ===== 设置页 ===== */
+.overlay-page { position: fixed; inset: 0; background: #f7f7f7; z-index: 110; display: none; flex-direction: column; overflow-y: auto; }
+.settings-header { display: flex; align-items: center; padding: 16px; border-bottom: 1px solid var(--border-l1); background: #fff; }
+.back-btn { display: flex; justify-content: center; align-items: center; width: 32px; height: 32px; background: #f4f4f4; border-radius: 50%; cursor: pointer; margin-right: 16px; }
+.back-btn svg { width: 18px; height: 18px; stroke: var(--text-main); stroke-width: 2; fill: none; }
+.settings-content { padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 28px; }
+.group-title { font-size: 13px; color: var(--text-sub); margin-bottom: 8px; margin-left: 16px; }
+.settings-card { background: #fff; border-radius: 12px; border: 1px solid var(--border-l2); overflow: hidden; }
+.settings-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid var(--border-l1); cursor: pointer; font-size: 16px; }
+.settings-item:last-child { border-bottom: none; }
+.settings-item .right { color: var(--text-sub); font-size: 14px; }
+</style>
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    </head>
+<body>
+
+<!-- 侧边栏 -->
+<div id="drawer-overlay" onclick="toggleDrawer()"></div>
+<div id="drawer">
+  <div class="drawer-content">
+    <div class="drawer-title">DeepSeek</div>
+    <button class="new-chat-btn" onclick="newChat()">
+      <svg viewBox="0 0 24 24" style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      开启新对话
+    </button>
+    <div id="drawer-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column;"></div>
+    <div class="drawer-footer" onclick="openSettings()">⚙️ 设置</div>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div class="main-layout">
+  <div class="header">
+    <div class="icon-btn" onclick="toggleDrawer()">
+      <!-- 侧边栏菜单图标，强制 24x24 并保持线条不易拉伸 -->
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </div>
+    <div class="header-title">新对话</div>
+    <div style="display:flex; gap:16px;">
+      <div class="icon-btn">
+        <!-- 语音图标，强制 24x24 -->
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+      </div>
+      <div class="icon-btn" onclick="newChat()">
+        <!-- 新对话图标（加号），强制 24x24 -->
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-box" id="chat-box">
+    <div class="welcome-text">你好，请等会儿再来吧</div>
+  </div>
+
+  <div class="bottom-area">
+    <div class="input-card">
+      <textarea id="userInput" placeholder="发消息或按住说话" rows="1" oninput="document.getElementById('btn-send').className = this.value.trim() ? 'send-btn' : 'send-btn disabled'"></textarea>
+      
+      <div class="input-tools" style="padding: 8px 12px; align-items: center;">
+        <!-- 左侧：胶囊，强制规范尺寸 -->
+        <div class="capsule-row" style="padding: 0; gap: 8px;">
+          <div class="capsule" id="capsule-thinking" onclick="toggleCapsule(this)" style="height: 32px; padding: 0 12px; font-size: 13px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M12 2a7 7 0 0 0-7 7c0 2.5 1.3 4.7 3.3 6v3a1 1 0 0 0 1 1h5.4a1 1 0 0 0 1-1v-3c2-1.3 3.3-3.5 3.3-6a7 7 0 0 0-7-7z"></path></svg>
+            深度思考
+          </div>
+          <div class="capsule" id="capsule-search" onclick="toggleCapsule(this)" style="height: 32px; padding: 0 12px; font-size: 13px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+            智能搜索
+          </div>
+        </div>
+        
+        <!-- 右侧：+圈和发送，强制精确尺寸 -->
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <div class="tool-icon" onclick="document.getElementById('file-input').click()" style="padding: 0; display: flex; align-items: center; justify-content: center;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+          </div>
+          <button class="send-btn disabled" id="btn-send" onclick="sendMessage()" style="width: 30px; height: 30px; display:flex; align-items:center; justify-content:center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+let API_KEY = localStorage.getItem('ds_key') || "";
+let isThinking = false;
+let isSearch = false;
+let loadedModules = {};
+let historyChats = JSON.parse(localStorage.getItem('chats')) || [{id: 1, title: '新对话', messages: []}];
+let currentChatId = historyChats[0]?.id || null;
+
+function toggleDrawer() {
+  const d = document.getElementById('drawer');
+  const o = document.getElementById('drawer-overlay');
+  if (d.style.left === '0px') {
+    d.style.left = '-280px'; o.style.display = 'none';
+  } else {
+    d.style.left = '0px'; o.style.display = 'block'; renderList();
+  }
+}
+
+function renderList() {
+  const list = document.getElementById('drawer-list');
+  list.innerHTML = '';
+  historyChats.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'drawer-item' + (c.id === currentChatId ? ' active' : '');
+    div.innerText = c.title;
+    div.onclick = () => { currentChatId = c.id; loadChat(c); toggleDrawer(); };
+    list.appendChild(div);
+  });
+}
+
+function loadChat(chat) {
+  const box = document.getElementById('chat-box');
+  box.innerHTML = '';
+  if (chat.messages.length === 0) {
+      box.innerHTML = '<div class="welcome-text">你好，请等会儿再来吧</div>';
+  } else {
+      chat.messages.forEach(m => appendMsg(m.role, m.content));
+  }
+}
+
+function newChat() {
+  const id = Date.now();
+  historyChats.unshift({id: id, title: '新对话', messages: []});
+  currentChatId = id;
+  saveChats();
+  loadChat(historyChats[0]);
+  toggleDrawer();
+}
+
+function openSettings() { document.getElementById('settings-page').style.display = 'flex'; toggleDrawer(); }
+function closeSettings() { document.getElementById('settings-page').style.display = 'none'; }
+function openApiConfig() { document.getElementById('api-page').style.display = 'flex'; }
+function closeApiConfig() { document.getElementById('api-page').style.display = 'none'; }
+function saveApiKey() {
+  const val = document.getElementById('apiKeyInput').value.trim();
+  if (val) { API_KEY = val; localStorage.setItem('ds_key', val); alert('已保存'); closeApiConfig(); }
+}
+
+function toggleCapsule(el) {
+  el.classList.toggle('active');
+  if(el.id === 'capsule-thinking') isThinking = el.classList.contains('active');
+  if(el.id === 'capsule-search') isSearch = el.classList.contains('active');
+}
+
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const files = e.target.files;
+  let count = 0;
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (file.name === 'index.js') {
+      loadedModules[file.webkitRelativePath.split('/')[file.webkitRelativePath.split('/').length - 2]] = await file.text();
+      count++;
+    }
+  }
+  alert('已成功加载 ' + count + ' 个模块！');
+});
+
+async function runModule(moduleName, inputJson) {
+  let text = loadedModules[moduleName];
+  if (!text) throw new Error('未加载模块 ' + moduleName);
+  return new Function("input", text + "\nreturn handle(input);")(inputJson);
+}
+
+async function hookA(text){
+  // 强制本地逻辑（测试用，不依赖外部加载）
+  if (text.includes('本地')) return { type: 'local', text: '【本地拦截】这句话没有发给大模型。' };
+  if (text.includes('附加')) return { type: 'context', text: text, extra: '【系统强制指令】请用非常严肃、像机器人一样的语气回答。' };
+  return { type: 'pass', text: text };
+}
+
+async function hookB(text){
+  // 强制本地逻辑（测试用）
+  if (text.includes('执行任务')) {
+    var taskName = text.replace('执行任务', '').replace(/[：:，,。.]/g, '');
+    return { type: 'rewrite', text: '【排版模块已接管】我收到了任务：' + taskName };
+  }
+  return { type: 'pass', text: text };
+}
+
+function saveChats() { localStorage.setItem('chats', JSON.stringify(historyChats)); }
+
+function appendMsg(role, text) {
+  const box = document.getElementById('chat-box');
+  var row = document.createElement('div');
+  row.style.cssText = "display: flex; width: 100%; margin-bottom: 24px; " + (role === 'user' ? 'justify-content: flex-end;' : 'justify-content: flex-start;');
+  var bubble = document.createElement('div');
+  bubble.style.cssText = "max-width: 85%; padding: 10px 15px; border-radius: 22px; font-size: 15px; line-height: 24px; " + (role === 'user' ? 'background: #f4f4f4;' : 'background: transparent;');
+  bubble.innerText = text.replace(/\*\*/g, '');
+  row.appendChild(bubble);
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+  return bubble;
+}
+
+async function sendMessage() {
+  const inputEl = document.getElementById('userInput');
+  var text = inputEl.value.trim();
+  if (!text) return;
+  
+  if (!API_KEY) { 
+      API_KEY = prompt("请填入 DeepSeek API Key:"); 
+      if (!API_KEY) return; 
+      localStorage.setItem('ds_key', API_KEY); 
+  }
+  
+  if (!currentChatId) newChat();
+  const box = document.getElementById('chat-box');
+  if (box.querySelector('.welcome-text')) box.innerHTML = '';
+
+  inputEl.value = '';
+  document.getElementById('btn-send').className = 'send-btn disabled';
+
+  // 记录用户输入
+  const curChat = historyChats.find(c => c.id === currentChatId);
+  curChat.messages.push({role: 'user', content: text});
+  if (curChat.messages.length === 1) curChat.title = text.substring(0, 10);
+  saveChats();
+  appendMsg('user', text);
+
+  // 执行钩子 A
+  var aRes = await hookA(text);
+  if (aRes.type === 'local') {
+    curChat.messages.push({role: 'assistant', content: aRes.text});
+    saveChats();
+    appendMsg('assistant', aRes.text);
+    return;
+  }
+
+  var extraContext = aRes.extra || '';
+  var bubble = appendMsg('assistant', '正在思考...');
+  var rawReply = '';
+  var messages = [{ role: 'user', content: aRes.text || text }];
+  if (extraContext) messages.push({ role: 'system', content: extraContext });
+
+  try {
+    var reqBody = { model: 'deepseek-chat', messages: messages, stream: true };
+    if (isThinking) reqBody.thinking = { type: 'enabled' };
+    if (isSearch) reqBody.search = { type: 'enabled' };
+
+    var res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API_KEY },
+      body: JSON.stringify(reqBody)
+    });
+
+    if (!res.ok) throw new Error('API 响应异常 ' + res.status);
+    bubble.innerText = '';
+
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder('utf-8');
+    while (true) {
+      var r = await reader.read();
+      if (r.done) break;
+      var chunk = decoder.decode(r.value, { stream: true });
+      chunk.split('\n').forEach(line => {
+        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          try {
+            var content = JSON.parse(line.slice(6)).choices[0]?.delta?.content || '';
+            if (content) { 
+              rawReply += content; 
+              bubble.innerText = rawReply; 
+              box.scrollTop = box.scrollHeight; 
+            }
+          } catch(e) {}
+        }
+      });
+    }
+
+    // 执行钩子 B
+    var bRes = await hookB(rawReply);
+    if (bRes.type === 'rewrite') rawReply = bRes.text;
+    
+    bubble.innerText = rawReply;
+    curChat.messages.push({role: 'assistant', content: rawReply});
+    saveChats();
+  } catch (err) { 
+      bubble.innerText = '请求失败: ' + err.message; 
+  }
+}
+
+document.getElementById('apiKeyInput').value = API_KEY || '';
+loadChat(historyChats[0]);
+
+</script>
+</body>
+</html>

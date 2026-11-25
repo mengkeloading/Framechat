@@ -1,0 +1,68 @@
+# 仓库根目录假定同时包含 android/ 与 framework/ 两个平级目录
+# （app/build.gradle.kts 里的 sourceSets 用的是 ../framework/src）。
+#
+# 版本不降级：AGP 9.4.1 + Gradle 9.7.1 + Kotlin 2.4.10 + compileSdk 37 都是已存在的版本，
+# 且 mikepenz markdown 0.45.0 的 POM 明确要求 kotlin-stdlib 2.4.10 —— 降 Kotlin 会读不了它的元数据。
+# 这里做的是把 CI 缺的 SDK 组件补上。
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 镜像自带的 SDK 不一定包含 compileSdk 37 / build-tools 37.0.0，显式装一次
+      - name: 安装 SDK 37
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0"
+
+      # 契约自测：131 + 23 条断言。这一步挂了，说明是框架的问题，不是 App 的
+      - name: 框架契约自测
+        working-directory: framework
+        run: MYCHAT_JDK="$JAVA_HOME" sh build.sh
+
+      - name: assembleDebug
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: 打包 APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+
+      # Kotlin 编译错通常只在报告里给出文件名与行号，单独留一份方便贴出来
+      - name: 打包编译报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            android/app/build/reports/**
+            android/build/reports/**
+          if-no-files-found: ignore

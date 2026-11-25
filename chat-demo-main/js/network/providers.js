@@ -1,0 +1,75 @@
+(function (global) {
+  'use strict';
+
+  function join(base, path) {
+    var b = String(base || '').replace(/\/+$/, '');
+    var p = String(path || '');
+    if (!b) return p;
+    if (!p) return b;
+    if (p.charAt(0) !== '/') p = '/' + p;
+    return b + p;
+  }
+
+  var LIST = {
+    deepseek: {
+      id: 'deepseek', name: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com/v1',
+      path: '/chat/completions',
+      model: 'deepseek-chat',
+      apiStyle: 'chat',
+      supportsTools: true
+    },
+    deepseek_r1: {
+      id: 'deepseek_r1', name: 'DeepSeek 深度思考',
+      baseUrl: 'https://api.deepseek.com/v1',
+      path: '/chat/completions',
+      model: 'deepseek-reasoner',
+      apiStyle: 'chat',
+      supportsTools: false
+    },
+    openai: {
+      id: 'openai', name: 'OpenAI',
+      baseUrl: 'https://api.openai.com/v1',
+      path: '/chat/completions',
+      model: 'gpt-4o-mini',
+      apiStyle: 'chat',
+      supportsTools: true
+    },
+    ollama: {
+      id: 'ollama', name: '本地模型',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      path: '/chat/completions',
+      model: 'qwen2.5',
+      apiStyle: 'chat',
+      supportsTools: false
+    }
+  };
+
+  function get(id) { return LIST[id] || LIST.deepseek; }
+
+  function list() {
+    return Object.keys(LIST).map(function (k) { return LIST[k]; });
+  }
+
+  function resolve(session) {
+    var s = session || {};
+    var p = get(s.providerId);
+    var base = s.baseUrl || p.baseUrl;
+    var path = s.path !== undefined && s.path !== null ? s.path : p.path;
+    return {
+      id: p.id,
+      name: s.name || p.name,
+      baseUrl: base,
+      path: path,
+      url: join(base, path),
+      model: s.model || p.model,
+      apiStyle: s.apiStyle || p.apiStyle,
+      echoReasoning: !!s.echoReasoning,
+      supportsTools: p.supportsTools
+    };
+  }
+
+  global.Providers = {
+    get: get, list: list, resolve: resolve, join: join
+  };
+})(window);

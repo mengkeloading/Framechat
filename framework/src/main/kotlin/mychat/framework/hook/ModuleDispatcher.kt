@@ -1,0 +1,198 @@
+package mychat.framework.hook
+
+import mychat.framework.json.JsonValue
+import mychat.framework.json.parseJson
+
+/**
+ * 钩子调度：只调度、只合并，执行一律交给 JsExecutor。
+ * 契约见 docs/FRAMEWORK.md 第 1-3 节：异常一律 fail-open 当 pass。
+ */
+class ModuleDispatcher(
+    private val source: ModuleSource,
+    private val executor: JsExecutor,
+    private val bridges: HostBridgeFactory,
+    private val maxInvokeDepth: Int = 3,
+    private val historyLimit: Int = 20
+) {
+
+    private val log = mutableListOf<Trace>()
+
+    val traces: List<Trace> get() = synchronized(log) { log.toList() }
+
+    fun clearTraces() = synchronized(log) { log.clear() }
+
+    fun dispatchInput(
+        session: HookSession,
+        rawInput: String,
+        history: List<Message> = emptyList(),
+        attachments: List<Attachment> = emptyList()
+    ): HookAResult {
+        val chain = source.idsForPhase(session.activeHardModules, HOOK_INPUT)
+        if (chain.isEmpty()) return HookAResult.Pass(rawInput)
+
+        val ctx = contextJson(session, null, history, attachments)
+        var text = rawInput
+        val extras = mutableListOf<String>()
+
+        for (id in chain) {
+            val reply = call(id, envelope(rawInput, PHASE_A, ctx), PHASE_A) ?: continue
+            when (reply.type) {
+                "local" -> {
+                    trace("hookA", id, "local")
+                    return HookAResult.Local(reply.text ?: "")
+                }
+                "context" -> {
+                    trace("hookA", id, "context")
+                    reply.extra?.takeIf { it.isNotEmpty() }?.let { extras += it }
+                    reply.text?.takeIf { it.isNotEmpty() }?.let { text = it }
+                }
+                else -> {
+                    trace("hookA", id, "pass")
+                    reply.text?.takeIf { it.isNotEmpty() }?.let { text = it }
+                }
+            }
+        }
+
+        return if (extras.isEmpty()) {
+            HookAResult.Pass(text)
+        } else {
+            HookAResult.Context(text, extras.joinToString("\n"))
+        }
+    }
+
+    fun dispatchOutput(
+        session: HookSession,
+        rawText: String,
+        input: String? = null,
+        history: List<Message> = emptyList(),
+        attachments: List<Attachment> = emptyList()
+    ): HookBResult {
+        val chain = source.idsForPhase(session.activeHardModules, HOOK_OUTPUT)
+        if (chain.isEmpty()) return HookBResult.Pass(rawText)
+
+        val ctx = contextJson(session, input, history, attachments)
+        var hit: Reply? = null
+        var hitName: String? = null
+        for (id in chain) {
+            val r = call(id, envelope(rawText, PHASE_B, ctx), PHASE_B)
+            if (r == null) continue
+            if (r.type != "pass") {
+                hit = r
+                hitName = id
+                break
+            }
+            trace("hookB", id, "pass")
+        }
+        if (hit == null) return HookBResult.Pass(rawText)
+
+        var depth = 0
+        val visited = mutableListOf<String>()
+        var current: Reply? = hit
+        var currentName = hitName
+
+        while (current != null) {
+            when (current.type) {
+                "rewrite" -> {
+                    trace("hookB", currentName, "rewrite")
+                    return HookBResult.Rewrite(current.text?.takeIf { it.isNotEmpty() } ?: rawText)
+                }
+                "invoke" -> {
+                    val target = current.moduleName
+                    depth += 1
+                    if (depth > maxInvokeDepth || target.isNullOrEmpty() ||
+                        source.getPackage(target) == null || visited.contains(target)
+                    ) {
+                        trace("hookB", currentName, "invoke 中止 depth=$depth -> pass")
+                        return HookBResult.Pass(rawText)
+                    }
+                    visited += target
+                    currentName = target
+                    val payload = current.payload?.takeIf { it.isNotEmpty() } ?: rawText
+                    current = call(target, envelope(payload, PHASE_B, ctx), PHASE_B)
+                }
+                else -> return HookBResult.Pass(rawText)
+            }
+        }
+        return HookBResult.Pass(rawText)
+    }
+
+    private fun call(id: String, envJson: String, phase: String): Reply? {
+        val pkg = source.getPackage(id)
+        if (pkg == null) {
+            trace("hook", id, "模块不存在 fail-open")
+            return null
+        }
+        val ref = "$id/${pkg.manifest.entry}"
+        val raw = try {
+            executor.execute(ref, envJson, bridges.create(pkg))
+        } catch (e: Exception) {
+            trace("hook", id, "执行异常 fail-open: ${e.message}")
+            return null
+        }
+        if (raw.isNullOrEmpty()) return null
+
+        val obj = parseJson(raw) as? JsonValue.Obj
+        if (obj == null) {
+            trace("hook", id, "非法 JSON fail-open")
+            return null
+        }
+        val type = obj.str("type")
+        if (type == null || !isLegal(type, phase)) {
+            trace("hook", id, "phase=$phase 非法类型 $type fail-open")
+            return null
+        }
+        val extra = obj["extra"]?.let { if (it is JsonValue.Str) it.value else it.encode() }
+        return Reply(
+            type = type,
+            text = obj.str("text"),
+            extra = extra,
+            moduleName = obj.str("moduleName"),
+            payload = obj.str("payload")
+        )
+    }
+
+    private fun envelope(text: String, phase: String, ctx: JsonValue): String =
+        JsonValue.of(
+            "text" to JsonValue.Str(text),
+            "phase" to JsonValue.Str(phase),
+            "ctx" to ctx
+        ).encode()
+
+    private fun contextJson(
+        session: HookSession,
+        input: String?,
+        history: List<Message>,
+        attachments: List<Attachment>
+    ): JsonValue = JsonValue.of(
+        "sessionId" to JsonValue.Str(session.id),
+        "session" to session.toJson(),
+        "messages" to JsonValue.array(history.takeLast(historyLimit).map { it.toJson() }),
+        "attachments" to JsonValue.array(attachments.map { it.toMetaJson() }),
+        "input" to input?.let { JsonValue.Str(it) }
+    )
+
+    private fun trace(tag: String, module: String?, message: String) {
+        synchronized(log) { log.add(Trace(tag, module, message)) }
+    }
+
+    private class Reply(
+        val type: String,
+        val text: String?,
+        val extra: String?,
+        val moduleName: String?,
+        val payload: String?
+    )
+
+    companion object {
+        const val PHASE_A = "a"
+        const val PHASE_B = "b"
+        const val HOOK_INPUT = "input"
+        const val HOOK_OUTPUT = "output"
+
+        private val A_TYPES = setOf("pass", "local", "context")
+        private val B_TYPES = setOf("pass", "rewrite", "invoke")
+
+        fun isLegal(type: String, phase: String): Boolean =
+            if (phase == PHASE_A) A_TYPES.contains(type) else B_TYPES.contains(type)
+    }
+}

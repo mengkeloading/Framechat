@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MyChat UI v2</title>
+<style>
+:root{
+  --bg:#fff; --bg-input:#f5f5f5; --line:#e5e5e5; --divider:#f0f0f0;
+  --text:#0f0f0f; --text2:#545557; --ph:#8e9094; --local:#eff0f2;
+  --brand:#426efe;
+  --pad-list:12px;      /* 消息区左右，可调 */
+  --pad-input:8px;      /* 输入区左右，可调 */
+  --gap-msg:10px;       /* 消息间距，可调 */
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;
+  -webkit-text-size-adjust:100%;text-size-adjust:100%}
+html,body{margin:0;height:100%;background:#e9e9ec;color:var(--text);
+  font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif}
+#wrap{height:100%;display:flex;flex-direction:column}
+#scenes{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:#fff;
+  border-bottom:1px solid var(--divider)}
+#scenes button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--line);
+  background:#fff;font-size:12px;color:var(--text)}
+#scenes button.on{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+#stage{flex:1;min-height:0;display:flex;justify-content:center;padding:8px 0}
+#phone{position:relative;width:100%;max-width:430px;background:var(--bg);overflow:hidden;
+  display:flex;flex-direction:column;box-shadow:0 0 0 1px #ddd}
+#screen{flex:1;min-height:0;display:flex;flex-direction:column}
+header{flex:0 0 52px;height:52px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 0 4px 3px;border-bottom:1px solid var(--divider)}
+header svg{display:block}
+#menu svg{width:24px;height:24px}
+header .r{display:flex;align-items:center;gap:12px;padding-right:10px}
+#sound svg{width:20px;height:20px}
+#new svg{width:22px;height:22px}
+header .title{font-size:15px;font-weight:500;margin:0 12px 0 9px}
+#list{flex:1;min-height:0;overflow-y:auto;padding:0 var(--pad-list) 24px;position:relative}
+#empty{position:absolute;inset:45% 0 auto 0;text-align:center;color:var(--ph);
+  font-size:20px;font-weight:600;pointer-events:none}
+.row{display:flex;margin-bottom:var(--gap-msg)}
+.row.me{justify-content:flex-end}
+.bubble{font-size:16px;line-height:26.31px;white-space:pre-wrap;word-break:break-word}
+.bubble.user{background:var(--bg-input);border-radius:16px;padding:10px 14px;max-width:86%}
+.bubble.model{background:none;border:0;border-radius:0;padding:11px 0 0 4px;max-width:100%}
+.bubble.local,.bubble.reflex{background:var(--local);border-radius:16px;
+  padding:10px 14px;max-width:100%}
+.chip{display:block;margin-top:6px;font-size:11px;color:var(--ph);text-align:right}
+.caret{display:inline-block;width:7px;height:17px;background:var(--text);
+  vertical-align:-3px;margin-left:2px;animation:bk 1s steps(1) infinite}
+@keyframes bk{50%{opacity:0}}
+.sysrow{justify-content:center}
+.sys{font-size:14px;line-height:22px;color:var(--ph)}
+/* 助手操作行 */
+.acts{display:flex;gap:6px;padding-top:12px;padding-bottom:4px;margin-top:-4px}
+.acts button{display:inline-flex;align-items:center;gap:3px;height:26px;padding:0 8px;
+  border:0;border-radius:8px;background:transparent;color:var(--ph);font-size:12px}
+.acts button svg{width:15px;height:15px}
+.acts .sp{margin-left:auto}
+/* 深度思考 */
+.think{padding:8px 0 0 4px}
+.think .th{display:flex;align-items:center;gap:6px;height:34px;color:var(--text2);
+  font-size:15px}
+.think .th svg{width:16px;height:16px}
+.think .tb{margin-left:8px;border-left:1px solid var(--line);padding:5px 0 5px 22px;
+  color:var(--text2);font-size:15px;line-height:24px}
+/* markdown */
+.md{font-size:16px;line-height:26.31px}
+.md p{margin:16px 0}
+.md p:first-child{margin-top:0}
+.md p:last-child{margin-bottom:0}
+.md h3{margin:32px 0 16px;font-size:18px;font-weight:600;line-height:26px}
+.md ul{margin:16px 0;padding-left:18px}
+.md li:not(:first-child){margin-top:6px}
+.md hr{height:1px;margin:32px 0;background:var(--line);border:0}
+.md blockquote{margin:16px 0 0;padding-left:14px;border-left:2px solid var(--line);
+  color:var(--text2)}
+.md code{font-size:.875em;background:#f2f2f3;border-radius:6px;padding:0 5px}
+.codeblock{margin:16px 0;border-radius:12px;overflow:hidden;background:#f7f7f8;
+  border:1px solid #ececec}
+.codeblock .banner{height:36px;display:flex;align-items:center;justify-content:space-between;
+  padding:6px 10px;background:#f0f0f1;border-radius:12px 12px 0 0;font-size:12px;
+  line-height:18px;color:var(--text2);font-family:ui-monospace,Menlo,monospace}
+.codeblock .copy{height:28px;padding:0 10px;border:0;border-radius:8px;background:transparent;
+  font-size:13px;color:var(--text2)}
+.codeblock pre{margin:0;padding:16px;overflow-x:auto;
+  font:12.5px/1.7 ui-monospace,Menlo,monospace;color:#1a1a1a}
+/* 回到底部 */
+#jump{position:absolute;right:14px;bottom:12px;width:36px;height:36px;border-radius:18px;
+  background:#fff;border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.08);
+  display:none;align-items:center;justify-content:center;z-index:5}
+#jump svg{width:18px;height:18px}
+#jump.on{display:flex}
+/* 输入区 */
+footer{flex:0 0 auto;padding:8px var(--pad-input) calc(12px + env(safe-area-inset-bottom))}
+.card{background:var(--bg-input);border:1px solid var(--line);border-radius:24px;padding:0}
+.card textarea{width:100%;border:0;background:transparent;resize:none;outline:none;
+  font:16px/24px inherit;color:var(--text);padding:12px 12px 0 16px;min-height:42px;display:block}
+.card textarea::placeholder{color:var(--ph)}
+.files{display:flex;gap:10px;padding:12px 12px 0}
+.file{position:relative;width:64px;height:64px;border-radius:16px;border:1px solid var(--line);
+  background:#e9e9ec;display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--text2)}
+.file .x{position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:9px;
+  background:#1a1a1a;color:#fff;font-size:11px;display:flex;align-items:center;
+  justify-content:center;border:0}
+.tools{display:flex;align-items:center;justify-content:space-between;padding:12px;
+  margin-top:4px}
+.caps{display:flex;gap:8px}
+.cap{height:32px;padding:0 12px;border-radius:16px;background:#fff;border:1px solid var(--line);
+  font-size:13px;font-weight:500;display:flex;align-items:center}
+.cap.on{border-color:var(--brand);color:var(--brand)}
+.right{display:flex;align-items:center;gap:10px}
+.right svg{width:24px;height:24px;display:block}
+.send{width:30px;height:30px;border-radius:15px;border:0;background:#000;display:flex;
+  align-items:center;justify-content:center;padding:0}
+.send svg{width:18px;height:18px;display:block}
+.send.dis{background:var(--line)}
+#errbar{display:none;margin:0 var(--pad-list) 8px;padding:10px 12px;border-radius:12px;
+  background:#fdeceb;color:#c0392b;font-size:14px;line-height:22px;
+  justify-content:space-between;align-items:center}
+#errbar b{padding:4px 10px;border-radius:8px;background:#f8d7d4}
+/* 抽屉 / 设置 */
+#scrim{position:absolute;inset:0;background:rgba(0,0,0,.35);display:none;z-index:2}
+#drawer{position:absolute;top:0;left:0;bottom:0;width:280px;background:#fafafa;
+  transform:translateX(-100%);transition:transform 220ms cubic-bezier(.2,0,0,1);
+  display:flex;flex-direction:column;padding:16px 12px;gap:4px;z-index:3}
+#drawer.on{transform:none}
+#drawer .new{height:40px;border-radius:12px;background:#fff;border:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;padding:0 12px;font-size:14px;font-weight:500}
+#drawer .h{font-size:11px;color:var(--ph);margin:14px 4px 4px}
+#drawer .item{height:38px;border-radius:10px;display:flex;align-items:center;padding:0 10px;
+  font-size:14px;color:var(--text2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#drawer .item.on{background:#efefef;color:var(--text)}
+#settings{position:absolute;inset:0;background:var(--bg);transform:translateX(100%);
+  transition:transform 220ms cubic-bezier(.2,0,0,1);z-index:4;display:flex;flex-direction:column}
+#settings.on{transform:none}
+#settings .bar{flex:0 0 52px;display:flex;align-items:center;gap:10px;padding:0 12px;
+  border-bottom:1px solid var(--divider);font-size:15px;font-weight:500}
+#settings .bar svg{width:24px;height:24px}
+#settings .body{flex:1;overflow-y:auto;padding:16px 16px calc(28px + env(safe-area-inset-bottom))}
+#settings .gh{font-size:12px;color:var(--ph);margin:0 4px 8px}
+#settings .c{background:#fff;border:1px solid var(--divider);border-radius:14px;
+  overflow:hidden;margin-bottom:18px}
+#settings .r{display:flex;align-items:center;justify-content:space-between;padding:13px 14px;
+  font-size:15px;border-top:1px solid var(--divider)}
+#settings .r:first-child{border-top:0}
+#settings .r .sub{font-size:12px;color:var(--ph);margin-top:2px}
+#settings .r .v{color:var(--ph);font-size:13px}
+.tag{display:inline-block;font-size:11px;color:#c0392b;background:#fdeceb;border-radius:6px;
+  padding:1px 6px;margin-left:6px}
+#ruler{position:fixed;left:10px;bottom:10px;right:10px;z-index:99;background:rgba(20,20,20,.92);
+  color:#fff;font:11px/1.7 ui-monospace,monospace;padding:8px 10px;border-radius:8px;
+  display:none;white-space:pre-wrap}
+
+/* ===== v3 修正 ===== */
+:root{--pad-list:16px}                 /* 左右对称，各 16 */
+.bubble.model{padding:11px 0 0 0}      /* 去掉左侧多出的 4 */
+#jump{bottom:auto}                     /* 由 JS 按输入框高度定位 */
+#disc{text-align:center;font-size:11px;color:#b9babb;padding-top:8px}
+#drawer .h:last-of-type{margin-top:auto}
+
+/* ===== v4：侧栏 / 语音 / 胶囊图标 / 提示条 ===== */
+#drawer{padding:12px 10px;overflow-y:auto}
+#drawer .dtop{padding:2px 0 10px}
+#drawer .dsearch{display:flex;align-items:center;gap:8px;height:38px;border-radius:19px;
+  background:#f5f5f5;padding:0 14px;font-size:14px;color:#8e9094}
+#drawer .dsearch svg{width:18px;height:18px;flex:0 0 auto}
+#drawer .dsec{display:flex;align-items:center;justify-content:space-between;
+  padding:6px 4px;font-size:12px;color:#b9babb}
+#drawer .dsec svg{width:18px;height:18px}
+#drawer .ditem{height:40px;display:flex;align-items:center;padding:0 4px;border-radius:8px;
+  font-size:16px;color:#0f0f0f;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#drawer .ditem.on{font-weight:500}
+#drawer .ddiv{height:1px;background:#ececec;margin:8px 4px}
+#drawer .dgrp{font-size:12px;color:#b9babb;padding:10px 4px 4px}
+#drawer .dbottom{margin-top:auto}
+#drawer .daccount{display:flex;align-items:center;gap:10px;padding:10px 4px;
+  border-top:1px solid #ececec;margin-top:6px}
+#drawer .ava{width:32px;height:32px;border-radius:16px;background:#e5e5e5;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto}
+#drawer .ava svg{width:22px;height:22px}
+#drawer .mail{flex:1;font-size:14px;color:#0f0f0f;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis}
+#drawer .dots{border:0;background:none;color:#8e9094;font-size:18px;padding:0 4px}
+/* 语音按钮 */
+#voice{width:30px;height:30px;border-radius:15px;border:1px solid #0f0f0f;background:#fff;
+  display:none;align-items:center;justify-content:center;padding:0}
+#voice svg{width:18px;height:18px}
+/* 胶囊图标与激活态 */
+.cap{gap:5px}
+.cap svg{width:15px;height:15px;flex:0 0 auto}
+.cap.on{background:#eaf1ff;border-color:#cfe0ff;color:var(--brand)}
+/* 提示条 */
+#notice{display:none;margin:0 8px 8px;padding:12px 14px;border-radius:20px;
+  background:#f5f5f5;color:#8e9094;font-size:14px;line-height:20px}
+#notice i{font-style:normal;margin-right:4px}
+</style></head>
+<body>
+<div style="position:fixed;right:8px;top:8px;z-index:999;
+background:rgba(66,110,254,.92);color:#fff;font-size:11px;padding:3px 8px;
+border-radius:10px;font-family:-apple-system,sans-serif">UI v1 冻结</div>
+
+<div id="wrap">
+  <div id="scenes">
+    <button data-s="empty" class="on">空态</button>
+    <button data-s="stream">流式中</button>
+    <button data-s="md">长回复</button>
+    <button data-s="think">深度思考</button>
+    <button data-s="local">本地气泡</button>
+    <button data-s="tool">执行工具</button>
+    <button data-s="attach">附件</button>
+    <button data-s="error">错误</button>
+    <button data-s="drawer">抽屉</button>
+    <button data-s="settings">设置</button>
+  </div>
+  <div id="stage">
+    <div id="phone">
+      <div id="screen">
+        <header>
+          <div id="menu"><svg viewBox="0 0 24 24" fill="none" stroke="#0f0f0f"
+            stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></div>
+          <div class="title" id="title">新对话</div>
+          <div class="r">
+            <div id="sound"><svg viewBox="0 0 24 24" fill="none" stroke="#0f0f0f"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M14.6 9.4a3.6 3.6 0 0 1 0 5.2"/>
+              <path d="M17.6 7a7.6 7.6 0 0 1 0 10"/></svg></div>
+            <div id="new"><svg viewBox="0 0 24 24" fill="none" stroke="#0f0f0f"
+              stroke-width="1.8" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg></div>
+          </div>
+        </header>
+        <div id="list"><div id="empty">你好，请等会儿再来吧</div></div>
+        <div id="errbar"></div>
+        <div id="notice"><i>ⓘ</i>服务器繁忙，使用额度已达上限，将于 2026 年 11 月 25 日 01:00 恢复</div>
+        <footer>
+          <div class="card">
+            <div class="files" id="files" style="display:none"></div>
+            <textarea id="ta" rows="1" placeholder="发消息或按住说话"></textarea>
+            <div class="tools">
+              <div class="caps">
+                <div class="cap" id="thinkBtn"><svg viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/>
+                  <ellipse cx="12" cy="12" rx="9" ry="4.2"/>
+                  <ellipse cx="12" cy="12" rx="4.2" ry="9"/></svg>深度思考</div>
+                <div class="cap" id="searchBtn"><svg viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/>
+                  <path d="M3 12h18M12 3c3 3.6 3 14.4 0 18M12 3c-3 3.6-3 14.4 0 18"/></svg>智能搜索</div>
+              </div>
+              <div class="right">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#0f0f0f" stroke-width="1.8"
+                  stroke-linecap="round"><circle cx="12" cy="12" r="9"/>
+                  <path d="M12 8.2v7.6M8.2 12h7.6"/></svg>
+                                <button id="voice" aria-label="语音">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#0f0f0f" stroke-width="1.5"
+                    stroke-linecap="round"><path d="M9 9v6M12 7v10M15 9v6"/></svg>
+                </button>
+                <button class="send" id="send"><svg viewBox="0 0 24 24" fill="none" stroke="#fff"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 19.5V4.8M5.8 11 12 4.8 18.2 11"/></svg></button>
+              </div>
+            </div>
+          </div>
+                  <div id="disc">回答由 AI 生成，仅供参考</div>
+        </footer>
+        <div id="jump"><svg viewBox="0 0 24 24" fill="none" stroke="#0f0f0f" stroke-width="1.8"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg></div>
+      </div>
+      <div id="scrim"></div>
+      <div id="drawer">
+        <div class="new"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+          stroke="#0f0f0f" stroke-width="1.8" stroke-linecap="round">
+          <path d="M12 5.5v13M5.5 12h13"/></svg>开启新对话</div>
+        <div class="h">最近</div>
+        <div class="item on">正则表达式怎么写</div>
+        <div class="item">周报排版规则</div>
+        <div class="item">解释一下反射弧</div>
+        <div class="h">设置</div>
+        <div class="item" id="goSet">设置</div>
+      </div>
+      <div id="settings">
+        <div class="bar"><svg id="back" viewBox="0 0 24 24" fill="none" stroke="#0f0f0f"
+          stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 5 8 12 15 19"/></svg>设置</div>
+        <div class="body">
+          <div class="gh">账户</div>
+          <div class="c">
+            <div class="r"><div><div>API Key</div><div class="sub">仅存本机，不上传</div></div>
+              <div class="v">已配置</div></div>
+            <div class="r"><div>服务商</div><div class="v">DeepSeek</div></div>
+          </div>
+          <div class="gh">模块</div>
+          <div class="c">
+            <div class="r"><div><div>周报排版<span class="tag">读取资源</span></div>
+              <div class="sub">reference 按需加载</div></div><div class="v">已启用</div></div>
+            <div class="r"><div><div>剪贴板反射<span class="tag">读取剪贴板</span></div>
+              <div class="sub">不会联网</div></div><div class="v">未启用</div></div>
+            <div class="r"><div>模块管理</div><div class="v">8 个</div></div>
+          </div>
+          <div class="gh">应用</div>
+          <div class="c">
+            <div class="r"><div>外观</div><div class="v">跟随系统</div></div>
+            <div class="r"><div>默认模型</div><div class="v">deepseek-chat</div></div>
+            <div class="r"><div>工具调用上限</div><div class="v">3 轮</div></div>
+          </div>
+          <div class="gh">关于</div>
+          <div class="c"><div class="r"><div>版本</div><div class="v">0.1.0</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<pre id="ruler"></pre>
+<script>
+var list = document.getElementById('list');
+var empty = document.getElementById('empty');
+var errbar = document.getElementById('errbar');
+var drawer = document.getElementById('drawer');
+var scrim = document.getElementById('scrim');
+var settings = document.getElementById('settings');
+var send = document.getElementById('send');
+var ta = document.getElementById('ta');
+var title = document.getElementById('title');
+var files = document.getElementById('files');
+var jump = document.getElementById('jump');
+
+var ICON = {
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+  read: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M14.6 9.4a3.6 3.6 0 0 1 0 5.2"/></svg>',
+  redo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.3"/><path d="M20 5v6h-6"/></svg>',
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" fill="#fff"><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg>',
+  arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19.5V4.8M5.8 11 12 4.8 18.2 11"/></svg>'
+};
+
+function u(t){ return '<div class="row me"><div class="bubble user">' + t + '</div></div>'; }
+function m(h, acts){ return '<div class="row"><div class="bubble model">' + h +
+  (acts ? '<div class="acts"><button>' + ICON.copy + '复制</button>' +
+          '<button>' + ICON.read + '朗读</button>' +
+          '<button class="sp">' + ICON.redo + '重新生成</button></div>' : '') + '</div></div>'; }
+function sys(t){ return '<div class="row sysrow"><div class="sys">' + t + '</div></div>'; }
+
+function reset(){
+  list.innerHTML = ''; list.appendChild(empty);
+  empty.style.display = 'none';
+  errbar.style.display = 'none';
+  drawer.classList.remove('on'); scrim.style.display = 'none';
+  settings.classList.remove('on');
+  files.style.display = 'none'; files.innerHTML = '';
+  jump.classList.remove('on');
+  title.textContent = '新对话';
+  ta.value = '';
+  send.className = 'send'; send.innerHTML = ICON.arrow;
+}
+
+function go(name){
+  reset();
+  if (name === 'empty') {
+    empty.style.display = 'block';
+    send.className = 'send dis';
+  } else if (name === 'stream') {
+    list.innerHTML = u('帮我写个匹配手机号的正则') +
+      m('手机号正则是：<code>^1[3-9]\\d{9}$</code><span class="caret"></span>');
+    send.className = 'send'; send.innerHTML = ICON.stop;
+  } else if (name === 'md') {
+    list.innerHTML = u('给我一个带代码的回复示例') +
+      m('<div class="md"><h3>示例：手机号校验</h3>' +
+        '<p>可以这样匹配：<code>^1[3-9]\\d{9}$</code>。段落上下各 16，首尾归零。</p>' +
+        '<ul><li>列表左缩进 18</li><li>条目之间留 6</li></ul><hr>' +
+        '<blockquote>引用块左侧留 14。</blockquote>' +
+        '<div class="codeblock"><div class="banner"><span>javascript</span>' +
+        '<button class="copy">复制</button></div>' +
+        '<pre>function isPhone(s) {\n  return /^1[3-9]\\d{9}$/.test(s);\n}</pre></div>' +
+        '<p>代码块：圆角 12、内边距 16、顶栏只有上方两角是圆角。</p></div>', true);
+    jump.classList.add('on');
+  } else if (name === 'think') {
+    list.innerHTML = u('9.11 和 9.9 哪个大') +
+      '<div class="row"><div class="bubble model"><div class="think">' +
+      '<div class="th">' + ICON.up.replace(/currentColor/g,'#545557') +
+      ' 已思考 8 秒</div><div class="tb">' +
+      '比较两个小数时，先对齐小数点。9.11 的十分位是 1，9.9 的十分位是 9，' +
+      '所以 9.9 更大。</div></div>' +
+      '<div class="md" style="margin-top:12px"><p>9.9 更大。比较十分位即可：'
+      + '1 &lt; 9。</p></div>' +
+      '<div class="acts"><button>' + ICON.copy + '复制</button>' +
+      '<button>' + ICON.read + '朗读</button></div></div></div>';
+  } else if (name === 'local') {
+    list.innerHTML = u('现在几点了') +
+      '<div class="row"><div class="bubble local">' +
+      '现在是 14:32（本地截留，未发起网络请求）<span class="chip">本地</span></div></div>';
+  } else if (name === 'tool') {
+    list.innerHTML = u('分析一下这段对话') + m('好的，我先扫一遍上下文。') +
+      sys('正在执行 analyze_chat …');
+  } else if (name === 'attach') {
+    list.innerHTML = u('帮我看看这两张图') + m('收到，我看一下。');
+    files.style.display = 'flex';
+    files.innerHTML = '<div class="file">图 1<button class="x">×</button></div>' +
+                      '<div class="file">图 2<button class="x">×</button></div>';
+  } else if (name === 'error') {
+    list.innerHTML = u('帮我写个匹配手机号的正则') +
+      m('可以这样写：<code>^1[3-9]\\d{9}$</code><br>需要我逐段解释吗？');
+    errbar.style.display = 'flex';
+    errbar.innerHTML = '<span>鉴权失败（401），请检查 API Key</span><b>重试</b>';
+  } else if (name === 'drawer') {
+    list.innerHTML = u('帮我写个匹配手机号的正则') + m('可以这样写。');
+    drawer.classList.add('on'); scrim.style.display = 'block';
+  } else if (name === 'settings') {
+    list.innerHTML = u('帮我写个匹配手机号的正则') + m('可以这样写。');
+    settings.classList.add('on'); title.textContent = '设置';
+  }
+  list.scrollTop = list.scrollHeight;
+  var nt = document.getElementById('notice');
+  if (nt) nt.style.display = (name === 'md') ? 'block' : 'none';
+}
+
+document.querySelectorAll('#scenes button').forEach(function (b) {
+  b.addEventListener('click', function () {
+    document.querySelectorAll('#scenes button').forEach(function (x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    go(b.getAttribute('data-s'));
+  });
+});
+
+document.getElementById('menu').addEventListener('click', function () {
+  drawer.classList.add('on'); scrim.style.display = 'block';
+});
+scrim.addEventListener('click', function () {
+  drawer.classList.remove('on'); scrim.style.display = 'none';
+});
+document.getElementById('goSet').addEventListener('click', function () {
+  drawer.classList.remove('on'); scrim.style.display = 'none';
+  settings.classList.add('on'); title.textContent = '设置';
+});
+document.getElementById('back').addEventListener('click', function () {
+  settings.classList.remove('on'); title.textContent = '新对话';
+});
+document.getElementById('thinkBtn').addEventListener('click', function () {
+  this.classList.toggle('on');
+});
+document.getElementById('searchBtn').addEventListener('click', function () {
+  this.classList.toggle('on');
+});
+document.getElementById('new').addEventListener('click', function () { go('empty'); });
+send.addEventListener('click', function () {
+  if (send.className.indexOf('dis') >= 0) return;
+  var t = ta.value.trim() || '这是一条示例消息';
+  list.innerHTML += u(t);
+  ta.value = '';
+  list.scrollTop = list.scrollHeight;
+});
+
+/* 量尺：双击顶部标题显示当前间距 */
+title.addEventListener('dblclick', function () {
+  var r = document.getElementById('ruler');
+  var cs = getComputedStyle(document.documentElement);
+  var out = [];
+  out.push('viewport ' + innerWidth + 'x' + innerHeight +
+           '  dpr ' + (window.devicePixelRatio || 1));
+  out.push('消息区左右 ' + cs.getPropertyValue('--pad-list').trim());
+  out.push('输入区左右 ' + cs.getPropertyValue('--pad-input').trim());
+  out.push('消息间距   ' + cs.getPropertyValue('--gap-msg').trim());
+  var mb = document.querySelector('.bubble.model');
+  if (mb) {
+    var c2 = getComputedStyle(mb);
+    out.push('助手 font ' + c2.fontSize + ' / ' + c2.lineHeight +
+             '  padding-top ' + c2.paddingTop);
+  }
+  r.textContent = out.join('\n');
+  r.style.display = 'block';
+  setTimeout(function () { r.style.display = 'none'; }, 6000);
+});
+
+go('empty');
+</script>
+
+<script>
+(function () {
+  var jump = document.getElementById('jump');
+  var foot = document.querySelector('footer');
+
+  function syncJump() {
+    if (!jump || !foot) return;
+    jump.style.bottom = (foot.offsetHeight + 8) + 'px';
+  }
+
+  window.addEventListener('resize', syncJump);
+  document.addEventListener('click', function () { setTimeout(syncJump, 0); });
+  document.addEventListener('scroll', syncJump, true);
+  setTimeout(syncJump, 0);
+  setTimeout(syncJump, 300);
+  window.__syncJump = syncJump;
+})();
+</script>
+
+<script>
+(function () {
+  var ta = document.getElementById('ta');
+  var send = document.getElementById('send');
+  var voice = document.getElementById('voice');
+
+  function syncComposer() {
+    if (!send) return;
+    var stopping = send.innerHTML.indexOf('<rect') >= 0;
+    if (stopping) {
+      if (voice) voice.style.display = 'none';
+      send.style.display = 'flex';
+      return;
+    }
+    var hasText = ta && ta.value.trim().length > 0;
+    if (hasText) {
+      send.classList.remove('dis');
+      send.style.display = 'flex';
+      if (voice) voice.style.display = 'none';
+    } else {
+      send.classList.add('dis');
+      send.style.display = 'none';
+      if (voice) voice.style.display = 'flex';
+    }
+  }
+
+  if (ta) ta.addEventListener('input', syncComposer);
+  document.addEventListener('click', function () { setTimeout(syncComposer, 0); });
+  setTimeout(syncComposer, 0);
+  window.__syncComposer = syncComposer;
+})();
+</script>
+</body></html>
