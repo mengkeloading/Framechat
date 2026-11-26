@@ -68,6 +68,15 @@ class App : Application() {
                 android.widget.Toast.LENGTH_LONG,
             ).show()
 
+            // 启动时把各模块声明的格式标记写进日志：没有 marks= 行就是没解析到
+            modules.registry.all()
+                .filter { it.manifest.formatMarks.isNotEmpty() }
+                .forEach {
+                    com.simplechat.app.hook.UsageLog.record(
+                        "marks=" + it.id + ":" + it.manifest.formatMarks.joinToString("|")
+                    )
+                }
+
             /*
              * 仅调试包：把验链路要用的模块补进启用集合（并集，不会覆盖用户已有选择）。
              * 新增模块不必清 App 数据。

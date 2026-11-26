@@ -249,4 +249,15 @@ private fun assetHealthTest() {
     eq("assets: 关键模块齐全", emptyList<String>(), missing)
 
     println("  模块清单（${ids.size} 个）: ${ids.joinToString(", ")}")
+
+    // format_marks 是钩子 B 做格式检查的依据，解析不到就白声明了
+    val code = scan.registry.getPackage("skill_code")
+    check("assets: skill_code 存在", code != null)
+    if (code != null) {
+        eq(
+            "assets: skill_code 的 format_marks 已解析",
+            listOf("[必须改]", "[建议改]", "[可选]"),
+            code.manifest.formatMarks
+        )
+    }
 }
