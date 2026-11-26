@@ -32,7 +32,7 @@ class ModuleDispatcher(
 
         val ctx = contextJson(session, null, history, attachments)
         var text = rawInput
-        val extras = mutableListOf<String>()
+        val blocks = mutableListOf<SkillBlock>()
 
         for (id in chain) {
             val reply = call(id, envelope(rawInput, PHASE_A, ctx), PHASE_A) ?: continue
@@ -43,7 +43,15 @@ class ModuleDispatcher(
                 }
                 "context" -> {
                     trace("hookA", id, "context")
-                    reply.extra?.takeIf { it.isNotEmpty() }?.let { extras += it }
+                    reply.extra?.takeIf { it.isNotEmpty() }?.let { extra ->
+                        val pkg = source.getPackage(id)
+                        blocks += SkillBlock(
+                            id = id,
+                            name = pkg?.manifest?.name ?: id,
+                            description = pkg?.manifest?.description.orEmpty(),
+                            extra = extra
+                        )
+                    }
                     reply.text?.takeIf { it.isNotEmpty() }?.let { text = it }
                 }
                 else -> {
@@ -53,12 +61,40 @@ class ModuleDispatcher(
             }
         }
 
-        return if (extras.isEmpty()) {
+        return if (blocks.isEmpty()) {
             HookAResult.Pass(text)
         } else {
-            HookAResult.Context(text, extras.joinToString("\n"))
+            HookAResult.Context(text, renderContext(blocks))
         }
     }
+
+    /**
+     * 把各模块的 extra 包成带身份的技能块，再追一段使用声明要求。
+     *
+     * 包装放在框架侧统一做：模块作者只写“规范正文”，不用关心格式，
+     * 也不会出现有的模块写了 id、有的没写。身份信息让模型能把它看到的
+     * 每段规范对应到具体模块，末尾的声明要求才有东西可写。
+     */
+    private fun renderContext(blocks: List<SkillBlock>): String = buildString {
+        for (b in blocks) {
+            append("【已加载技能】\n")
+            append("id: ").append(b.id).append('\n')
+            append("name: ").append(b.name).append('\n')
+            append("说明：").append(b.description).append('\n')
+            append('\n')
+            append("规范：\n")
+            append(b.extra).append('\n')
+            append("【技能结束】\n\n")
+        }
+        append(USAGE_DECLARATION)
+    }
+
+    private class SkillBlock(
+        val id: String,
+        val name: String,
+        val description: String,
+        val extra: String
+    )
 
     fun dispatchOutput(
         session: HookSession,
@@ -188,6 +224,13 @@ class ModuleDispatcher(
         const val PHASE_B = "b"
         const val HOOK_INPUT = "input"
         const val HOOK_OUTPUT = "output"
+
+        /** 只在真的注入了技能时追加，没技能就不花这份 token。 */
+        const val USAGE_DECLARATION = "【使用声明】\n" +
+            "如果你在回答中遵循了上述任一技能的规范，请在回答最后一行写：\n" +
+            "[[USED:技能id]]\n" +
+            "多个用逗号分隔。遵循了多个就都写，一个都没遵循就不要写。\n" +
+            "例如：[[USED:skill_code]]"
 
         private val A_TYPES = setOf("pass", "local", "context")
         private val B_TYPES = setOf("pass", "rewrite", "invoke")

@@ -55,6 +55,7 @@ fun main() {
     registryTests()
     bridgeTests()
     dispatcherTests()
+    contextWrappingTests()
     builderTests()
     sseTests()
     engineTests()
@@ -381,7 +382,10 @@ private fun dispatcherTests() {
     val rCtx = d.dispatchInput(sCtx, "原始输入")
     check("dispatch: context 返回", rCtx is HookAResult.Context)
     eq("dispatch: context 改写输入", "上下文输入", rCtx.text)
-    eq("dispatch: context 合并 extra", "额外约束", (rCtx as HookAResult.Context).extra)
+    check(
+        "dispatch: context extra 保留原文",
+        (rCtx as HookAResult.Context).extra.contains("额外约束")
+    )
 
     val sBoom = HookSession(id = "s", activeHardModules = listOf("boom"))
     val rBoom = d.dispatchInput(sBoom, "原始输入")
@@ -460,6 +464,56 @@ private fun dispatcherTests() {
     )
     dB.dispatchOutput(HookSession(id = "s", activeHardModules = listOf("envb")), "模型输出", "用户输入")
     eq("信封: 钩子 B 带 ctx.input", "用户输入", seenB?.obj("ctx")?.str("input"))
+}
+
+// ---------- 技能包装 ----------
+
+private fun contextWrappingTests() {
+    val one = pkg("one", hooks = listOf("input"), description = "甲模块的说明")
+    val two = pkg("two", hooks = listOf("input"), description = "乙模块的说明")
+    val source = sourceOf(one, two)
+    val executor = FakeExecutor { ref, _, _ ->
+        when {
+            ref.startsWith("one/") -> """{"type":"context","text":"","extra":"规范甲正文"}"""
+            ref.startsWith("two/") -> """{"type":"context","text":"","extra":"规范乙正文"}"""
+            else -> null
+        }
+    }
+    val d = dispatcherFor(source, executor = executor)
+
+    // 单模块
+    val single = d.dispatchInput(HookSession(id = "s", activeHardModules = listOf("one")), "输入")
+    val singleExtra = (single as HookAResult.Context).extra
+    check("wrap: 有开头标记", singleExtra.contains("【已加载技能】"))
+    check("wrap: 有 id", singleExtra.contains("id: one"))
+    check("wrap: 有 name", singleExtra.contains("name: one"))
+    check("wrap: 有说明", singleExtra.contains("说明：甲模块的说明"))
+    check("wrap: 有结束标记", singleExtra.contains("【技能结束】"))
+    check("wrap: extra 原文一字不差", singleExtra.contains("规范甲正文"))
+
+    // 两模块：两个独立块
+    val both = d.dispatchInput(
+        HookSession(id = "s", activeHardModules = listOf("one", "two")), "输入"
+    )
+    val bothExtra = (both as HookAResult.Context).extra
+    eq("wrap: 两个块", 2, Regex("【已加载技能】").findAll(bothExtra).count())
+    eq("wrap: 两个结束标记", 2, Regex("【技能结束】").findAll(bothExtra).count())
+    check("wrap: 两段原文都在", bothExtra.contains("规范甲正文") && bothExtra.contains("规范乙正文"))
+    check("wrap: 块顺序跟启用顺序", bothExtra.indexOf("甲模块的说明") < bothExtra.indexOf("乙模块的说明"))
+
+    // 使用声明：有技能才追加，且在所有块之后
+    check("wrap: 有技能时追声声明要求", bothExtra.contains("【使用声明】"))
+    check("wrap: 声明在最后一个块之后", bothExtra.lastIndexOf("【技能结束】") < bothExtra.indexOf("【使用声明】"))
+    check("wrap: 声明带例子", bothExtra.contains("[[USED:skill_code]]"))
+
+    // 无技能（pass）→ 不追声明
+    val passOnly = dispatcherFor(
+        sourceOf(pkg("plain", hooks = listOf("input"))),
+        executor = FakeExecutor { _, _, _ -> """{"type":"pass"}""" }
+    )
+    val passed = passOnly.dispatchInput(HookSession(id = "s", activeHardModules = listOf("plain")), "输入")
+    check("wrap: 无技能时仍是 pass", passed is HookAResult.Pass)
+    eq("wrap: pass 不产生 extra", "输入", passed.text)
 }
 
 // ---------- request builder ----------

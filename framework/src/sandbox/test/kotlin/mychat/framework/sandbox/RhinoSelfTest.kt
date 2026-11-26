@@ -238,10 +238,9 @@ private fun dispatchIntegrationTests() {
         HookSession(id = "s", activeHardModules = listOf("skill_reader")), "写代码"
     )
     check("integration: context 生效", ctxResult is HookAResult.Context)
-    eq(
+    check(
         "integration: reference 经 host 读到",
-        "技能正文：先问清楚再动手",
-        (ctxResult as HookAResult.Context).extra
+        (ctxResult as HookAResult.Context).extra.contains("技能正文：先问清楚再动手")
     )
 
     val boom = dispatcher.dispatchInput(
