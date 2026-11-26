@@ -86,3 +86,6 @@ echo "== 自测：向量与分词"
 
 echo "== 自测：管家"
 "$JAVA" -cp "$OUT:$STDLIB" mychat.framework.ButlerTestKt
+
+echo "== 自测：端到端链路"
+"$JAVA" -Dmychat.repoRoot="$ROOT/.." -cp "$OUT:$STDLIB" mychat.framework.PipelineTestKt
