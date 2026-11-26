@@ -26,7 +26,8 @@ import okhttp3.OkHttpClient
 class App : Application() {
 
     /** 调试包才会播种的模块：验链路用，release 不碰。 */
-    private val DEBUG_SEED_MODULES = setOf("debug_ctx", "local_calc", "no_fluff")
+    private val DEBUG_SEED_MODULES =
+        setOf("debug_ctx", "local_calc", "no_fluff", "skill_novel", "skill_code")
 
     lateinit var container: AppContainer
         private set
