@@ -63,14 +63,26 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
             val problems = mutableListOf<String>()
             for (name in tree.list(root).sorted()) {
                 val dir = join(root, name)
-                val text = tree.read(join(dir, "MODULE.md")) ?: continue
-                val fm = FrontMatter.parse(text)
+                val mdText = tree.read(join(dir, "MODULE.md"))
+                if (mdText == null) {
+                    // 只有 SKILL.md 的 skill 包：造一个隐式模块（知识型，不挂钩子）
+                    val skillText = tree.read(join(dir, SKILL_FILE)) ?: continue
+                    val implicit = implicitModule(tree, dir, name, skillText)
+                    if (pkgs.containsKey(implicit.manifest.id)) {
+                        problems += "$name: 隐式模块 id 与已有模块重复 ${implicit.manifest.id}"
+                        continue
+                    }
+                    pkgs[implicit.manifest.id] = implicit
+                    continue
+                }
+                val fm = FrontMatter.parse(mdText)
                 if (fm == null) {
                     problems += "$name: MODULE.md 缺 front matter"
                     continue
                 }
                 val manifest = ModuleManifest.from(fm, name)
-                val scripts = readTree(tree, join(dir, "script"))
+                val scripts = readTree(tree, join(dir, "script")) +
+                    readTree(tree, join(dir, "scripts"))
                 if (manifest.hooks.isNotEmpty() && scripts[manifest.entry] == null) {
                     problems += "${manifest.id}: hooks=${manifest.hooks} 但 script/${manifest.entry} 不存在"
                 }
@@ -82,7 +94,8 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
                     manifest = manifest,
                     body = fm.body,
                     scripts = scripts,
-                    references = readTree(tree, join(dir, "reference"))
+                    references = readTree(tree, join(dir, "reference")) +
+                        readTree(tree, join(dir, "references"))
                 )
             }
             return ScanResult(ModuleRegistry(pkgs), problems)
@@ -90,6 +103,33 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
 
         private fun join(dir: String, name: String): String =
             if (dir.isEmpty()) name else "$dir/$name"
+
+        private const val SKILL_FILE = "SKILL.md"
+
+        /**
+         * 只有 SKILL.md 的目录 = 一个 skill 包。
+         * id 取目录名（连字符转下划线），name/description 优先取 SKILL.md 的 front matter，
+         * references 收目录下所有 .md（含 SKILL.md 自己，方便被 skill.read 读到）。
+         */
+        private fun implicitModule(
+            tree: ModuleTree,
+            dir: String,
+            dirName: String,
+            skillText: String
+        ): ModulePackage {
+            val fm = FrontMatter.parse(skillText)
+            val id = dirName.replace('-', '_')
+            val manifest = ModuleManifest(
+                id = id,
+                name = fm?.scalars?.get("name") ?: dirName,
+                description = fm?.scalars?.get("description") ?: "",
+                hooks = emptyList(),
+                entry = "main.js",
+                capabilities = emptyMap()
+            )
+            val refs = readTree(tree, dir).filterKeys { it.endsWith(".md", true) }
+            return ModulePackage(manifest, fm?.body.orEmpty(), emptyMap(), refs)
+        }
 
         private fun readTree(tree: ModuleTree, dir: String): Map<String, String> {
             val out = LinkedHashMap<String, String>()

@@ -26,6 +26,7 @@ private fun eq(name: String, expected: Any?, actual: Any?) =
 fun main() {
     treeEquivalenceTests()
     edgeCaseTests()
+    skillPackageTests()
     assetHealthTest()
 
     println()
@@ -183,6 +184,37 @@ private fun edgeCaseTests() {
     val bareScan = ModuleRegistry.scan(bare)
     eq("edge: 无正文也能加载", "bare", bareScan.registry.all().firstOrNull()?.id)
     eq("edge: 无正文不报问题", emptyList<String>(), bareScan.problems)
+}
+
+// ---------- skill 包兼容（只有 SKILL.md 的目录） ----------
+
+private fun skillPackageTests() {
+    val root = tempDir()
+    write(
+        root, "my-skill/SKILL.md",
+        "---\nname: 我的技能\ndescription: 做点什么\n---\n\n正文"
+    )
+    write(root, "my-skill/extra.md", "附加知识")
+
+    write(root, "plural/MODULE.md", "---\nid: plural\nname: P\nhooks: [input]\nentry: main.js\n---\n")
+    write(root, "plural/scripts/main.js", "function (i, h) { return null; }")
+    write(root, "plural/references/SKILL.md", "复数目录的知识")
+
+    val scan = ModuleRegistry.scan(root)
+    val reg = scan.registry
+
+    val implicit = reg.getPackage("my_skill")
+    check("skill: 只有 SKILL.md 也能成模块", implicit != null, "problems=${scan.problems}")
+    eq("skill: id 连字符转下划线", "my_skill", implicit?.id)
+    eq("skill: name 取 front matter", "我的技能", implicit?.manifest?.name)
+    eq("skill: description 取 front matter", "做点什么", implicit?.manifest?.description)
+    eq("skill: 不挂钩子", emptyList<String>(), implicit?.manifest?.hooks)
+    check("skill: SKILL.md 自己也在 references 里", implicit?.reference("SKILL.md") != null)
+    eq("skill: 目录内其他 md 也收", "附加知识", implicit?.reference("extra.md"))
+
+    eq("skill: scripts/ 复数目录被识别", true, reg.getPackage("plural")?.script("main.js") != null)
+    eq("skill: references/ 复数目录被识别", "复数目录的知识", reg.getReference("plural", "SKILL.md"))
+    eq("skill: 复数目录不报问题", emptyList<String>(), scan.problems)
 }
 
 // ---------- assets 自身的健康度（demo 已冻结，不再逐模块对比） ----------

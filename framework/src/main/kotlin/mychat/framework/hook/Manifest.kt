@@ -91,7 +91,9 @@ data class ModuleManifest(
     val capabilities: Map<String, Int> = emptyMap(),
     val tools: List<JsonValue> = emptyList(),
     /** 可选：输入以「prefix：」开头时强制使用本模块，跳过路由。 */
-    val prefix: String? = null
+    val prefix: String? = null,
+    /** 可选：这个模块需要管家先做的预处理，如 [normalize]。 */
+    val needs: List<String> = emptyList()
 ) {
     /** phase 用 "input" / "output"，与 MODULE.md 里的写法一致。 */
     fun handles(phase: String): Boolean = hooks.contains(phase)
@@ -115,7 +117,8 @@ data class ModuleManifest(
                 entry = (fm.scalars["entry"] ?: "main.js").removePrefix("script/"),
                 capabilities = caps,
                 tools = parseInlineTools(fm.scalars["tools"]),
-                prefix = fm.scalars["prefix"]?.takeIf { it.isNotBlank() }
+                prefix = fm.scalars["prefix"]?.takeIf { it.isNotBlank() },
+                needs = fm.lists["needs"] ?: parseInlineList(fm.scalars["needs"])
             )
         }
 

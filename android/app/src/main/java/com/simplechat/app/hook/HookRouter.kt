@@ -25,4 +25,8 @@ class HookRouter(
             ModuleSelector.select(modules, butlers.route(butlerId, query, modules))
         }
     }
+
+    /** 管家归一化；异常或未实现都返回 null（调用方用原文）。 */
+    fun normalize(butlerId: String?, text: String): String? =
+        runCatching { butlers.current(butlerId).normalize(text) }.getOrNull()
 }

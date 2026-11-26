@@ -26,20 +26,38 @@ class ModuleDispatcher(
         rawInput: String,
         history: List<Message> = emptyList(),
         attachments: List<Attachment> = emptyList(),
-        /** 只有这些模块的 context 会被收集（前缀强制 / 路由结果）。 */
+        /** 只有这些模块的上下文会被收集（前缀强制 / 路由结果）。 */
         selected: Set<String> = emptySet(),
         /** 本轮是否由前缀强制触发。 */
-        forced: Boolean = false
+        forced: Boolean = false,
+        /** 管家提供的归一化；null 表示没有管家。 */
+        normalizer: TextNormalizer? = null
     ): HookAResult {
         val chain = source.idsForPhase(session.activeHardModules, HOOK_INPUT)
-        if (chain.isEmpty()) return HookAResult.Pass(rawInput)
+        if (chain.isEmpty() && selected.isEmpty()) return HookAResult.Pass(rawInput)
+
+        var workingText = rawInput
+        if (needsNormalize(selected)) {
+            if (normalizer == null) {
+                trace("hookA", null, "normalize skipped")
+            } else {
+                val normalized = runCatching { normalizer.normalize(rawInput) }.getOrNull()
+                if (normalized == null) {
+                    trace("hookA", null, "normalize failed")
+                } else {
+                    workingText = normalized
+                    trace("hookA", null, "normalize ok")
+                }
+            }
+        }
 
         val ctx = contextJson(session, null, history, attachments, forced)
-        var text = rawInput
+        var text = workingText
         val blocks = mutableListOf<SkillBlock>()
+        val contextBlocks = LinkedHashMap<String, String>()
 
         for (id in chain) {
-            val reply = call(id, envelope(rawInput, PHASE_A, ctx), PHASE_A) ?: continue
+            val reply = call(id, envelope(workingText, PHASE_A, ctx), PHASE_A) ?: continue
             when (reply.type) {
                 "local" -> {
                     trace("hookA", id, "local")
@@ -50,13 +68,7 @@ class ModuleDispatcher(
                     // 执行全跑、收集只看 selected：没被选中的模块的 context 丢掉
                     if (id in selected) {
                         reply.extra?.takeIf { it.isNotEmpty() }?.let { extra ->
-                            val pkg = source.getPackage(id)
-                            blocks += SkillBlock(
-                                id = id,
-                                name = pkg?.manifest?.name ?: id,
-                                description = pkg?.manifest?.description.orEmpty(),
-                                extra = extra
-                            )
+                            contextBlocks[id] = extra
                         }
                     }
                     reply.text?.takeIf { it.isNotEmpty() }?.let { text = it }
@@ -68,12 +80,33 @@ class ModuleDispatcher(
             }
         }
 
+        // 注入职责上移：选中但没返回 extra 的模块（含 hooks: [] 的知识包），
+        // 由框架直接读它的 SKILL.md。这样路由选中 skill_code 这类素材才有意义。
+        val ordered = chain.filter { it in selected } + selected.filter { it !in chain }.sorted()
+        for (id in ordered) {
+            val pkg = source.getPackage(id) ?: continue
+            val content = contextBlocks[id] ?: pkg.reference(SKILL_FILE)
+            if (content == null) {
+                trace("hookA", id, "selected_but_empty")
+                continue
+            }
+            blocks += SkillBlock(
+                id = pkg.id,
+                name = pkg.manifest.name,
+                description = pkg.manifest.description,
+                extra = content
+            )
+        }
+
         return if (blocks.isEmpty()) {
             HookAResult.Pass(text)
         } else {
             HookAResult.Context(text, renderContext(blocks))
         }
     }
+
+    private fun needsNormalize(selected: Set<String>): Boolean =
+        selected.any { source.getPackage(it)?.manifest?.needs?.contains("normalize") == true }
 
     /**
      * 把各模块的 extra 包成带身份的技能块，再追一段使用声明要求。
@@ -235,6 +268,7 @@ class ModuleDispatcher(
         const val HOOK_OUTPUT = "output"
 
         /** 只在真的注入了技能时追加，没技能就不花这份 token。 */
+        const val SKILL_FILE = "SKILL.md"
         const val USAGE_DECLARATION = "【使用声明】\n" +
             "如果你在回答中遵循了上述任一技能的规范，请在回答最后一行写：\n" +
             "[[!USED:技能id]]\n" +

@@ -56,6 +56,8 @@ fun main() {
     bridgeTests()
     dispatcherTests()
     contextWrappingTests()
+    injectionUpliftTests()
+    normalizeNeedTests()
     builderTests()
     sseTests()
     engineTests()
@@ -566,6 +568,79 @@ private fun contextWrappingTests() {
     val passed = passOnly.dispatchInput(HookSession(id = "s", activeHardModules = listOf("plain")), "输入")
     check("wrap: 无技能时仍是 pass", passed is HookAResult.Pass)
     eq("wrap: pass 不产生 extra", "输入", passed.text)
+}
+
+// ---------- 注入职责上移 ----------
+
+private fun injectionUpliftTests() {
+    // 知识型模块：hooks 为空、没有脚本，只有 SKILL.md
+    val know = pkg("know", hooks = emptyList(), refs = mapOf("SKILL.md" to "知识包正文"))
+    val d = dispatcherFor(
+        sourceOf(know),
+        executor = FakeExecutor { _, _, _ -> null }
+    )
+    val r = d.dispatchInput(HookSession(id = "s"), "输入", selected = setOf("know"))
+    check("uplift: 知识型也能注入", r is HookAResult.Context, "实际 ${r::class.simpleName}")
+    val extra = (r as? HookAResult.Context)?.extra.orEmpty()
+    check("uplift: 注入的是 SKILL.md 正文", extra.contains("知识包正文"), extra)
+    check("uplift: 包装出 id", extra.contains("id: know"))
+
+    // 脚本返回 extra 时优先用 extra
+    val scripted = pkg("scripted", hooks = listOf("input"), refs = mapOf("SKILL.md" to "知识包正文"))
+    val d2 = dispatcherFor(
+        sourceOf(scripted),
+        executor = FakeExecutor { _, _, _ ->
+            """{"type":"context","text":"","extra":"脚本给的正文"}"""
+        }
+    )
+    val r2 = d2.dispatchInput(HookSession(id = "s", activeHardModules = listOf("scripted")), "输入", selected = setOf("scripted"))
+    val extra2 = (r2 as? HookAResult.Context)?.extra.orEmpty()
+    check("uplift: 脚本 extra 优先", extra2.contains("脚本给的正文"), extra2)
+    check("uplift: 不重复注入 SKILL.md", !extra2.contains("知识包正文"))
+
+    // 什么都没有 → 不产生空块，记一条 selected_but_empty
+    val empty = pkg("empty", hooks = emptyList())
+    val d3 = dispatcherFor(sourceOf(empty), executor = FakeExecutor { _, _, _ -> null })
+    val r3 = d3.dispatchInput(HookSession(id = "s"), "输入", selected = setOf("empty"))
+    check("uplift: 无内容时仍是 pass", r3 is HookAResult.Pass, "实际 ${r3::class.simpleName}")
+    check("uplift: 记录了 selected_but_empty", d3.traces.any { it.message == "selected_but_empty" })
+}
+
+// ---------- needs: normalize ----------
+
+private fun normalizeNeedTests() {
+    val mod = ModulePackage(
+        manifest = ModuleManifest(
+            id = "norm", name = "norm", hooks = listOf("input"),
+            needs = listOf("normalize")
+        ),
+        body = "", scripts = mapOf("main.js" to "x"), references = emptyMap()
+    )
+    var seenText = ""
+    val executor = FakeExecutor { _, input, _ ->
+        seenText = mychat.framework.json.parseJson(input)?.str("text") ?: ""
+        """{"type":"pass"}"""
+    }
+    val d = dispatcherFor(sourceOf(mod), executor = executor)
+    val session = HookSession(id = "s", activeHardModules = listOf("norm"))
+
+    // 管家可用 → 用归一化结果
+    d.dispatchInput(
+        session, "散乱的输入", selected = setOf("norm"),
+        normalizer = { "规范化后的输入" }
+    )
+    eq("needs: 用归一化结果", "规范化后的输入", seenText)
+    check("needs: 记录 normalize ok", d.traces.any { it.message == "normalize ok" })
+
+    // 没有管家 → 跳过，用原文
+    d.dispatchInput(session, "散乱的输入", selected = setOf("norm"))
+    eq("needs: 无管家时用原文", "散乱的输入", seenText)
+    check("needs: 记录 normalize skipped", d.traces.any { it.message == "normalize skipped" })
+
+    // 管家返回 null → 用原文
+    d.dispatchInput(session, "散乱的输入", selected = setOf("norm"), normalizer = { null })
+    eq("needs: 归一化失败用原文", "散乱的输入", seenText)
+    check("needs: 记录 normalize failed", d.traces.any { it.message == "normalize failed" })
 }
 
 // ---------- request builder ----------
