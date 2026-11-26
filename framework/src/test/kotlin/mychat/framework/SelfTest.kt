@@ -504,7 +504,7 @@ private fun contextWrappingTests() {
     // 使用声明：有技能才追加，且在所有块之后
     check("wrap: 有技能时追声声明要求", bothExtra.contains("【使用声明】"))
     check("wrap: 声明在最后一个块之后", bothExtra.lastIndexOf("【技能结束】") < bothExtra.indexOf("【使用声明】"))
-    check("wrap: 声明带例子", bothExtra.contains("[[USED:skill_code]]"))
+    check("wrap: 声明带例子", bothExtra.contains("[[!USED:skill_code]]"))
 
     // 无技能（pass）→ 不追声明
     val passOnly = dispatcherFor(

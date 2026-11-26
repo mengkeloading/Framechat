@@ -32,7 +32,7 @@ function (inputJson, host) {
     if (!keptLine) return null;
     return ModuleKit.reply({
       type: 'rewrite',
-      text: keptLine + '\n[[HIDE]]' + tail + '[[/HIDE]]'
+      text: keptLine + '\n[[!HIDE]]' + tail + '[[!/HIDE]]'
     });
   }
   var cut = parts.length;
@@ -49,6 +49,6 @@ function (inputJson, host) {
   if (!fluffParts.length) return null;
   return ModuleKit.reply({
     type: 'rewrite',
-    text: keptParts + '\n[[HIDE]]' + fluffParts.join('\n\n') + '[[/HIDE]]'
+    text: keptParts + '\n[[!HIDE]]' + fluffParts.join('\n\n') + '[[!/HIDE]]'
   });
 }

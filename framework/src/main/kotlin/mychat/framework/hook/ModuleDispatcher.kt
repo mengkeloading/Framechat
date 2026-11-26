@@ -228,9 +228,9 @@ class ModuleDispatcher(
         /** 只在真的注入了技能时追加，没技能就不花这份 token。 */
         const val USAGE_DECLARATION = "【使用声明】\n" +
             "如果你在回答中遵循了上述任一技能的规范，请在回答最后一行写：\n" +
-            "[[USED:技能id]]\n" +
+            "[[!USED:技能id]]\n" +
             "多个用逗号分隔。遵循了多个就都写，一个都没遵循就不要写。\n" +
-            "例如：[[USED:skill_code]]"
+            "例如：[[!USED:skill_code]]"
 
         private val A_TYPES = setOf("pass", "local", "context")
         private val B_TYPES = setOf("pass", "rewrite", "invoke")

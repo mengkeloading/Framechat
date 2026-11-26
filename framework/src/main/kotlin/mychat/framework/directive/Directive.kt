@@ -3,8 +3,8 @@ package mychat.framework.directive
 /**
  * B 与 UI 之间的指令契约。
  *
- * 指令写在模型输出里，形如 `[[HIDE]]…[[/HIDE]]`；本轮只实现「纯文本上就能生效」的，
- * 需要 UI 的（折叠/表格/卡片）只留接口。
+ * **命名空间**：只有 `[[!` 开头的是框架标记；`[[` 单独出现一律当普通文本。
+ * 理由：`[[` 在代码、Markdown、wiki link 里都常见，容易误伤。
  */
 interface Directive {
     val name: String
@@ -30,7 +30,7 @@ data class ProcessResult(
     val meta: Map<String, List<String>> = emptyMap()
 )
 
-/** 删除 `[[HIDE]]…[[/HIDE]]` 之间的内容。 */
+/** 删除 `[[!HIDE]]…[[!/HIDE]]` 之间的内容。 */
 object HideDirective : Directive {
     override val name: String = "HIDE"
 
@@ -39,7 +39,7 @@ object HideDirective : Directive {
 
 /**
  * 只识别、不实现的指令名，占位给 Compose UI 就位后接。
- * 在这里登记的名字不会被当成 unknown。
+ * 登记在这里的名字不会当成 unknown，但也不会被执行。
  */
 object DirectiveNames {
     const val FOLD = "FOLD"
@@ -54,26 +54,29 @@ class DirectiveEngine(
     /**
      * 处理一条模型输出。规则：
      * - 认识的指令（当前只有 HIDE）由内向外执行，嵌套深度上限 [MAX_DEPTH]；
-     * - 不认识的标记原样保留，记 unknown；
-     * - 只有开标记没有闭标记（或反过来）→ 剥离标记本身、保留内容，记 unclosed。
+     * - 不认识的框架标记（`[[!FOO:…]]`）剥离并记 unknown；
+     * - 只有开标记没有闭标记（或反过来）→ 剥离标记、保留内容，记 unclosed；
+     * - 最后清掉所有残留的框架标记与泄漏的框架段落（【已加载技能】/【使用声明】）。
      */
     fun process(raw: String): ProcessResult {
         val log = mutableListOf<DirectiveTrace>()
         val meta = LinkedHashMap<String, MutableList<String>>()
         // 自闭合的元信息指令先处理掉，剩下的才是成对指令
         val withoutMeta = extractUsed(raw, log, meta)
-        val text = render(withoutMeta, 0, withoutMeta.length, depth = 0, log = log)
-        // 删掉指令块后往往会留下一个孤立的换行（「正文\n[[HIDE]]…」）
-        return ProcessResult(text.trimEnd(), log, meta)
+        val rendered = render(withoutMeta, 0, withoutMeta.length, depth = 0, log = log)
+        val stripped = stripMarkers(rendered)
+        val cleaned = stripFrameworkSections(stripped)
+        // 删掉指令块后往往会留下一个孤立的换行（「正文\n[[!HIDE]]…」）
+        return ProcessResult(cleaned.trimEnd(), log, meta)
     }
 
-    /** `[[USED:a,b]]`：删标记、把 id 收进 meta。不是包裹型，不需要闭合。 */
+    /** `[[!USED:a,b]]`：删标记、把 id 收进 meta。不是包裹型，不需要闭合。 */
     private fun extractUsed(
         raw: String,
         log: MutableList<DirectiveTrace>,
         meta: MutableMap<String, MutableList<String>>,
     ): String {
-        if (!raw.contains("[[" + USED_NAME + ":")) return raw
+        if (!raw.contains(MARKER_PREFIX + USED_NAME + ":")) return raw
         val out = StringBuilder(raw.length)
         var cursor = 0
         for (m in USED_PATTERN.findAll(raw)) {
@@ -117,10 +120,9 @@ class DirectiveEngine(
             val directive = directives[name]
 
             if (closing) {
-                // 认识的指令多了个闭合标记才叫未闭合；不认识的标记整体保留
+                // 认识的指令多了个闭合标记才叫未闭合；不认识的标记直接丢
                 if (directive == null) {
                     log += DirectiveTrace(name, "unknown", m.range)
-                    out.append(raw, m.range.first, m.range.last + 1)
                 } else {
                     log += DirectiveTrace(name, "unclosed", m.range)
                 }
@@ -128,18 +130,10 @@ class DirectiveEngine(
                 continue
             }
 
-            // 不认识的指令先判：有配对就整段保留，没配对就只保留标记
+            // 不认识的框架标记：剥离，但里面的内容继续处理
             if (directive == null) {
-                val outerClose = findMatchingClose(raw, name, m.range.last + 1, to)
-                if (outerClose == null) {
-                    log += DirectiveTrace(name, "unknown", m.range)
-                    out.append(raw, m.range.first, m.range.last + 1)
-                    i = m.range.last + 1
-                } else {
-                    log += DirectiveTrace(name, "unknown", m.range.first..outerClose.range.last)
-                    out.append(raw, m.range.first, outerClose.range.last + 1)
-                    i = outerClose.range.last + 1
-                }
+                log += DirectiveTrace(name, "unknown", m.range)
+                i = m.range.last + 1
                 continue
             }
 
@@ -165,7 +159,7 @@ class DirectiveEngine(
         return out.toString()
     }
 
-    /** 同名标记要配对：`[[HIDE]]a[[HIDE]]b[[/HIDE]]c[[/HIDE]]` 只匹配最外层。 */
+    /** 同名标记要配对：`[[!HIDE]]a[[!HIDE]]b[[!/HIDE]]c[[!/HIDE]]` 只匹配最外层。 */
     private fun findMatchingClose(raw: String, name: String, from: Int, to: Int): MatchResult? {
         var depth = 1
         var i = from
@@ -181,20 +175,59 @@ class DirectiveEngine(
         return null
     }
 
+    /** 兜底：任何漏网的框架标记都不该出现在用户眼前。 */
+    private fun stripMarkers(text: String): String =
+        if (!text.contains(MARKER_PREFIX)) text else LEFTOVER.replace(text, "")
+
+    /**
+     * 模型可能把系统提示里的结构照抄出来（【已加载技能】/【使用声明】）。
+     * 这里整段剥掉：从标题行开始，到空行、或到下一个 `【…】` 标题为止。
+     */
+    private fun stripFrameworkSections(text: String): String {
+        if (!text.contains("【已加载技能】") && !text.contains("【使用声明】")) return text
+        val out = mutableListOf<String>()
+        var skipping = false
+        for (line in text.lines()) {
+            val t = line.trim()
+            if (skipping) {
+                when {
+                    t.startsWith("【技能结束】") -> skipping = false
+                    t.startsWith("【") -> {
+                        skipping = false
+                        out += line
+                    }
+                    else -> Unit
+                }
+                continue
+            }
+            if (t.startsWith("【已加载技能】") || t.startsWith("【使用声明】")) {
+                skipping = true
+                continue
+            }
+            out += line
+        }
+        return out.joinToString("\n")
+    }
+
     companion object {
         const val MAX_DEPTH = 5
 
         const val USED_NAME = "USED"
         const val META_USED = "used"
 
-        private val MARKER = Regex("\\[\\[(/?)([A-Za-z][A-Za-z0-9]*)\\]\\]")
-        private val USED_PATTERN = Regex("\\[\\[USED:([^\\]]+)\\]\\]")
+        /** 框架专属命名空间。`[[` 后面没有 `!` 的一律不是标记。 */
+        const val MARKER_PREFIX = "[[!"
+
+        private val MARKER =
+            Regex("\\[\\[!(/?)([A-Za-z][A-Za-z0-9]*)(?::([^\\]]*))?\\]\\]")
+        private val USED_PATTERN = Regex("\\[\\[!USED:([^\\]]+)\\]\\]")
+        private val LEFTOVER = Regex("\\[\\[![^\\]]*\\]\\]")
 
         /**
-         * 用户输入里的 `[[` 必须失效，否则用户能自己写 `[[HIDE]]` 把上下文删掉。
-         * 转义后 `[[` 变成 `[\[`，不再匹配标记正则。
+         * 用户输入里的框架标记必须失效，否则用户能自己写 `[[!HIDE]]` 把上下文删掉。
+         * 只转义 `[[!`：普通 `[[` 出现在代码或 wiki link 里很正常，不能动。
          */
-        fun escapeUserInput(text: String): String = text.replace("[[", "[\\[")
+        fun escapeUserInput(text: String): String = text.replace(MARKER_PREFIX, "[\\[!")
 
         /**
          * 组包时对**所有 user 消息**（含历史）转义，assistant 不动 ——
