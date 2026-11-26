@@ -83,3 +83,6 @@ echo "== 自测：用户输入转义"
 
 echo "== 自测：向量与分词"
 "$JAVA" -Dmychat.repoRoot="$ROOT/.." -cp "$OUT:$STDLIB" mychat.framework.EmbeddingTestKt
+
+echo "== 自测：管家"
+"$JAVA" -cp "$OUT:$STDLIB" mychat.framework.ButlerTestKt

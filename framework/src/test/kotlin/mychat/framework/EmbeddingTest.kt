@@ -1,5 +1,6 @@
 package mychat.framework
 
+import mychat.framework.butler.RouteResult
 import mychat.framework.embedding.Candidate
 import mychat.framework.embedding.ModuleDocuments
 import mychat.framework.embedding.ModuleRouter
@@ -116,31 +117,26 @@ private fun selectorTests() {
     val noSkill = pkgOf2("plain", false)
     val modules = listOf(withSkill, noSkill)
 
-    // 没有启用模块 → 空集
     eq(
         "selector: 无模块返回空",
         emptySet<String>(),
-        ModuleSelector.select(emptyList(), floatArrayOf(1f, 0f), emptyList())
+        ModuleSelector.select(emptyList(), RouteResult(emptyList(), "empty"))
     )
-
-    // 路由命中 → 只有命中项
-    val hit = ModuleSelector.select(
-        listOf(withSkill), floatArrayOf(1f, 0f),
-        listOf(Candidate("sk", floatArrayOf(1f, 0f)))
+    eq(
+        "selector: 路由命中只选命中项",
+        setOf("sk"),
+        ModuleSelector.select(modules, RouteResult(listOf("sk"), "hit"))
     )
-    eq("selector: 路由命中只选命中项", setOf("sk"), hit)
-
-    // 路由为空（全部分数低于 MIN_SCORE）→ 兜底到 hasSkill
-    val tied = listOf(
-        Candidate("sk", floatArrayOf(1f, 0f)),
-        Candidate("plain", floatArrayOf(0f, 1f))
+    eq(
+        "selector: 路由为空时兜底",
+        setOf("sk"),
+        ModuleSelector.select(modules, RouteResult(emptyList(), "below_min"))
     )
-    val fallback = ModuleSelector.select(modules, floatArrayOf(-1f, -1f), tied)
-    eq("selector: 路由为空时兜底", setOf("sk"), fallback)
-    eq("selector: 无 SKILL.md 的模块不在兜底里", false, fallback.contains("plain"))
-
-    // 查询向量算不出来 → 也走兜底
-    eq("selector: 无查询向量时兜底", setOf("sk"), ModuleSelector.select(modules, null, emptyList()))
+    eq(
+        "selector: 路由失败也兜底",
+        setOf("sk"),
+        ModuleSelector.select(modules, RouteResult(emptyList(), "error"))
+    )
 }
 
 // ---------- 模块向量化文本 ----------

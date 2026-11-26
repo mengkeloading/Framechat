@@ -11,6 +11,10 @@ import com.simplechat.app.data.SettingsStore
 import com.simplechat.app.hook.AssetModuleTree
 import com.simplechat.app.hook.HookRouter
 import com.simplechat.app.hook.OnnxTextEmbedder
+import mychat.framework.butler.ButlerManager
+import mychat.framework.butler.KeywordButler
+import mychat.framework.butler.NoButler
+import mychat.framework.butler.SemanticButler
 import mychat.framework.hook.HookRunner
 import mychat.framework.hook.ModuleRegistry
 import mychat.framework.sandbox.RhinoJsExecutor
@@ -133,7 +137,18 @@ class AppContainer(private val app: Application) {
     /** 向量模型：懒加载，首次路由时才把 23MB 模型读进内存。 */
     private val embedder by lazy { OnnxTextEmbedder(app.assets) }
 
-    val hookRouter by lazy { HookRouter(moduleRegistry.registry, embedder) }
+    /** 管家工厂：semantic 共享 embedder，切来切去不会重载模型。 */
+    val butlerManager by lazy {
+        ButlerManager(
+            mapOf(
+                SemanticButler.ID to { SemanticButler(embedder) },
+                KeywordButler.ID to { KeywordButler() },
+                NoButler.ID to { NoButler() },
+            )
+        )
+    }
+
+    val hookRouter by lazy { HookRouter(moduleRegistry.registry, butlerManager) }
 
     val database: AppDatabase by lazy { AppDatabase.build(app) }
 

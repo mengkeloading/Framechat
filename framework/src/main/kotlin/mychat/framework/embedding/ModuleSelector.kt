@@ -22,15 +22,11 @@ object ModuleSelector {
 
     fun select(
         modules: List<ModulePackage>,
-        /** 查询向量；null 表示算不出来（模型没加载 / 空文本），直接走兜底。 */
-        query: FloatArray?,
-        candidateVectors: List<Candidate>,
+        /** 管家给的路由结果；为空或失败都走兜底。 */
+        route: mychat.framework.butler.RouteResult,
     ): Set<String> {
         if (modules.isEmpty()) return emptySet()
-        if (query != null) {
-            val decision = ModuleRouter.decide(query, candidateVectors)
-            if (decision.modules.isNotEmpty()) return decision.modules.toSet()
-        }
+        if (route.modules.isNotEmpty()) return route.modules.toSet()
         return fallback(modules)
     }
 

@@ -153,6 +153,8 @@ data class StoredSettings(
     val autoReadAloud: Boolean = false,
     /** 启用的钩子模块 id（硬模块）。空集合 = 不接钩子。 */
     val enabledModules: Set<String> = emptySet(),
+    /** 管家：semantic | keyword | none。 */
+    val butlerId: String = "semantic",
     val showImageSkipNotice: Boolean = true,
     val showRetrySkipNotice: Boolean = true,
     /** Include messages from inactive conversation branches in global search. */
@@ -344,6 +346,7 @@ class SettingsStore(
             voiceApi = prefs[Keys.VOICE_API]?.let { runCatching { apiProfileJson.decodeFromString<VoiceApiConfig>(it) }.getOrNull() } ?: VoiceApiConfig(),
             autoReadAloud = prefs[Keys.AUTO_READ_ALOUD] ?: false,
             enabledModules = prefs[Keys.MODULES_ENABLED] ?: emptySet(),
+            butlerId = prefs[Keys.BUTLER_ID] ?: "semantic",
             showRetrySkipNotice = prefs[Keys.RETRY_SKIP_NOTICE] ?: true,
             showImageSkipNotice = prefs[Keys.IMAGE_SKIP_NOTICE] ?: true,
             searchInactiveBranches = prefs[Keys.SEARCH_INACTIVE_BRANCHES]
@@ -523,6 +526,11 @@ class SettingsStore(
     /** 模块启用清单（全局，暂不按会话）。 */
     suspend fun setEnabledModules(ids: Set<String>) {
         preferences.edit { it[Keys.MODULES_ENABLED] = ids }
+    }
+
+    /** 管家选择：semantic / keyword / none。 */
+    suspend fun setButlerId(id: String) {
+        preferences.edit { it[Keys.BUTLER_ID] = id }
     }
 
     /**
@@ -1000,6 +1008,7 @@ class SettingsStore(
         val SEARCH_REASONING = booleanPreferencesKey("search_reasoning")
         val READ_ALOUD_ENABLED = booleanPreferencesKey("read_aloud_enabled")
         val MODULES_ENABLED = stringSetPreferencesKey("modules_enabled")
+        val BUTLER_ID = stringPreferencesKey("butler_id")
         val SEARCH_INACTIVE_BRANCHES = booleanPreferencesKey("search_inactive_branches")
         val AUTO_READ_ALOUD = booleanPreferencesKey("auto_read_aloud")
         val PROVIDER = stringPreferencesKey("provider_id")
