@@ -106,6 +106,7 @@ class ModuleDispatcher(
             val content = pkg.reference(SKILL_FILE)
             if (content.isNullOrBlank()) {
                 trace("hookA", id, "selected_but_empty")
+                onDebug?.invoke("inject:skip " + id + " reason=no_skill")
                 continue
             }
             // 注入的是「知识正文」，不含 SKILL.md 的 front matter（name/keywords 是给工具看的）

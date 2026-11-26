@@ -2729,9 +2729,10 @@ class ChatViewModel(
              */
             var finalAnswer = finalText
             if (status == MessageStatus.DONE && pendingSelected.isNotEmpty()) {
-                val missingId = hookRunner.missingFormats(pendingSelected, finalText).firstOrNull()
-                val structure = missingId?.let { hookRunner.formatStructureOf(it) }
-                if (missingId != null && !structure.isNullOrBlank()) {
+                val target = hookRunner.remediationTarget(pendingSelected, finalText)
+                val missingId = target?.first
+                val structure = target?.second
+                if (missingId != null && structure != null) {
                     if (BuildConfig.DEBUG) {
                         com.simplechat.app.hook.UsageLog.record("remediate:start " + missingId)
                     }

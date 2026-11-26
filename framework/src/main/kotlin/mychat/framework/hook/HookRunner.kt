@@ -44,6 +44,11 @@ class HookRunner(
         val hookSession = if (forced == null) session else session.copy(activeHardModules = chain)
         val hookText = forced?.text ?: text
 
+        // 前缀没命中却长得像前缀：用户会以为"我明明打了前缀"，必须留痕
+        if (forced == null && looksLikePrefix(text)) {
+            onDebug?.invoke("prefix:miss \"" + text.take(30) + "\"")
+        }
+
         val dispatcher = dispatcherFor(hookSession, history)
         val result = dispatcher.dispatchInput(
             session = hookSession,
@@ -114,7 +119,27 @@ class HookRunner(
     fun formatMarksOf(id: String): List<String> =
         source.getPackage(id)?.manifest?.formatMarks.orEmpty()
 
+    /**
+     * 需要补救时返回 (模块 id, 输出结构)；不需要补救返回 null。
+     * 需要补救但拿不到结构时记一行 skip —— 静默跳过最难查。
+     */
+    fun remediationTarget(selected: Set<String>, text: String): Pair<String, String>? {
+        val id = missingFormats(selected, text).firstOrNull() ?: return null
+        val structure = formatStructureOf(id)
+        if (structure.isNullOrBlank()) {
+            onDebug?.invoke("remediate:skip " + id + " reason=no_structure")
+            return null
+        }
+        return id to structure
+    }
+
     fun clearTrace() = synchronized(traceLog) { traceLog.clear() }
+
+    /** 「词：」或「词:」开头、且冒号前有字 —— 用户在试图用前缀。 */
+    private fun looksLikePrefix(text: String): Boolean {
+        val idx = text.indexOfFirst { it == '：' || it == ':' }
+        return idx in 1..12 && text.length > idx + 1
+    }
 
     private fun dispatcherFor(session: HookSession, history: List<Message>): ModuleDispatcher =
         ModuleDispatcher(

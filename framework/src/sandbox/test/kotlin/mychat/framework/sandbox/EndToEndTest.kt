@@ -7,6 +7,8 @@ import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
 import mychat.framework.hook.HookRunner
 import mychat.framework.hook.HookSession
+import mychat.framework.hook.ModuleManifest
+import mychat.framework.hook.ModulePackage
 import mychat.framework.hook.ModuleRegistry
 import java.io.File
 import kotlin.system.exitProcess
@@ -74,6 +76,7 @@ fun main() {
     scenarioB(registry)
     scenarioC(registry)
     scenarioD(registry)
+    silentSkipLogs()
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -208,6 +211,58 @@ private fun scenarioD(registry: ModuleRegistry) {
     check("D: sel 行显示空集合", h.log.contains("sel=prefix:false route=[] reason=hit selected=[]"))
     eq("D: 回答原样透传", "你好呀", answer)
     check("D: 没有注入日志", !h.log.contains("inject:len"))
+}
+
+// ---------- 静默跳过的日志 ----------
+
+private fun silentSkipLogs() {
+    val log = mutableListOf<String>()
+
+    val marked = ModulePackage(
+        manifest = ModuleManifest(
+            "fmt_nostruct", "有标记没结构",
+            hooks = emptyList(),
+            formatMarks = listOf("[必须改]")
+        ),
+        body = "",
+        scripts = emptyMap(),
+        references = mapOf("SKILL.md" to "# 规范\n\n## 何时使用\n随便\n")
+    )
+    val noSkill = ModulePackage(
+        manifest = ModuleManifest("no_skill", "没有规范", hooks = emptyList()),
+        body = "",
+        scripts = emptyMap(),
+        references = emptyMap()
+    )
+    val source = ModuleRegistry.of(listOf(marked, noSkill))
+    val runner = HookRunner(
+        source = source,
+        executor = RhinoJsExecutor(source),
+        onDebug = { line -> log += line }
+    )
+
+    // 1. 声明了格式标记，但 SKILL.md 里没有「输出格式」节 → 补救被跳过要说出来
+    val target = runner.remediationTarget(setOf("fmt_nostruct"), "没有标记的回答")
+    check("skip: 拿不到结构时返回 null", target == null)
+    check("skip: 记 remediate:skip", log.any { it.startsWith("remediate:skip") }, log.toString())
+
+    // 2. 输入长得像前缀，但没有模块命中 → 用户需要知道为什么没生效
+    log.clear()
+    runner.input(
+        HookSession(id = "s", activeHardModules = listOf("fmt_nostruct")),
+        "附加：用英文回答",
+        selected = emptySet()
+    )
+    check("skip: 记 prefix:miss", log.any { it.startsWith("prefix:miss") }, log.toString())
+
+    // 3. 被选中但没有 SKILL.md → 注入跳过要留痕
+    log.clear()
+    runner.input(
+        HookSession(id = "s", activeHardModules = listOf("no_skill")),
+        "随便问一句",
+        selected = setOf("no_skill")
+    )
+    check("skip: 记 inject:skip", log.any { it.startsWith("inject:skip") }, log.toString())
 }
 
 // ---------- 公共断言 ----------
