@@ -909,6 +909,13 @@ class ChatViewModel(
                     // 前缀强制优先（HookRunner 内部会覆盖）；否则按向量路由，空则兜底 hasSkill
                     val prepared = hookRouter.prepare(stored.enabledModules, text, stored.butlerId)
                     val selected = prepared.selected
+                    if (BuildConfig.DEBUG) {
+                        val selLine = "sel=prefix:" + (prepared.prefixModule != null) +
+                            " route=" + prepared.routeModules +
+                            " reason=" + prepared.reason + " selected=" + selected
+                        android.util.Log.d("MyChat/Sel", selLine)
+                        com.simplechat.app.hook.UsageLog.record(selLine)
+                    }
                     val hookText = if (prepared.normalize) {
                         hookRouter.normalize(text, stored.butlerId)?.also {
                             if (BuildConfig.DEBUG) android.util.Log.d("MyChat/Butler", "normalize ok")
