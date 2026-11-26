@@ -2724,6 +2724,55 @@ class ChatViewModel(
             val finalText = directiveResult.text.ifBlank { shownContent }
 
             /*
+             * 格式补救：声明了 format_marks 的模块，如果一个标记都没出现，
+             * 再问一次模型「只重排不改内容」。只补救一次，失败就用原回答。
+             */
+            var finalAnswer = finalText
+            if (status == MessageStatus.DONE && pendingSelected.isNotEmpty()) {
+                val missingId = hookRunner.missingFormats(pendingSelected, finalText).firstOrNull()
+                val structure = missingId?.let { hookRunner.formatStructureOf(it) }
+                if (missingId != null && !structure.isNullOrBlank()) {
+                    if (BuildConfig.DEBUG) {
+                        com.simplechat.app.hook.UsageLog.record("remediate:start " + missingId)
+                    }
+                    val prompt =
+                        mychat.framework.hook.FormatRemediation.buildPrompt(structure, finalText)
+                    val buffer = StringBuilder()
+                    val remedied = runCatching {
+                        chatApi.streamChat(
+                            baseUrl = route.baseUrl.ifBlank { routeProvider.defaultBaseUrl },
+                            apiKey = route.apiKey,
+                            model = options.model,
+                            messages = listOf(
+                                OutMessageDto("system", MessageContent.text(prompt.systemSuffix)),
+                                OutMessageDto("user", MessageContent.text(prompt.structure)),
+                                OutMessageDto("assistant", MessageContent.text(prompt.answer)),
+                                OutMessageDto("user", MessageContent.text(prompt.finalInstruction)),
+                            ),
+                            thinkingEnabled = false,
+                            apiStyle = selectedApiStyle,
+                        ).collect { event ->
+                            if (event is StreamEvent.Content) buffer.append(event.text)
+                        }
+                    }.getOrNull()
+                    val remedy = mychat.framework.hook.FormatRemediation.apply(
+                        finalText,
+                        remedied?.let { buffer.toString() },
+                        hookRunner.formatMarksOf(missingId)
+                    )
+                    if (BuildConfig.DEBUG) {
+                        com.simplechat.app.hook.UsageLog.record(
+                            "remediate:done " + missingId + " " + remedy.status
+                        )
+                        com.simplechat.app.hook.UsageLog.record(
+                            "remediate:cost +" + remedy.calls + " call"
+                        )
+                    }
+                    if (remedy.status == "replaced") finalAnswer = remedy.text
+                }
+            }
+
+            /*
              * 模块使用声明：模型在末尾写的 [[USED:x]] 已经在上面被剥掉了，
              * 这里只把结果记下来 —— 用来判断“加载了但没用”还是“用了但没声明”。
              */
@@ -2763,7 +2812,7 @@ class ChatViewModel(
 
             patch(replyId) {
                 it.copy(
-                    content = finalText,
+                    content = finalAnswer,
                     reasoning = finalReasoning.ifEmpty { null },
                     status = status,
                     errorMessage = failure,
@@ -2784,7 +2833,7 @@ class ChatViewModel(
                     withContext(Dispatchers.IO) {
                         repository.finishMessage(
                             id = replyId,
-                            content = finalText,
+                            content = finalAnswer,
                             reasoning = finalReasoning,
                             status = status,
                             errorMessage = failure,

@@ -85,6 +85,28 @@ class HookRunner(
         traceLog.takeLast(limit)
     }
 
+    /** 选中的模块里，有哪些声明的格式标记一个都没出现。 */
+    fun missingFormats(selected: Set<String>, text: String): List<String> =
+        selected.mapNotNull { id ->
+            val marks = source.getPackage(id)?.manifest?.formatMarks.orEmpty()
+            when {
+                marks.isEmpty() -> null
+                marks.any { text.contains(it) } -> null
+                else -> id
+            }
+        }
+
+    /** 从模块的 SKILL.md 里取「输出结构」节，给补救提示用。 */
+    fun formatStructureOf(id: String): String? {
+        val skill = source.getPackage(id)?.reference("SKILL.md") ?: return null
+        return mychat.framework.embedding.ModuleDocuments.sectionOf(skill, "输出结构")
+            .takeIf { it.isNotEmpty() }
+    }
+
+    /** 模块声明的格式标记。 */
+    fun formatMarksOf(id: String): List<String> =
+        source.getPackage(id)?.manifest?.formatMarks.orEmpty()
+
     fun clearTrace() = synchronized(traceLog) { traceLog.clear() }
 
     private fun dispatcherFor(session: HookSession, history: List<Message>): ModuleDispatcher =

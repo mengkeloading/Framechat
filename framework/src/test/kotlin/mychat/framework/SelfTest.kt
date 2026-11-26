@@ -13,6 +13,7 @@ import mychat.framework.hook.Attachment
 import mychat.framework.hook.AuditLog
 import mychat.framework.hook.Caps
 import mychat.framework.hook.DescriptionCollision
+import mychat.framework.hook.FormatRemediation
 import mychat.framework.hook.FrontMatter
 import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
@@ -61,6 +62,7 @@ fun main() {
     contextWrappingTests()
     forbidRequireTests()
     guardTests()
+    remediationTests()
     formatCheckTests()
     builderTests()
     sseTests()
@@ -807,6 +809,57 @@ private fun guardTests() {
         emptyList<String>(),
         DescriptionCollision.check(listOf(plain, plain)) { _, _ -> 1f }
     )
+}
+
+// ---------- 格式补救 ----------
+
+private fun remediationTests() {
+    val marks = listOf("[必须改]", "[建议改]")
+    val structure = "[必须改] 问题\n- 在哪\n- 为什么\n- 改成什么"
+
+    var calls = 0
+    val okResult = FormatRemediation.remediate("[必须改] 已有标记", marks, structure) {
+        calls++
+        "不该被调用"
+    }
+    eq("remedy: 已合规时不补救", 0, calls)
+    eq("remedy: 已合规 status=ok", "ok", okResult.status)
+    eq("remedy: 已合规时 calls=0", 0, okResult.calls)
+
+    calls = 0
+    val replaced = FormatRemediation.remediate("随便答了一句", marks, structure) {
+        calls++
+        "[必须改] 重排好了"
+    }
+    eq("remedy: missing 时补救一次", 1, calls)
+    eq("remedy: 补救成功 status=replaced", "replaced", replaced.status)
+    eq("remedy: 用补救后的文本", "[必须改] 重排好了", replaced.text)
+
+    calls = 0
+    val stillMissing = FormatRemediation.remediate("答得乱七八糟", marks, structure) {
+        calls++
+        "还是没按格式"
+    }
+    eq("remedy: 补救无效时保留原答", "答得乱七八糟", stillMissing.text)
+    eq("remedy: status=still_missing", "still_missing", stillMissing.status)
+
+    calls = 0
+    val errored = FormatRemediation.remediate("原答", marks, structure) {
+        calls++
+        throw IllegalStateException("网络炸了")
+    }
+    eq("remedy: 异常时保留原答", "原答", errored.text)
+    eq("remedy: status=error", "error", errored.status)
+    eq("remedy: 异常时 calls=1", 1, errored.calls)
+
+    // 没声明格式 / 没结构就不该发请求
+    calls = 0
+    eq(
+        "remedy: 无声明不发请求",
+        0,
+        FormatRemediation.remediate("答", emptyList(), structure) { calls++; null }.calls
+    )
+    eq("remedy: 只有 prompt 构造才走 call", 0, calls)
 }
 
 // ---------- request builder ----------
