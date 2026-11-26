@@ -113,6 +113,14 @@ private fun cleanupTests(engine: DirectiveEngine) {
     // 技能块之后的正常【】标题要保住
     val mixed = engine.process("【已加载技能】\nid: x\n【技能结束】\n【结论】就这样")
     eq("cleanup: 块后标题保留", "【结论】就这样", mixed.text)
+
+    // 有标题没结束标记：只删那一行，后面的正常内容留着
+    val half = engine.process("【已加载技能】\n这是我自己的话，不该被删")
+    eq("cleanup: 无结束标记只删标题行", "这是我自己的话，不该被删", half.text)
+
+    // 完全没有标记
+    val clean = engine.process("普通回答，没有框架痕迹")
+    eq("cleanup: 无标记时原样", "普通回答，没有框架痕迹", clean.text)
 }
 
 // ---------- USED ----------

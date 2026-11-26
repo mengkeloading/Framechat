@@ -12,6 +12,7 @@ import mychat.framework.core.TurnResult
 import mychat.framework.hook.Attachment
 import mychat.framework.hook.AuditLog
 import mychat.framework.hook.Caps
+import mychat.framework.hook.DescriptionCollision
 import mychat.framework.hook.FrontMatter
 import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
@@ -25,6 +26,7 @@ import mychat.framework.hook.Message
 import mychat.framework.hook.ModuleDispatcher
 import mychat.framework.hook.ModuleManifest
 import mychat.framework.hook.NeedResolver
+import mychat.framework.hook.TokenBudget
 import mychat.framework.hook.ModulePackage
 import mychat.framework.hook.ModuleRegistry
 import mychat.framework.hook.ModuleSource
@@ -58,6 +60,7 @@ fun main() {
     dispatcherTests()
     contextWrappingTests()
     forbidRequireTests()
+    guardTests()
     formatCheckTests()
     builderTests()
     sseTests()
@@ -771,6 +774,39 @@ private fun forbidRequireTests() {
             )
         }
     }
+}
+
+// ---------- 发送前的 token 粗估 / 描述撞车 ----------
+
+private fun guardTests() {
+    eq("token: 短文本不超限", false, TokenBudget.exceeds("你好"))
+    eq("token: 超长文本会拦", true, TokenBudget.exceeds("字".repeat(13000)))
+    eq("token: 估算按 1.5 字符一个 token", 6666, TokenBudget.estimate("字".repeat(10000)))
+
+    fun pkg(id: String, desc: String) = ModulePackage(
+        manifest = ModuleManifest(id, id, description = desc),
+        body = "", scripts = emptyMap(), references = mapOf("SKILL.md" to "规范")
+    )
+    val similar = DescriptionCollision.check(
+        listOf(pkg("a", "同样的描述"), pkg("b", "同样的描述"))
+    ) { _, _ -> 0.99f }
+    check("desc: 高度相似会提醒", similar.any { it.startsWith("desc_similar") }, similar.toString())
+
+    val distinct = DescriptionCollision.check(
+        listOf(pkg("a", "写小说"), pkg("b", "算数"))
+    ) { _, _ -> 0.4f }
+    eq("desc: 不同描述不提醒", emptyList<String>(), distinct)
+
+    // 没有 SKILL.md 的模块不参与比较
+    val plain = ModulePackage(
+        manifest = ModuleManifest("p", "p", description = "x"),
+        body = "", scripts = emptyMap(), references = emptyMap()
+    )
+    eq(
+        "desc: 无 SKILL.md 的模块不参与",
+        emptyList<String>(),
+        DescriptionCollision.check(listOf(plain, plain)) { _, _ -> 1f }
+    )
 }
 
 // ---------- request builder ----------

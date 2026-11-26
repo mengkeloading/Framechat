@@ -80,7 +80,25 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
                     }
                 }
             }
+            checkDuplicatePrefixes(pkgs, problems)
             return ScanResult(ModuleRegistry(pkgs), problems)
+        }
+
+        /** 同一前缀声明两次：谁是强制入口就不确定了，必须报出来。 */
+        private fun checkDuplicatePrefixes(
+            pkgs: Map<String, ModulePackage>,
+            problems: MutableList<String>
+        ) {
+            val grouped = sortedMapOf<String, MutableList<String>>()
+            for (pkg in pkgs.values) {
+                val prefix = pkg.manifest.prefix?.takeIf { it.isNotBlank() } ?: continue
+                grouped.getOrPut(prefix) { mutableListOf() } += pkg.id
+            }
+            for ((prefix, ids) in grouped) {
+                if (ids.size > 1) {
+                    problems += "dup_prefix: 重复前缀 \"$prefix\": " + ids.sorted().joinToString(",")
+                }
+            }
         }
 
         private fun mkModule(

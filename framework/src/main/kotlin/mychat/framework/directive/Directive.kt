@@ -185,6 +185,8 @@ class DirectiveEngine(
      */
     private fun stripFrameworkSections(text: String): String {
         if (!text.contains("【已加载技能】") && !text.contains("【使用声明】")) return text
+        // 没有结束标记时只删标题那一行，避免把后面的正常内容一起吃掉
+        val hasBlockEnd = text.contains("【技能结束】")
         val out = mutableListOf<String>()
         var skipping = false
         for (line in text.lines()) {
@@ -200,7 +202,11 @@ class DirectiveEngine(
                 }
                 continue
             }
-            if (t.startsWith("【已加载技能】") || t.startsWith("【使用声明】")) {
+            if (t.startsWith("【已加载技能】")) {
+                skipping = hasBlockEnd
+                continue
+            }
+            if (t.startsWith("【使用声明】")) {
                 skipping = true
                 continue
             }

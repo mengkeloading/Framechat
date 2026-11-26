@@ -1,5 +1,6 @@
 package mychat.framework
 
+import mychat.framework.embedding.ModuleSelector
 import mychat.framework.hook.FileModuleTree
 import mychat.framework.hook.MapModuleTree
 import mychat.framework.hook.ModulePackage
@@ -27,6 +28,7 @@ fun main() {
     treeEquivalenceTests()
     edgeCaseTests()
     implicitModuleTests()
+    duplicatePrefixTests()
     assetHealthTest()
 
     println()
@@ -209,7 +211,11 @@ private fun implicitModuleTests() {
     eq("implicit: 扫描无问题", emptyList<String>(), scan.problems)
 
     val implicit = scan.registry.getPackage("novel_writing")
-    check("implicit: id 由目录名转换", implicit != null)
+    check("implicit: 能扫到 novel_writing", implicit != null)
+    if (implicit != null) {
+        eq("implicit: hooks 为空", emptyList<String>(), implicit.manifest.hooks)
+        eq("implicit: hasSkill=true", true, ModuleSelector.hasSkill(implicit))
+    }
     if (implicit != null) {
         eq("implicit: name 取自 front matter", "小说写作", implicit.manifest.name)
         eq("implicit: description 取自 front matter", "写小说用的", implicit.manifest.description)
@@ -223,6 +229,29 @@ private fun implicitModuleTests() {
         "dirs: scripts/ 目录也认",
         scan.registry.getPackage("alt")?.script("main.js") != null
     )
+}
+
+// ---------- 重复前缀 ----------
+
+private fun duplicatePrefixTests() {
+    fun writePrefixModule(root: File, dir: String, id: String, prefix: String) {
+        write(root, "$dir/MODULE.md", "---\nid: $id\nname: $id\nprefix: $prefix\nhooks: []\n---\n")
+    }
+
+    val dup = tempDir()
+    writePrefixModule(dup, "a", "a", "附加")
+    writePrefixModule(dup, "b", "b", "附加")
+    val dupProblems = ModuleRegistry.scan(dup).problems
+    check(
+        "prefix: 重复前缀被报出来",
+        dupProblems.any { it.startsWith("dup_prefix") },
+        dupProblems.joinToString("; ")
+    )
+
+    val ok = tempDir()
+    writePrefixModule(ok, "a", "a", "附加")
+    writePrefixModule(ok, "b", "b", "小说")
+    eq("prefix: 不同前缀不报", emptyList<String>(), ModuleRegistry.scan(ok).problems)
 }
 
 // ---------- assets 自身的健康度（demo 已冻结，不再逐模块对比） ----------

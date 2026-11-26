@@ -879,6 +879,18 @@ class ChatViewModel(
         banner = null
         imageSkipNotice = null
 
+        // 超长输入：不清输入框、不发请求，直接提醒
+        val estTokens = mychat.framework.hook.TokenBudget.estimate(text)
+        if (estTokens > mychat.framework.hook.TokenBudget.MAX_INPUT_TOKENS) {
+            banner = "内容过长（约 " + estTokens + " token，上限 " +
+                mychat.framework.hook.TokenBudget.MAX_INPUT_TOKENS + "），已保留输入内容"
+            if (BuildConfig.DEBUG) {
+                android.util.Log.w("MyChat/Token", "token_warn:est=" + estTokens)
+                com.simplechat.app.hook.UsageLog.record("token_warn:est=" + estTokens)
+            }
+            return
+        }
+
         val requestedGeneration = switchGeneration
         viewModelScope.launch {
             if (!sendMutex.tryLock()) return@launch
@@ -943,6 +955,12 @@ class ChatViewModel(
                         is HookAResult.Context -> {
                             pendingHookAText = hookA.text.takeIf { it != text }
                             pendingHookExtra = hookA.extra.takeIf { it.isNotBlank() }
+                            if (BuildConfig.DEBUG) {
+                                com.simplechat.app.hook.UsageLog.record(
+                                    "inject:len=" + hookA.extra.length
+                                )
+                                com.simplechat.app.hook.UsageLog.record(hookA.extra.take(600))
+                            }
                         }
                         is HookAResult.Pass -> pendingHookAText = hookA.text.takeIf { it != text }
                     }

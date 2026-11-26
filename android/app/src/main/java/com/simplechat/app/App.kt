@@ -77,6 +77,19 @@ class App : Application() {
                     )
                 }
 
+            // 扫描问题（含重复前缀）逐条写日志
+            modules.problems.forEach { com.simplechat.app.hook.UsageLog.record("problem=" + it) }
+
+            // 描述撞车提醒：需要向量，放后台算，不拖启动
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    val lines = mychat.framework.hook.DescriptionCollision.check(
+                        modules.registry.all()
+                    ) { a, b -> butlerManager.current("semantic").similarity(a, b) }
+                    lines.forEach { com.simplechat.app.hook.UsageLog.record("problem=" + it) }
+                }
+            }
+
             /*
              * 仅调试包：把验链路要用的模块补进启用集合（并集，不会覆盖用户已有选择）。
              * 新增模块不必清 App 数据。
