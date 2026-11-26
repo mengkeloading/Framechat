@@ -287,7 +287,8 @@ private fun dispatchIntegrationTests() {
     eq("integration: 模块返回 null 视为 pass", "普通问题", unhandled.text)
 
     val ctxResult = dispatcher.dispatchInput(
-        HookSession(id = "s", activeHardModules = listOf("skill_reader")), "写代码"
+        HookSession(id = "s", activeHardModules = listOf("skill_reader")), "写代码",
+        selected = setOf("skill_reader")
     )
     check("integration: context 生效", ctxResult is HookAResult.Context)
     check(

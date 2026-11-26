@@ -409,7 +409,7 @@ private fun dispatcherTests() {
     eq("dispatch: local 后不再调用后续模块", 2, executor.calls.size - beforeLocal)
 
     val sCtx = HookSession(id = "s", activeHardModules = listOf("ctx"))
-    val rCtx = d.dispatchInput(sCtx, "原始输入")
+    val rCtx = d.dispatchInput(sCtx, "原始输入", selected = setOf("ctx"))
     check("dispatch: context 返回", rCtx is HookAResult.Context)
     eq("dispatch: context 改写输入", "上下文输入", rCtx.text)
     check(
@@ -476,8 +476,10 @@ private fun dispatcherTests() {
     dEnv.dispatchInput(
         sEnv, "用户输入",
         history = (1..25).map { Message("user", "h$it") },
-        attachments = listOf(Attachment("a.txt", "text/plain", 10, text = "不该被看到"))
+        attachments = listOf(Attachment("a.txt", "text/plain", 10, text = "不该被看到")),
+        forced = true
     )
+    eq("信封: forced 标记透传", true, seen?.obj("ctx")?.bool("forced"))
     eq("信封: phase", "a", seen?.str("phase"))
     eq("信封: text", "用户输入", seen?.str("text"))
     eq("信封: sessionId", "sess-1", seen?.obj("ctx")?.str("sessionId"))
@@ -512,7 +514,10 @@ private fun contextWrappingTests() {
     val d = dispatcherFor(source, executor = executor)
 
     // 单模块
-    val single = d.dispatchInput(HookSession(id = "s", activeHardModules = listOf("one")), "输入")
+    val single = d.dispatchInput(
+        HookSession(id = "s", activeHardModules = listOf("one")), "输入",
+        selected = setOf("one")
+    )
     val singleExtra = (single as HookAResult.Context).extra
     check("wrap: 有开头标记", singleExtra.contains("【已加载技能】"))
     check("wrap: 有 id", singleExtra.contains("id: one"))
@@ -523,7 +528,8 @@ private fun contextWrappingTests() {
 
     // 两模块：两个独立块
     val both = d.dispatchInput(
-        HookSession(id = "s", activeHardModules = listOf("one", "two")), "输入"
+        HookSession(id = "s", activeHardModules = listOf("one", "two")), "输入",
+        selected = setOf("one", "two")
     )
     val bothExtra = (both as HookAResult.Context).extra
     eq("wrap: 两个块", 2, Regex("【已加载技能】").findAll(bothExtra).count())
@@ -535,6 +541,22 @@ private fun contextWrappingTests() {
     check("wrap: 有技能时追声声明要求", bothExtra.contains("【使用声明】"))
     check("wrap: 声明在最后一个块之后", bothExtra.lastIndexOf("【技能结束】") < bothExtra.indexOf("【使用声明】"))
     check("wrap: 声明带例子", bothExtra.contains("[[!USED:skill_code]]"))
+
+    // 未被选中的模块：context 仍然执行，但结果被丢弃
+    val notSelected = d.dispatchInput(
+        HookSession(id = "s", activeHardModules = listOf("one")), "输入"
+    )
+    check("wrap: 未选中时不收集 context", notSelected is HookAResult.Pass, "实际 ${notSelected::class.simpleName}")
+
+    // 多模块都返回 context，但只选中一个 → 只包装被选中的
+    val onlyTwo = d.dispatchInput(
+        HookSession(id = "s", activeHardModules = listOf("one", "two")), "输入",
+        selected = setOf("two")
+    )
+    val onlyTwoExtra = (onlyTwo as? HookAResult.Context)?.extra.orEmpty()
+    eq("wrap: 只包装选中模块", 1, Regex("【已加载技能】").findAll(onlyTwoExtra).count())
+    check("wrap: 选中模块的内容在", onlyTwoExtra.contains("规范乙正文"))
+    check("wrap: 未选中模块的内容不在", !onlyTwoExtra.contains("规范甲正文"))
 
     // 无技能（pass）→ 不追声明
     val passOnly = dispatcherFor(

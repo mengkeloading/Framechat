@@ -25,12 +25,16 @@ class ModuleDispatcher(
         session: HookSession,
         rawInput: String,
         history: List<Message> = emptyList(),
-        attachments: List<Attachment> = emptyList()
+        attachments: List<Attachment> = emptyList(),
+        /** 只有这些模块的 context 会被收集（前缀强制 / 路由结果）。 */
+        selected: Set<String> = emptySet(),
+        /** 本轮是否由前缀强制触发。 */
+        forced: Boolean = false
     ): HookAResult {
         val chain = source.idsForPhase(session.activeHardModules, HOOK_INPUT)
         if (chain.isEmpty()) return HookAResult.Pass(rawInput)
 
-        val ctx = contextJson(session, null, history, attachments)
+        val ctx = contextJson(session, null, history, attachments, forced)
         var text = rawInput
         val blocks = mutableListOf<SkillBlock>()
 
@@ -43,14 +47,17 @@ class ModuleDispatcher(
                 }
                 "context" -> {
                     trace("hookA", id, "context")
-                    reply.extra?.takeIf { it.isNotEmpty() }?.let { extra ->
-                        val pkg = source.getPackage(id)
-                        blocks += SkillBlock(
-                            id = id,
-                            name = pkg?.manifest?.name ?: id,
-                            description = pkg?.manifest?.description.orEmpty(),
-                            extra = extra
-                        )
+                    // 执行全跑、收集只看 selected：没被选中的模块的 context 丢掉
+                    if (id in selected) {
+                        reply.extra?.takeIf { it.isNotEmpty() }?.let { extra ->
+                            val pkg = source.getPackage(id)
+                            blocks += SkillBlock(
+                                id = id,
+                                name = pkg?.manifest?.name ?: id,
+                                description = pkg?.manifest?.description.orEmpty(),
+                                extra = extra
+                            )
+                        }
                     }
                     reply.text?.takeIf { it.isNotEmpty() }?.let { text = it }
                 }
@@ -198,13 +205,15 @@ class ModuleDispatcher(
         session: HookSession,
         input: String?,
         history: List<Message>,
-        attachments: List<Attachment>
+        attachments: List<Attachment>,
+        forced: Boolean = false
     ): JsonValue = JsonValue.of(
         "sessionId" to JsonValue.Str(session.id),
         "session" to session.toJson(),
         "messages" to JsonValue.array(history.takeLast(historyLimit).map { it.toJson() }),
         "attachments" to JsonValue.array(attachments.map { it.toMetaJson() }),
-        "input" to input?.let { JsonValue.Str(it) }
+        "input" to input?.let { JsonValue.Str(it) },
+        "forced" to JsonValue.Bool(forced)
     )
 
     private fun trace(tag: String, module: String?, message: String) {

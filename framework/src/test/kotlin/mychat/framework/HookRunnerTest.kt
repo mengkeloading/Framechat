@@ -20,6 +20,7 @@ import mychat.framework.hook.ModuleDispatcher
 import mychat.framework.hook.ModuleManifest
 import mychat.framework.hook.ModulePackage
 import mychat.framework.hook.ModuleRegistry
+import mychat.framework.hook.UsageInference
 import mychat.framework.json.parseJson
 import kotlin.system.exitProcess
 
@@ -43,6 +44,7 @@ fun main() {
     localShortCircuitTests()
     traceAccumulationTests()
     sessionCapabilityTests()
+    usageInferenceTests()
     prefixTests()
     toolTurnSkipsHookBTests()
 
@@ -152,6 +154,21 @@ private fun sessionCapabilityTests() {
 
     val result = runner.input(session, "x", history = listOf(Message("user", "hi")))
     eq("runner: data.session 拿到当轮会话", "sid=sess-abc", result.text)
+}
+
+/** 「用了哪个模块」的推断：单模块能确定，多模块只能 unknown。 */
+private fun usageInferenceTests() {
+    val none = UsageInference.infer(emptyList())
+    eq("infer: 没加载模块时 used 为空", null, none.used)
+    eq("infer: 原因 none", "none", none.reason)
+
+    val single = UsageInference.infer(listOf("local_calc"))
+    eq("infer: 单模块即 used", "local_calc", single.used)
+    eq("infer: 原因 single", "single", single.reason)
+
+    val multiple = UsageInference.infer(listOf("local_calc", "no_fluff"))
+    eq("infer: 多模块无法判断", null, multiple.used)
+    eq("infer: 原因 multiple", "multiple", multiple.reason)
 }
 
 /** 前缀 = 强制指令：剥前缀后再入模，落库仍用原文（调用方保存的那个字符串）。 */

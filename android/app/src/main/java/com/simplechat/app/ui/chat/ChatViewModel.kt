@@ -2675,16 +2675,16 @@ class ChatViewModel(
              * 这里只把结果记下来 —— 用来判断“加载了但没用”还是“用了但没声明”。
              */
             if (BuildConfig.DEBUG) {
-                val rawUsed = directiveResult.meta[DirectiveEngine.META_USED].orEmpty()
-                val loadedIds = stored.enabledModules
-                val used = mychat.framework.directive.UsageWhitelist.filter(rawUsed, loadedIds)
-                val invalid = mychat.framework.directive.UsageWhitelist.invalid(rawUsed, loadedIds)
-                if (invalid.isNotEmpty()) {
-                    android.util.Log.w("MyChat/Used", "filtered invalid: $invalid")
-                }
-                val line = "loaded=" + loadedIds.joinToString(",") +
-                    " used=" + used.joinToString(",")
+                val loaded = stored.enabledModules
+                val inference = mychat.framework.hook.UsageInference.infer(loaded)
+                val usedText = inference.used ?: "unknown"
+                val line = "loaded=" + loaded.joinToString(",") +
+                    " used=" + usedText + " (inferred:" + inference.reason + ")"
                 android.util.Log.d("MyChat/Used", line)
+                val declared = directiveResult.meta[DirectiveEngine.META_USED].orEmpty()
+                if (declared.isNotEmpty()) {
+                    android.util.Log.d("MyChat/Used", "declared=$declared (ignored)")
+                }
                 runCatching {
                     withContext(Dispatchers.IO) {
                         com.simplechat.app.hook.UsageLog.record(line)

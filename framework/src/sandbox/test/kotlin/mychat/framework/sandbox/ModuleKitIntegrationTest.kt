@@ -70,6 +70,7 @@ fun main() {
     noFluff(dispatcher, session)
     ctxPassthrough(dispatcher, session)
     skillHub(dispatcher, session)
+    skillNovelForced(dispatcher, session)
     noFluffViaRunner(registry)
     directiveEndToEnd(registry)
 
@@ -94,11 +95,31 @@ private fun localCalc(dispatcher: ModuleDispatcher, session: HookSession) {
 
 /** 真模块 attach-context：把「附加：」后面的内容变成 extra。 */
 private fun attachContext(dispatcher: ModuleDispatcher, session: HookSession) {
-    val result = dispatcher.dispatchInput(session.copy(activeHardModules = listOf("attach_context")), "附加：用英文回答")
+    val result = dispatcher.dispatchInput(
+        session.copy(activeHardModules = listOf("attach_context")), "附加：用英文回答",
+        selected = setOf("attach_context")
+    )
     check("attach_context: 返回 context", result is HookAResult.Context, "实际 ${result::class.simpleName}")
     val extra = (result as? HookAResult.Context)?.extra.orEmpty()
     check("attach_context: extra 非空", extra.isNotEmpty())
     check("attach_context: extra 带上附加内容", extra.contains("用英文回答"), "extra=$extra")
+}
+
+/** skill_novel 只在被前缀强制时返回 context（看 ctx.forced）。 */
+private fun skillNovelForced(dispatcher: ModuleDispatcher, session: HookSession) {
+    val novel = session.copy(activeHardModules = listOf("skill_novel"))
+
+    val normal = dispatcher.dispatchInput(novel, "随便问一句")
+    check("skill_novel: 非强制时不注入", normal is HookAResult.Pass, "实际 ${normal::class.simpleName}")
+
+    val forced = dispatcher.dispatchInput(
+        novel, "写一段雨夜",
+        selected = setOf("skill_novel"), forced = true
+    )
+    check("skill_novel: 强制时返回 context", forced is HookAResult.Context, "实际 ${forced::class.simpleName}")
+    val extra = (forced as? HookAResult.Context)?.extra.orEmpty()
+    check("skill_novel: 带着写作规范", extra.contains("【写作规范】"), extra)
+    check("skill_novel: 被包装成技能块", extra.contains("id: skill_novel"))
 }
 
 /** 真模块 no-fluff：把结尾套话包成 [[!HIDE]]，由指令引擎删掉。 */
@@ -141,7 +162,8 @@ private fun noFluff(dispatcher: ModuleDispatcher, session: HookSession) {
 /** 真模块 skill_hub：靠 ModuleLoader shim 拿包列表，不再静默 null。 */
 private fun skillHub(dispatcher: ModuleDispatcher, session: HookSession) {
     val result = dispatcher.dispatchInput(
-        session.copy(activeHardModules = listOf("skill_hub")), "帮我写个故事"
+        session.copy(activeHardModules = listOf("skill_hub")), "帮我写个故事",
+        selected = setOf("skill_hub")
     )
     check("skill_hub: 返回 context", result is HookAResult.Context, "实际 ${result::class.simpleName}")
     val extra = (result as? HookAResult.Context)?.extra.orEmpty()

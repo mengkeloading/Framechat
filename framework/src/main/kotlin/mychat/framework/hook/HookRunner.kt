@@ -39,7 +39,14 @@ class HookRunner(
         val hookText = forced?.text ?: text
 
         val dispatcher = dispatcherFor(hookSession, history)
-        val result = dispatcher.dispatchInput(hookSession, hookText, history, attachments)
+        val result = dispatcher.dispatchInput(
+            session = hookSession,
+            rawInput = hookText,
+            history = history,
+            attachments = attachments,
+            selected = if (forced == null) emptySet() else setOf(forced.module),
+            forced = forced != null
+        )
         synchronized(traceLog) {
             if (forced != null) {
                 traceLog += Trace("prefix", forced.module, "forced by ${forced.prefix}")
