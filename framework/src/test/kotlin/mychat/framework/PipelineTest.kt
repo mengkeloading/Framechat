@@ -77,6 +77,9 @@ fun main() {
     fallbackCase(registry)
     emptyCase(registry)
     metaCases(registry)
+    metaConsistencyCases(registry)
+    whenToUseCases(registry)
+    cacheKeyCase(registry)
     embedderMethodCase(registry)
     parityCase(registry)
 
@@ -198,6 +201,58 @@ private fun metaCases(registry: ModuleRegistry) {
             text.take(120)
         )
     }
+}
+
+// ---------- D'. toMeta 与 ModuleDocuments 完全一致 ----------
+
+private fun metaConsistencyCases(registry: ModuleRegistry) {
+    val manager = ButlerManager(mapOf())
+    val mismatched = registry.all()
+        .filter { ModuleSelector.hasSkill(it) }
+        .filter { ModuleDocuments.textOf(it) != manager.toMeta(it).embeddingText }
+    eq("D': toMeta 与 textOf 完全一致", emptyList<String>(), mismatched.map { it.id })
+}
+
+// ---------- H'. embeddingText 真的含「何时使用」内容 ----------
+
+private fun whenToUseCases(registry: ModuleRegistry) {
+    val manager = ButlerManager(mapOf())
+    val expected = mapOf(
+        "skill_novel" to "写小说片段",
+        "skill_code" to "贴出代码",
+        "skill_product" to "我想做一个"
+    )
+    for ((id, phrase) in expected) {
+        val pkg = registry.getPackage(id)
+        check("H: $id 存在", pkg != null)
+        if (pkg == null) continue
+        val text = manager.toMeta(pkg).embeddingText
+        // 现行设计：name + description + 「何时使用」节，量级 ~100 字。
+        // 若将来改成整篇 SKILL.md，这个下限应上调到 200+。
+        check("H: $id 文本长度 >= 60", text.length >= 60, "len=${text.length}")
+        check("H: $id 含何时使用特征词「$phrase」", text.contains(phrase), text.take(120))
+    }
+}
+
+// ---------- I. 缓存 key 带文本 hash ----------
+
+private fun cacheKeyCase(registry: ModuleRegistry) {
+    val embedder = embedderFor(registry, "帮我写个故事", floatArrayOf(0.98f, 0.2f, 0f), "skill_novel")
+    val butler = SemanticButler(embedder)
+    val metas = registry.all().map { ButlerManager(mapOf()).toMeta(it) }
+
+    butler.route("帮我写个故事", metas)
+    val first = embedder.passageCalls
+    check("I: 首次会算所有模块", first >= metas.size, "passageCalls=$first modules=${metas.size}")
+
+    butler.route("帮我写个故事", metas)
+    eq("I: 同文本重用缓存", first, embedder.passageCalls)
+
+    val changed = metas.map { meta ->
+        if (meta.id == "skill_novel") meta.copy(embeddingText = meta.embeddingText + "追加") else meta
+    }
+    butler.route("帮我写个故事", changed)
+    eq("I: 文本变了只重算那一个", first + 1, embedder.passageCalls)
 }
 
 // ---------- F. 查询必须走 embedQuery ----------
