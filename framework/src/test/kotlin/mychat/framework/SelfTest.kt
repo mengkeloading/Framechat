@@ -57,6 +57,7 @@ fun main() {
     bridgeTests()
     dispatcherTests()
     contextWrappingTests()
+    forbidRequireTests()
     formatCheckTests()
     builderTests()
     sseTests()
@@ -526,7 +527,6 @@ private fun contextWrappingTests() {
     check("wrap: 有 name", singleExtra.contains("name: one"))
     check("wrap: 有说明", singleExtra.contains("说明：甲模块的说明"))
     check("wrap: 有结束标记", singleExtra.contains("【技能结束】"))
-    check("wrap: 含格式提醒", singleExtra.contains("严格遵守上述规范中的输出格式要求"))
     check("wrap: extra 原文一字不差", singleExtra.contains("规范甲正文"))
 
     // 两模块：两个独立块
@@ -718,6 +718,59 @@ private fun formatCheckTests() {
     d.clearTraces()
     d.dispatchOutput(session, "任意输出", selected = emptySet())
     eq("format: 没选中就不检查", 0, d.traces.count { it.tag == "format_check" })
+}
+
+// ---------- forbid / require 注入 ----------
+
+private fun forbidRequireTests() {
+    val strict = ModulePackage(
+        manifest = ModuleManifest(
+            "strict", "严格模块", description = "有约束的模块", hooks = emptyList(),
+            forbid = listOf("不要开场白", "不要结尾总结"),
+            requires = listOf("必须给出最小修改版")
+        ),
+        body = "", scripts = emptyMap(), references = mapOf("SKILL.md" to "规范正文")
+    )
+    val loose = ModulePackage(
+        manifest = ModuleManifest("loose", "宽松模块", description = "无约束", hooks = emptyList()),
+        body = "", scripts = emptyMap(), references = mapOf("SKILL.md" to "宽松正文")
+    )
+    val d = dispatcherFor(
+        sourceOf(strict, loose),
+        executor = FakeExecutor { _, _, _ -> null }
+    )
+
+    val both = d.dispatchInput(
+        HookSession(id = "s", activeHardModules = listOf("strict")), "输入",
+        selected = setOf("strict")
+    )
+    val extra = (both as? HookAResult.Context)?.extra.orEmpty()
+    check("forbid: 含【禁止】节", extra.contains("【禁止】"), extra)
+    check("forbid: 含第一条禁止项", extra.contains("- 不要开场白"), extra)
+    check("require: 含【要求】节", extra.contains("【要求】"))
+    check("require: 含第一条要求项", extra.contains("- 必须给出最小修改版"))
+    check("forbid: 排在【要求】之前", extra.indexOf("【禁止】") < extra.indexOf("【要求】"))
+
+    val none = d.dispatchInput(
+        HookSession(id = "s", activeHardModules = listOf("loose")), "输入",
+        selected = setOf("loose")
+    )
+    val noneExtra = (none as? HookAResult.Context)?.extra.orEmpty()
+    check("forbid: 空声明不出【禁止】", !noneExtra.contains("【禁止】"))
+    check("forbid: 空声明不出【要求】", !noneExtra.contains("【要求】"))
+
+    // 硬编码的格式提醒必须已删干净
+    val repoRoot = System.getProperty("mychat.repoRoot")
+    if (repoRoot != null) {
+        val source = File(repoRoot, "framework/src/main/kotlin/mychat/framework/hook/ModuleDispatcher.kt")
+        check("forbid: 能找到 ModuleDispatcher 源码", source.isFile)
+        if (source.isFile) {
+            check(
+                "forbid: 硬编码格式提醒已删除",
+                !source.readText().contains("严格遵守上述规范中的输出格式要求")
+            )
+        }
+    }
 }
 
 // ---------- request builder ----------

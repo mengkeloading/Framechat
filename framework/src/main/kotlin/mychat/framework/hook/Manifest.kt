@@ -95,7 +95,11 @@ data class ModuleManifest(
     /** 可选：启用本模块时需要的前置处理，如 normalize。 */
     val needs: List<String> = emptyList(),
     /** 可选：输出必须含的格式标记（至少一个）。留空 = 不检查。 */
-    val formatMarks: List<String> = emptyList()
+    val formatMarks: List<String> = emptyList(),
+    /** 可选的「不要这样做」清单，注入时渲染成【禁止】节。 */
+    val forbid: List<String> = emptyList(),
+    /** 可选的「必须这样做」清单，注入时渲染成【要求】节。 */
+    val requires: List<String> = emptyList()
 ) {
     /** phase 用 "input" / "output"，与 MODULE.md 里的写法一致。 */
     fun handles(phase: String): Boolean = hooks.contains(phase)
@@ -122,7 +126,9 @@ data class ModuleManifest(
                 prefix = fm.scalars["prefix"]?.takeIf { it.isNotBlank() },
                 needs = fm.lists["needs"] ?: parseInlineList(fm.scalars["needs"]),
                 formatMarks = fm.lists["format_marks"]
-                    ?: parseInlineList(fm.scalars["format_marks"])
+                    ?: parseInlineList(fm.scalars["format_marks"]),
+                forbid = fm.lists["forbid"] ?: parseInlineList(fm.scalars["forbid"]),
+                requires = fm.lists["require"] ?: parseInlineList(fm.scalars["require"])
             )
         }
 

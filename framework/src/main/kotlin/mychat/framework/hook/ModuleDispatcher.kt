@@ -60,7 +60,9 @@ class ModuleDispatcher(
                                 id = id,
                                 name = pkg?.manifest?.name ?: id,
                                 description = pkg?.manifest?.description.orEmpty(),
-                                extra = extra
+                                extra = extra,
+                                forbids = pkg?.manifest?.forbid.orEmpty(),
+                                requires = pkg?.manifest?.requires.orEmpty()
                             )
                         }
                     }
@@ -110,7 +112,9 @@ class ModuleDispatcher(
                 id = id,
                 name = pkg.manifest.name,
                 description = pkg.manifest.description,
-                extra = content
+                extra = content,
+                forbids = pkg.manifest.forbid,
+                requires = pkg.manifest.requires
             )
             trace("hookA", id, "skill_injected")
         }
@@ -132,7 +136,16 @@ class ModuleDispatcher(
             append('\n')
             append("规范：\n")
             append(b.extra).append('\n')
-            append(FORMAT_REMINDER).append('\n')
+            if (b.forbids.isNotEmpty()) {
+                append("【禁止】\n")
+                for (line in b.forbids) append("- ").append(line).append('\n')
+                append('\n')
+            }
+            if (b.requires.isNotEmpty()) {
+                append("【要求】\n")
+                for (line in b.requires) append("- ").append(line).append('\n')
+                append('\n')
+            }
             append("【技能结束】\n\n")
         }
         append(USAGE_DECLARATION)
@@ -142,7 +155,9 @@ class ModuleDispatcher(
         val id: String,
         val name: String,
         val description: String,
-        val extra: String
+        val extra: String,
+        val forbids: List<String> = emptyList(),
+        val requires: List<String> = emptyList()
     )
 
     fun dispatchOutput(
@@ -306,13 +321,6 @@ class ModuleDispatcher(
         const val HOOK_INPUT = "input"
         const val HOOK_OUTPUT = "output"
         private const val SKILL_FILE = "SKILL.md"
-
-        /**
-         * 实测：模型对「内容」的注意力强于「格式」——skill_code 注入后内容要求都做到了，
-         * 但 [必须改]/[建议改] 这类分级标记被漏掉。这行是显式提一句，成本 1 行。
-         */
-        private const val FORMAT_REMINDER =
-            "注意：严格遵守上述规范中的输出格式要求（如有分级标记、固定小节标题、指定结构等）。"
 
         /** 只在真的注入了技能时追加，没技能就不花这份 token。 */
         const val USAGE_DECLARATION = "【使用声明】\n" +
