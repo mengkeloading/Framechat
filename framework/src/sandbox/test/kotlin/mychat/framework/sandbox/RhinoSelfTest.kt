@@ -10,6 +10,7 @@ import mychat.framework.hook.ModuleDispatcher
 import mychat.framework.hook.ModuleRegistry
 import mychat.framework.hook.ModuleSource
 import mychat.framework.hook.SessionData
+import mychat.framework.json.parseJson
 import java.io.File
 import java.nio.file.Files
 import kotlin.system.exitProcess
@@ -33,6 +34,7 @@ fun main() {
     executorTests()
     sandboxTests()
     timeoutTest()
+    moduleLoaderShimTests()
     dispatchIntegrationTests()
 
     println()
@@ -184,6 +186,56 @@ private fun timeoutTest() {
     val elapsed = System.currentTimeMillis() - started
     check("timeout: 死循环被打断", timedOut, "elapsed=${elapsed}ms")
     check("timeout: 打断及时", elapsed < 2000, "elapsed=${elapsed}ms")
+}
+
+private fun moduleLoaderShimTests() {
+    val root = tempDir()
+    writeModule(
+        root, "a_skill", mdOf("a_skill", "input"),
+        "function (i, h) { return null; }",
+        refs = mapOf("SKILL.md" to "技能正文")
+    )
+    writeModule(root, "b_plain", mdOf("b_plain", "input"), "function (i, h) { return null; }")
+    writeModule(
+        root, "probe", mdOf("probe", "input"),
+        """
+        function (i, h) {
+          var pkgs = ModuleLoader.listPackages();
+          var first = pkgs[0];
+          var keys = Object.keys(first).sort();
+          function hasSkill(id) {
+            for (var k = 0; k < pkgs.length; k++) {
+              if (pkgs[k].id === id) return pkgs[k].hasSkill;
+            }
+            return null;
+          }
+          return JSON.stringify({
+            count: pkgs.length,
+            keys: keys,
+            getScript: String(typeof ModuleLoader.getScript),
+            getReference: String(typeof ModuleLoader.getReference),
+            aSkill: hasSkill('a_skill'),
+            bSkill: hasSkill('b_plain')
+          });
+        }
+        """.trimIndent()
+    )
+    val registry = ModuleRegistry.scan(root).registry
+    val probe = RhinoJsExecutor(registry).execute(
+        "probe", "{}",
+        GatedHostBridge(registry.getPackage("probe")!!, registry, AuditLog(), { null })
+    )
+    val json = parseJson(probe ?: "")
+    eq("shim: 返回所有包", 3, json?.int("count"))
+    eq(
+        "shim: 只有四个字段",
+        listOf("description", "hasSkill", "id", "name"),
+        json?.arr("keys")?.mapNotNull { (it as? mychat.framework.json.JsonValue.Str)?.value }
+    )
+    eq("shim: 不暴露 getScript", "undefined", json?.str("getScript"))
+    eq("shim: 不暴露 getReference", "undefined", json?.str("getReference"))
+    eq("shim: 有 SKILL.md 的 hasSkill=true", true, json?.bool("aSkill"))
+    eq("shim: 没 SKILL.md 的 hasSkill=false", false, json?.bool("bSkill"))
 }
 
 private fun dispatchIntegrationTests() {

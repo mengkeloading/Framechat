@@ -39,7 +39,7 @@ class RhinoJsExecutor(
             ctx.languageVersion = Context.VERSION_ES6
             val scope = ctx.initSafeStandardObjects()
             // 模块依赖的全局：semantics 与 demo 的 js/module/modulekit.js 一致
-            ctx.evaluateString(scope, PRELUDE, "modulekit", 1, null)
+            ctx.evaluateString(scope, prelude(), "modulekit", 1, null)
             val wrapper = "(function (inputJson, host) {\n" +
                 "var fetch=undefined, XMLHttpRequest=undefined, localStorage=undefined,\n" +
                 "    document=undefined, window=undefined, require=undefined, importScripts=undefined;\n" +
@@ -60,6 +60,45 @@ class RhinoJsExecutor(
             DEADLINE.remove()
             Context.exit()
         }
+    }
+
+    /**
+     * 模块可见的全局：ModuleKit + 裁剪版的 ModuleLoader。
+     *
+     * ModuleLoader 只给元数据（id/name/description/hasSkill）——
+     * 不提供 getScript / getReference：模块**无权读别人的内容**，
+     * 要读自己的 reference 走 host.requestLocalAction('resource.read', …)。
+     */
+    private fun prelude(): String {
+        val packages = source.all().joinToString(",") { pkg ->
+            val hasSkill = if (pkg.reference(SKILL_FILE) != null) "true" else "false"
+            "{id:" + js(pkg.id) +
+                ",name:" + js(pkg.manifest.name) +
+                ",description:" + js(pkg.manifest.description) +
+                ",hasSkill:" + hasSkill + "}"
+        }
+        return MODULE_KIT + "\n" +
+            "var ModuleLoader = {\n" +
+            "  listPackages: function () { return [" + packages + "]; }\n" +
+            "};\n"
+    }
+
+    /** 足够用的 JS 字符串字面量转义（模块名/描述会带引号和换行）。 */
+    private fun js(text: String): String {
+        val sb = StringBuilder(text.length + 2)
+        sb.append('"')
+        for (c in text) {
+            when (c) {
+                '"' -> sb.append("\\\"")
+                '\\' -> sb.append("\\\\")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                else -> sb.append(c)
+            }
+        }
+        sb.append('"')
+        return sb.toString()
     }
 
     /** 超时靠 Rhino 的指令计数器：死循环模块会在下一个检查点被抛出。 */
@@ -94,13 +133,14 @@ class RhinoJsExecutor(
     companion object {
         const val DEFAULT_TIMEOUT_MS = 3000L
         private const val INSTRUCTION_CHECK_INTERVAL = 10_000
+        private const val SKILL_FILE = "SKILL.md"
 
         /**
          * 与 demo 的 modulekit.js 同语义：模块只认 parse / reply / isLegal。
          * 缺了它，19 个模块里 15 个会 ReferenceError，再被 fail-open 吞掉 ——
          * 表现是「模块明明启用了却什么都不做」。
          */
-        private const val PRELUDE = """
+        private const val MODULE_KIT = """
             var ModuleKit = {
               parse: function (inputJson) {
                 if (typeof inputJson !== 'string') return { text: '', phase: 'a', ctx: {} };

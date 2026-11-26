@@ -69,6 +69,7 @@ fun main() {
     attachContext(dispatcher, session)
     noFluff(dispatcher, session)
     ctxPassthrough(dispatcher, session)
+    skillHub(dispatcher, session)
     noFluffViaRunner(registry)
     directiveEndToEnd(registry)
 
@@ -134,6 +135,24 @@ private fun noFluff(dispatcher: ModuleDispatcher, session: HookSession) {
         "no_fluff: 只包最后一行",
         "你好！有什么我可以帮你的吗？\n[[HIDE]]如果你接着想聊 Kotlin 协程，可以说…其他问题也随时问[[/HIDE]]",
         single.text
+    )
+}
+
+/** 真模块 skill_hub：靠 ModuleLoader shim 拿包列表，不再静默 null。 */
+private fun skillHub(dispatcher: ModuleDispatcher, session: HookSession) {
+    val result = dispatcher.dispatchInput(
+        session.copy(activeHardModules = listOf("skill_hub")), "帮我写个故事"
+    )
+    check("skill_hub: 返回 context", result is HookAResult.Context, "实际 ${result::class.simpleName}")
+    val extra = (result as? HookAResult.Context)?.extra.orEmpty()
+    check("skill_hub: 有技能目录", extra.contains("【可用技能目录】"), extra)
+    check("skill_hub: 列出代码审查", extra.contains("skill_code"))
+    check("skill_hub: 列出小说写作", extra.contains("skill_novel"))
+    check("skill_hub: 被包装成技能块", extra.contains("id: skill_hub"))
+    eq(
+        "skill_hub: 没有执行异常",
+        0,
+        dispatcher.traces.count { it.module == "skill_hub" && it.message.contains("执行异常") }
     )
 }
 
