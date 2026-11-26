@@ -2771,7 +2771,14 @@ class ChatViewModel(
                             "remediate:cost +" + remedy.calls + " call"
                         )
                     }
-                    if (remedy.status == "replaced") finalAnswer = remedy.text
+                    if (remedy.status == "replaced") {
+                        finalAnswer = remedy.text
+                        if (BuildConfig.DEBUG) {
+                            com.simplechat.app.hook.UsageLog.record(
+                                "remediate:applied " + missingId + " len=" + remedy.text.length
+                            )
+                        }
+                    }
                 }
             }
 

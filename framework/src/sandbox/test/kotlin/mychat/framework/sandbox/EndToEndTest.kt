@@ -198,6 +198,8 @@ private fun scenarioB(registry: ModuleRegistry) {
     val promptB = h.llm.prompts.getOrNull(1).orEmpty()
     check("B: 补救请求要求按格式重写", promptB.contains("没有使用分级标记"), promptB)
     check("B: 补救请求不含「重新组织」", !promptB.contains("重新组织"), promptB)
+    // UI/落库读的都是这个值：必须逐字等于补救文本，不是旁路返回值
+    eq("B: 最终消息内容 = 补救文本", GOOD, answer)
     assertOrder(h, "B")
 }
 
