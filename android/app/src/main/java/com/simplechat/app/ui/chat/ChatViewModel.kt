@@ -2675,8 +2675,14 @@ class ChatViewModel(
              * 这里只把结果记下来 —— 用来判断“加载了但没用”还是“用了但没声明”。
              */
             if (BuildConfig.DEBUG) {
-                val used = directiveResult.meta[DirectiveEngine.META_USED].orEmpty()
-                val line = "loaded=" + stored.enabledModules.joinToString(",") +
+                val rawUsed = directiveResult.meta[DirectiveEngine.META_USED].orEmpty()
+                val loadedIds = stored.enabledModules
+                val used = mychat.framework.directive.UsageWhitelist.filter(rawUsed, loadedIds)
+                val invalid = mychat.framework.directive.UsageWhitelist.invalid(rawUsed, loadedIds)
+                if (invalid.isNotEmpty()) {
+                    android.util.Log.w("MyChat/Used", "filtered invalid: $invalid")
+                }
+                val line = "loaded=" + loadedIds.joinToString(",") +
                     " used=" + used.joinToString(",")
                 android.util.Log.d("MyChat/Used", line)
                 runCatching {

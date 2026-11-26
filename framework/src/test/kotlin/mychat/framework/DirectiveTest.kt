@@ -1,6 +1,7 @@
 package mychat.framework
 
 import mychat.framework.directive.DirectiveEngine
+import mychat.framework.directive.UsageWhitelist
 import kotlin.system.exitProcess
 
 private var passed = 0
@@ -72,6 +73,7 @@ fun main() {
     eq("log: 名字齐全", listOf("HIDE", "BAR"), r8.log.map { it.name })
 
     usedTests(engine)
+    whitelistTests(engine)
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -81,7 +83,44 @@ fun main() {
     }
 }
 
-/** USED 是自闭合的元信息指令：删标记、id 进 meta，不影响其他指令。 */
+/** USED 白名单：只采信已加载的模块 id。 */
+private fun whitelistTests(engine: DirectiveEngine) {
+    val loaded = setOf("local_calc", "skill_code")
+
+    eq(
+        "whitelist: 不存在的模块被过滤",
+        emptyList<String>(),
+        UsageWhitelist.filter(listOf("模块id"), loaded)
+    )
+    eq(
+        "whitelist: 已加载的模块通过",
+        listOf("local_calc"),
+        UsageWhitelist.filter(listOf("local_calc"), loaded)
+    )
+    eq(
+        "whitelist: 混合时只留合法",
+        listOf("skill_code"),
+        UsageWhitelist.filter(listOf("模块id", "skill_code", "ghost"), loaded)
+    )
+    eq(
+        "whitelist: 能拿到非法清单用于日志",
+        listOf("模块id", "ghost"),
+        UsageWhitelist.invalid(listOf("模块id", "skill_code", "ghost"), loaded)
+    )
+
+    // meta 本身不改：过滤只发生在记录/上报那一层
+    val declared = engine.process("正文[[USED:模块id,skill_code]]")
+    eq(
+        "whitelist: meta 保留原值",
+        listOf("模块id", "skill_code"),
+        declared.meta[DirectiveEngine.META_USED]
+    )
+    eq(
+        "whitelist: 对 meta 做过滤后只剩合法",
+        listOf("skill_code"),
+        UsageWhitelist.filter(declared.meta[DirectiveEngine.META_USED].orEmpty(), loaded)
+    )
+}
 private fun usedTests(engine: DirectiveEngine) {
     val one = engine.process("答案正文[[USED:a]]")
     eq("used: 标记被移除", "答案正文", one.text)

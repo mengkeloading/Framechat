@@ -69,6 +69,7 @@ fun main() {
     attachContext(dispatcher, session)
     noFluff(dispatcher, session)
     ctxPassthrough(dispatcher, session)
+    usageDeclare(dispatcher, session)
     noFluffViaRunner(registry)
     directiveEndToEnd(registry)
 
@@ -135,6 +136,19 @@ private fun noFluff(dispatcher: ModuleDispatcher, session: HookSession) {
         "你好！有什么我可以帮你的吗？\n[[HIDE]]如果你接着想聊 Kotlin 协程，可以说…其他问题也随时问[[/HIDE]]",
         single.text
     )
+}
+
+/** 真模块 usage_declare：验证提示措辞（有真实例子、无占位符、强调最后一行）。 */
+private fun usageDeclare(dispatcher: ModuleDispatcher, session: HookSession) {
+    val result = dispatcher.dispatchInput(
+        session.copy(activeHardModules = listOf("usage_declare")), "随便问一句"
+    )
+    check("usage_declare: 返回 context", result is HookAResult.Context, "实际 ${result::class.simpleName}")
+    val extra = (result as? HookAResult.Context)?.extra.orEmpty()
+    check("usage_declare: 含真实例子", extra.contains("[USED:skill_code]"), extra)
+    check("usage_declare: 不含占位符", !extra.contains("[[USED:模块id]]"))
+    check("usage_declare: 强调最后一行", extra.contains("最后一行"))
+    check("usage_declare: 不改写输入", result.text == "随便问一句")
 }
 
 /** 真模块 no_fluff 经 HookRunner.output 改写（钩子 B 端到端）。 */
