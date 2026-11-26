@@ -131,7 +131,17 @@ class AppContainer(private val app: Application) {
 
     /** 钩子入口：每轮新建 dispatcher，traces 由它累积。 */
     val hookRunner by lazy {
-        HookRunner(moduleRegistry.registry, RhinoJsExecutor(moduleRegistry.registry))
+        HookRunner(
+            source = moduleRegistry.registry,
+            executor = RhinoJsExecutor(moduleRegistry.registry),
+            onFormatCheck = { id, ok ->
+                if (BuildConfig.DEBUG) {
+                    com.simplechat.app.hook.UsageLog.record(
+                        "format_check=" + id + ":" + if (ok) "ok" else "missing"
+                    )
+                }
+            }
+        )
     }
 
     /** 向量模型：懒加载，首次路由时才把 23MB 模型读进内存。 */

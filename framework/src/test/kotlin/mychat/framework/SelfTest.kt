@@ -660,7 +660,26 @@ private fun formatCheckTests() {
         sourceOf(marked, plain),
         executor = FakeExecutor { _, _, _ -> """{"type":"pass"}""" }
     )
+    val recorded = mutableListOf<String>()
+    val dLogged = ModuleDispatcher(
+        source = sourceOf(marked, plain),
+        executor = FakeExecutor { _, _, _ -> """{"type":"pass"}""" },
+        bridges = GatedHostBridge.factory(sourceOf(marked, plain), AuditLog(), { null }),
+        onFormatCheck = { id, ok ->
+            recorded += "format_check=" + id + ":" + if (ok) "ok" else "missing"
+        }
+    )
     val session = HookSession(id = "s", activeHardModules = listOf("fmt"))
+
+    dLogged.dispatchOutput(session, "[必须改] 第 3 行有越界风险", selected = setOf("fmt"))
+    check("format: ok 写进日志", recorded.contains("format_check=fmt:ok"), "recorded=$recorded")
+
+    dLogged.dispatchOutput(session, "就是有点问题", selected = setOf("fmt"))
+    check(
+        "format: missing 写进日志",
+        recorded.contains("format_check=fmt:missing"),
+        "recorded=$recorded"
+    )
 
     d.dispatchOutput(session, "[必须改] 第 3 行有越界风险", selected = setOf("fmt"))
     eq(

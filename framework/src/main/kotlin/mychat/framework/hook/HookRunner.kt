@@ -11,6 +11,8 @@ class HookRunner(
     private val executor: JsExecutor,
     private val audit: AuditLog = AuditLog(),
     private val maxInvokeDepth: Int = 3,
+    /** 格式检查回调（App 层写日志用）。 */
+    private val onFormatCheck: ((String, Boolean) -> Unit)? = null,
 ) {
 
     private val traceLog = mutableListOf<Trace>()
@@ -89,6 +91,7 @@ class HookRunner(
                 audit = audit,
                 sessionData = { SessionData(session, history) }
             ),
-            maxInvokeDepth = maxInvokeDepth
+            maxInvokeDepth = maxInvokeDepth,
+            onFormatCheck = onFormatCheck
         )
 }
