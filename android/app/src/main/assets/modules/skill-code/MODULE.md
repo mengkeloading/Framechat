@@ -7,6 +7,12 @@ hooks: []
 inject: none
 capabilities: {}
 entry: script/main.js
+format_marks:
+  - "[必须改]"
+  - "[建议改]"
+  - "[可选]"
 ---
 
-纯知识包：不挂钩子，由 skill-hub 统一注入 reference/SKILL.md。
+纯知识包：不挂钩子，SKILL.md 由框架在 selected 命中时直接注入。
+
+`format_marks` 声明输出必须含的分级标记，钩子 B 会检查并记 trace。

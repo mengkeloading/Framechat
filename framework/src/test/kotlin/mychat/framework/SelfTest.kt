@@ -57,6 +57,7 @@ fun main() {
     bridgeTests()
     dispatcherTests()
     contextWrappingTests()
+    formatCheckTests()
     builderTests()
     sseTests()
     engineTests()
@@ -525,6 +526,7 @@ private fun contextWrappingTests() {
     check("wrap: 有 name", singleExtra.contains("name: one"))
     check("wrap: 有说明", singleExtra.contains("说明：甲模块的说明"))
     check("wrap: 有结束标记", singleExtra.contains("【技能结束】"))
+    check("wrap: 含格式提醒", singleExtra.contains("严格遵守上述规范中的输出格式要求"))
     check("wrap: extra 原文一字不差", singleExtra.contains("规范甲正文"))
 
     // 两模块：两个独立块
@@ -638,6 +640,50 @@ private fun contextWrappingTests() {
     val passed = passOnly.dispatchInput(HookSession(id = "s", activeHardModules = listOf("plain")), "输入")
     check("wrap: 无技能时仍是 pass", passed is HookAResult.Pass)
     eq("wrap: pass 不产生 extra", "输入", passed.text)
+}
+
+// ---------- 格式检查（只记录） ----------
+
+private fun formatCheckTests() {
+    val marked = ModulePackage(
+        manifest = ModuleManifest(
+            "fmt", "格式模块", hooks = listOf("output"),
+            formatMarks = listOf("[必须改]", "[建议改]")
+        ),
+        body = "", scripts = emptyMap(), references = emptyMap()
+    )
+    val plain = ModulePackage(
+        manifest = ModuleManifest("plain", "无声明", hooks = listOf("output")),
+        body = "", scripts = emptyMap(), references = emptyMap()
+    )
+    val d = dispatcherFor(
+        sourceOf(marked, plain),
+        executor = FakeExecutor { _, _, _ -> """{"type":"pass"}""" }
+    )
+    val session = HookSession(id = "s", activeHardModules = listOf("fmt"))
+
+    d.dispatchOutput(session, "[必须改] 第 3 行有越界风险", selected = setOf("fmt"))
+    eq(
+        "format: 含标记记 ok",
+        "ok",
+        d.traces.lastOrNull { it.tag == "format_check" }?.message
+    )
+
+    d.clearTraces()
+    d.dispatchOutput(session, "就是有点问题", selected = setOf("fmt"))
+    eq(
+        "format: 不含标记记 missing",
+        "missing",
+        d.traces.lastOrNull { it.tag == "format_check" }?.message
+    )
+
+    d.clearTraces()
+    d.dispatchOutput(session, "任意输出", selected = setOf("plain"))
+    eq("format: 没声明的模块不检查", 0, d.traces.count { it.tag == "format_check" })
+
+    d.clearTraces()
+    d.dispatchOutput(session, "任意输出", selected = emptySet())
+    eq("format: 没选中就不检查", 0, d.traces.count { it.tag == "format_check" })
 }
 
 // ---------- request builder ----------

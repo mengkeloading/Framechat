@@ -30,7 +30,13 @@ private fun check(name: String, cond: Boolean, detail: String? = null) {
 private fun eq(name: String, expected: Any?, actual: Any?) =
     check(name, expected == actual, "expected=$expected actual=$actual")
 
-private class MapEmbedder(private val table: Map<String, FloatArray>) : TextEmbedder {
+private class MapEmbedder(
+    private val table: Map<String, FloatArray>,
+    override val ready: Boolean = true,
+) : TextEmbedder {
+    var queryCalls = 0
+        private set
+
     /** 先精确匹配，再退到「包含」——模块文档文本是拼接出来的，不会与 key 完全相等。 */
     override fun embed(text: String): FloatArray? {
         table[text]?.let { return it }
@@ -39,10 +45,18 @@ private class MapEmbedder(private val table: Map<String, FloatArray>) : TextEmbe
             .maxByOrNull { it.key.length }
             ?.value
     }
+
+    override fun embedQuery(text: String): FloatArray? {
+        queryCalls++
+        return embed(text)
+    }
+
+    override fun embedPassage(text: String): FloatArray? = embed(text)
 }
 
 fun main() {
     semanticTests()
+    notReadyTests()
     keywordTests()
     noButlerTests()
     managerTests()
@@ -98,6 +112,34 @@ private fun semanticTests() {
     eq("butler: classify 未实现", null, butler.classify("x"))
     eq("butler: normalize 未实现", null, butler.normalize("x"))
     eq("butler: judge 未实现", null, butler.judge("x", "y"))
+}
+
+// ---------- 模型未就绪 ----------
+
+private fun notReadyTests() {
+    val embedder = MapEmbedder(
+        mapOf("q" to floatArrayOf(1f, 0f), "小说写作" to floatArrayOf(1f, 0f)),
+        ready = false
+    )
+    val butler = SemanticButler(embedder)
+    val metas = listOf(ModuleMeta("skill_novel", "小说写作", "", null, "小说写作"))
+
+    val route = butler.route("q", metas)
+    eq("ready: 未就绪时返回空", emptyList<String>(), route.modules)
+    eq("ready: reason=not_ready", "not_ready", route.reason)
+    eq("ready: 未就绪时不调 embedQuery", 0, embedder.queryCalls)
+
+    val modules = listOf(
+        ModulePackage(
+            manifest = ModuleManifest("skill_novel", "小说写作", description = "写故事"),
+            body = "", scripts = emptyMap(), references = mapOf("SKILL.md" to "规范")
+        )
+    )
+    eq(
+        "ready: 未就绪时仍能兜底",
+        setOf("skill_novel"),
+        ModuleSelector.select(modules, route)
+    )
 }
 
 // ---------- 关键词管家 ----------

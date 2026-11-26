@@ -128,6 +128,7 @@ class ModuleDispatcher(
             append('\n')
             append("规范：\n")
             append(b.extra).append('\n')
+            append(FORMAT_REMINDER).append('\n')
             append("【技能结束】\n\n")
         }
         append(USAGE_DECLARATION)
@@ -141,6 +142,34 @@ class ModuleDispatcher(
     )
 
     fun dispatchOutput(
+        session: HookSession,
+        rawText: String,
+        input: String? = null,
+        history: List<Message> = emptyList(),
+        attachments: List<Attachment> = emptyList(),
+        /** 本轮被选中的模块；目前只用来做格式检查。 */
+        selected: Set<String> = emptySet()
+    ): HookBResult {
+        val result = computeOutput(session, rawText, input, history, attachments)
+        checkFormats(selected, result.text)
+        return result
+    }
+
+    /**
+     * 格式检查：只记录、不补救。
+     * 先搞清楚「格式不遵守」的频率，再决定要不要让模型重来。
+     */
+    private fun checkFormats(selected: Set<String>, text: String) {
+        if (selected.isEmpty()) return
+        for (id in selected) {
+            val marks = source.getPackage(id)?.manifest?.formatMarks.orEmpty()
+            if (marks.isEmpty()) continue
+            val ok = marks.any { text.contains(it) }
+            trace("format_check", id, if (ok) "ok" else "missing")
+        }
+    }
+
+    private fun computeOutput(
         session: HookSession,
         rawText: String,
         input: String? = null,
@@ -271,6 +300,13 @@ class ModuleDispatcher(
         const val HOOK_INPUT = "input"
         const val HOOK_OUTPUT = "output"
         private const val SKILL_FILE = "SKILL.md"
+
+        /**
+         * 实测：模型对「内容」的注意力强于「格式」——skill_code 注入后内容要求都做到了，
+         * 但 [必须改]/[建议改] 这类分级标记被漏掉。这行是显式提一句，成本 1 行。
+         */
+        private const val FORMAT_REMINDER =
+            "注意：严格遵守上述规范中的输出格式要求（如有分级标记、固定小节标题、指定结构等）。"
 
         /** 只在真的注入了技能时追加，没技能就不花这份 token。 */
         const val USAGE_DECLARATION = "【使用声明】\n" +

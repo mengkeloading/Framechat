@@ -64,10 +64,11 @@ class HookRunner(
         input: String? = null,
         history: List<Message> = emptyList(),
         attachments: List<Attachment> = emptyList(),
+        selected: Set<String> = emptySet(),
     ): HookBResult {
         if (session.activeHardModules.isEmpty()) return HookBResult.Pass(rawText)
         val dispatcher = dispatcherFor(session, history)
-        val result = dispatcher.dispatchOutput(session, rawText, input, history, attachments)
+        val result = dispatcher.dispatchOutput(session, rawText, input, history, attachments, selected)
         synchronized(traceLog) { traceLog += dispatcher.traces }
         return result
     }

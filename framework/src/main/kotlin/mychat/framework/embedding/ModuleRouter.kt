@@ -43,11 +43,11 @@ object ModuleRouter {
     const val MAX_MODULES = 2
 
     /**
-     * 不参与路由的模块：它自己就是兜底路径（全量注入）。
-     * 描述是「把所有技能规范注入本轮，由模型自己判断」，天然和所有查询沾边，
-     * 放进来只会制造假 margin。无条件排除，不看分数。
+     * 不参与路由的模块：
+     * - skill_hub 自己就是兜底路径；
+     * - debug_ctx 是诊断工具，只在输入「诊断ctx」时才响应，不该出现在正常路由里。
      */
-    val EXCLUDED_IDS = setOf("skill_hub")
+    val EXCLUDED_IDS = setOf("skill_hub", "debug_ctx")
 
     fun isRoutable(id: String): Boolean = id !in EXCLUDED_IDS
 

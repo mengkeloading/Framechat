@@ -24,6 +24,8 @@ class SemanticButler(
     /** 同一次 route 里算过的分数，方便调用方写日志。 */
     override fun route(query: String, modules: List<ModuleMeta>): RouteResult {
         if (modules.isEmpty()) return RouteResult(emptyList(), "empty")
+        // 模型未就绪时不能拿错误分数当结论：那是"还没准备好"，不是"都不像"
+        if (!embedder.ready) return RouteResult(emptyList(), "not_ready")
         val queryVector = embedder.embedQuery(query)
             ?: return RouteResult(emptyList(), "no_vector")
         val candidates = modules.mapNotNull { meta ->

@@ -27,7 +27,11 @@ class OnnxTextEmbedder(
 
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val tokenizer: WordPieceTokenizer
-    private val session: OrtSession
+    private var session: OrtSession? = null
+
+    /** 模型加载失败时保持 false：路由据此走兜底，而不是拿错误分数下判断。 */
+    override var ready: Boolean = false
+        private set
 
     init {
         val vocab = HashMap<String, Int>(40000)
@@ -36,15 +40,21 @@ class OnnxTextEmbedder(
         }
         tokenizer = WordPieceTokenizer(vocab)
 
-        val bytes = assets.open(modelAsset).use { it.readBytes() }
-        val options = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(2)
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        val loaded = runCatching {
+            val bytes = assets.open(modelAsset).use { it.readBytes() }
+            val options = OrtSession.SessionOptions().apply {
+                setIntraOpNumThreads(2)
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            }
+            env.createSession(bytes, options)
+        }.onFailure { Log.w(TAG, "模型加载失败，路由将走兜底", it) }.getOrNull()
+        session = loaded
+        ready = loaded != null
+        loaded?.let {
+            // 输入名不一定叫 input_ids/attention_mask/token_type_ids，先打出来
+            Log.d(TAG, "inputs=" + it.inputNames.joinToString(",") +
+                " outputs=" + it.outputNames.joinToString(","))
         }
-        session = env.createSession(bytes, options)
-        // 输入名不一定叫 input_ids/attention_mask/token_type_ids，先打出来
-        Log.d(TAG, "inputs=" + session.inputNames.joinToString(",") +
-            " outputs=" + session.outputNames.joinToString(","))
     }
 
     override fun embed(text: String): FloatArray? = embedQuery(text)
@@ -56,6 +66,7 @@ class OnnxTextEmbedder(
     override fun embedPassage(text: String): FloatArray? = embedWithPrefix(text)
 
     private fun embedWithPrefix(text: String): FloatArray? {
+        val ort = session ?: return null
         val ids = tokenizer.encode(text)
         if (ids.isEmpty()) return null
         val shape = longArrayOf(1L, ids.size.toLong())
@@ -74,7 +85,7 @@ class OnnxTextEmbedder(
             )
 
             val inputs = HashMap<String, OnnxTensor>()
-            for (name in session.inputNames) {
+            for (name in ort.inputNames) {
                 inputs[name] = when {
                     name.contains("mask", ignoreCase = true) -> attention
                     name.contains("type", ignoreCase = true) -> typeIds
@@ -82,7 +93,7 @@ class OnnxTextEmbedder(
                 }
             }
 
-            result = session.run(inputs)
+            result = ort.run(inputs)
             val out = result.get(0) as? OnnxTensor ?: return null
             val buffer = out.floatBuffer
             // [1, seq, hidden]：CLS 就是前 hidden 个浮点数
@@ -99,7 +110,9 @@ class OnnxTextEmbedder(
     }
 
     fun close() {
-        session.close()
+        session?.close()
+        session = null
+        ready = false
     }
 
     /** bge-small-zh 的隐藏层宽度固定 512。 */

@@ -6,6 +6,9 @@ package mychat.framework.embedding
  */
 interface TextEmbedder {
 
+    /** 模型是否已就绪。未就绪时路由应走兜底，而不是拿错误分数判 below_min。 */
+    val ready: Boolean get() = true
+
     /** 返回 L2 归一化后的向量；空文本或无法编码时返回 null。 */
     fun embed(text: String): FloatArray?
 

@@ -176,6 +176,9 @@ class ChatViewModel(
     private var pendingHookExtra: String? = null
     private var pendingHookAText: String? = null
 
+    /** 本轮 A 阶段选中的模块，给 B 阶段做格式检查用。 */
+    private var pendingSelected: Set<String> = emptySet()
+
     /**
      * 最近一轮钩子的调度轨迹。只写日志用，**故意不用 State** ——
      * 目前没有任何 Composable 读它，用 State 只会白白触发重组。
@@ -893,6 +896,7 @@ class ChatViewModel(
                  */
                 pendingHookExtra = null
                 pendingHookAText = null
+                pendingSelected = emptySet()
                 var localReply: String? = null
                 if (stored.enabledModules.isNotEmpty()) {
                     val hookSession = HookSession(
@@ -914,6 +918,7 @@ class ChatViewModel(
                     }
                     val prepared = hookRouter.prepare(stored.enabledModules, text, stored.butlerId)
                     val selected = prepared.selected
+                    pendingSelected = selected
                     if (BuildConfig.DEBUG) {
                         val selLine = "sel=prefix:" + (prepared.prefixModule != null) +
                             " route=" + prepared.routeModules +
@@ -2683,6 +2688,7 @@ class ChatViewModel(
                     rawText = finalContent,
                     input = pendingHookAText ?: latestQuestion,
                     history = historyForB,
+                    selected = pendingSelected,
                 )
                 if (hookB is HookBResult.Rewrite) shownContent = hookB.text
                 recordHookTrace()

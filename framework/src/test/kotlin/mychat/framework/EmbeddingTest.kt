@@ -290,6 +290,7 @@ private fun routingDecisionTests() {
 
     // 9. skill_hub 不参与路由（它自己就是兜底路径）
     eq("router: skill_hub 不可路由", false, ModuleRouter.isRoutable("skill_hub"))
+    eq("router: debug_ctx 不可路由", false, ModuleRouter.isRoutable("debug_ctx"))
     eq("router: 普通模块可路由", true, ModuleRouter.isRoutable("local_calc"))
     val withHub = listOf(
         Candidate("skill_hub", floatArrayOf(1f, 0f)),
