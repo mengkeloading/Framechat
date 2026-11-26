@@ -92,7 +92,7 @@ data class ModuleManifest(
     val tools: List<JsonValue> = emptyList(),
     /** 可选：输入以「prefix：」开头时强制使用本模块，跳过路由。 */
     val prefix: String? = null,
-    /** 可选：这个模块需要管家先做的预处理，如 [normalize]。 */
+    /** 可选：启用本模块时需要的前置处理，如 normalize。 */
     val needs: List<String> = emptyList()
 ) {
     /** phase 用 "input" / "output"，与 MODULE.md 里的写法一致。 */

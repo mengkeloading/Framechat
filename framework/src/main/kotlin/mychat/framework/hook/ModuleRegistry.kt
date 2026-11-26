@@ -52,6 +52,9 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
     data class ScanResult(val registry: ModuleRegistry, val problems: List<String>)
 
     companion object {
+        private val SCRIPT_DIRS = listOf("script", "scripts")
+        private val REFERENCE_DIRS = listOf("reference", "references")
+
         fun of(list: List<ModulePackage>): ModuleRegistry =
             ModuleRegistry(list.associateBy { it.id })
 
@@ -63,73 +66,92 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
             val problems = mutableListOf<String>()
             for (name in tree.list(root).sorted()) {
                 val dir = join(root, name)
-                val mdText = tree.read(join(dir, "MODULE.md"))
-                if (mdText == null) {
-                    // 只有 SKILL.md 的 skill 包：造一个隐式模块（知识型，不挂钩子）
-                    val skillText = tree.read(join(dir, SKILL_FILE)) ?: continue
-                    val implicit = implicitModule(tree, dir, name, skillText)
-                    if (pkgs.containsKey(implicit.manifest.id)) {
-                        problems += "$name: 隐式模块 id 与已有模块重复 ${implicit.manifest.id}"
-                        continue
+                val text = tree.read(join(dir, "MODULE.md"))
+                if (text != null) {
+                    mkModule(dir, name, text, tree, pkgs, problems)
+                } else {
+                    // 没有 MODULE.md 但有 SKILL.md → 隐式模块（兼容 skill 包）
+                    mkImplicit(dir, name, tree)?.let { pkg ->
+                        if (pkgs.containsKey(pkg.id)) {
+                            problems += "$name: 重复的模块 id ${pkg.id}"
+                        } else {
+                            pkgs[pkg.id] = pkg
+                        }
                     }
-                    pkgs[implicit.manifest.id] = implicit
-                    continue
                 }
-                val fm = FrontMatter.parse(mdText)
-                if (fm == null) {
-                    problems += "$name: MODULE.md 缺 front matter"
-                    continue
-                }
-                val manifest = ModuleManifest.from(fm, name)
-                val scripts = readTree(tree, join(dir, "script")) +
-                    readTree(tree, join(dir, "scripts"))
-                if (manifest.hooks.isNotEmpty() && scripts[manifest.entry] == null) {
-                    problems += "${manifest.id}: hooks=${manifest.hooks} 但 script/${manifest.entry} 不存在"
-                }
-                if (pkgs.containsKey(manifest.id)) {
-                    problems += "$name: 重复的模块 id ${manifest.id}"
-                    continue
-                }
-                pkgs[manifest.id] = ModulePackage(
-                    manifest = manifest,
-                    body = fm.body,
-                    scripts = scripts,
-                    references = readTree(tree, join(dir, "reference")) +
-                        readTree(tree, join(dir, "references"))
-                )
             }
             return ScanResult(ModuleRegistry(pkgs), problems)
         }
 
-        private fun join(dir: String, name: String): String =
-            if (dir.isEmpty()) name else "$dir/$name"
-
-        private const val SKILL_FILE = "SKILL.md"
+        private fun mkModule(
+            dir: String,
+            name: String,
+            text: String,
+            tree: ModuleTree,
+            pkgs: MutableMap<String, ModulePackage>,
+            problems: MutableList<String>,
+        ) {
+            val fm = FrontMatter.parse(text)
+            if (fm == null) {
+                problems += "$name: MODULE.md 缺 front matter"
+                return
+            }
+            val manifest = ModuleManifest.from(fm, name)
+            val scripts = readTreeAny(tree, dir, SCRIPT_DIRS)
+            if (manifest.hooks.isNotEmpty() && scripts[manifest.entry] == null) {
+                problems += "${manifest.id}: hooks=${manifest.hooks} 但 script/${manifest.entry} 不存在"
+            }
+            if (pkgs.containsKey(manifest.id)) {
+                problems += "$name: 重复的模块 id ${manifest.id}"
+                return
+            }
+            pkgs[manifest.id] = ModulePackage(
+                manifest = manifest,
+                body = fm.body,
+                scripts = scripts,
+                references = readTreeAny(tree, dir, REFERENCE_DIRS)
+            )
+        }
 
         /**
-         * 只有 SKILL.md 的目录 = 一个 skill 包。
-         * id 取目录名（连字符转下划线），name/description 优先取 SKILL.md 的 front matter，
-         * references 收目录下所有 .md（含 SKILL.md 自己，方便被 skill.read 读到）。
+         * 只有 SKILL.md 的目录：当成一个不挂钩子的纯知识模块。
+         * references 收目录下所有 .md（含 SKILL.md 自己），
+         * 这样子框架 / 其他模块仍能通过 skill.read 读到它。
          */
-        private fun implicitModule(
-            tree: ModuleTree,
-            dir: String,
-            dirName: String,
-            skillText: String
-        ): ModulePackage {
-            val fm = FrontMatter.parse(skillText)
-            val id = dirName.replace('-', '_')
+        private fun mkImplicit(dir: String, name: String, tree: ModuleTree): ModulePackage? {
+            val skill = tree.read(join(dir, "SKILL.md")) ?: return null
+            val fm = FrontMatter.parse(skill)
+            val id = name.replace('-', '_')
             val manifest = ModuleManifest(
                 id = id,
-                name = fm?.scalars?.get("name") ?: dirName,
+                name = fm?.scalars?.get("name") ?: name,
                 description = fm?.scalars?.get("description") ?: "",
                 hooks = emptyList(),
-                entry = "main.js",
-                capabilities = emptyMap()
+                entry = ""
             )
-            val refs = readTree(tree, dir).filterKeys { it.endsWith(".md", true) }
-            return ModulePackage(manifest, fm?.body.orEmpty(), emptyMap(), refs)
+            val refs = LinkedHashMap<String, String>()
+            refs.putAll(readTreeAny(tree, dir, REFERENCE_DIRS))
+            refs["SKILL.md"] = skill
+            for ((path, content) in readTree(tree, dir)) {
+                if (path.endsWith(".md")) refs[path] = content
+            }
+            return ModulePackage(
+                manifest = manifest,
+                body = fm?.body.orEmpty(),
+                scripts = emptyMap(),
+                references = refs
+            )
         }
+
+        /** script/script(s)、reference/reference(s) 都认，两个都在就合并。 */
+        private fun readTreeAny(tree: ModuleTree, dir: String, names: List<String>): Map<String, String> {
+            val out = LinkedHashMap<String, String>()
+            for (n in names) out.putAll(readTree(tree, join(dir, n)))
+            return out
+        }
+
+        private fun join(dir: String, name: String): String =
+            if (dir.isEmpty()) name else "$dir/$name"
 
         private fun readTree(tree: ModuleTree, dir: String): Map<String, String> {
             val out = LinkedHashMap<String, String>()

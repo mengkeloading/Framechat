@@ -5,28 +5,42 @@ import kotlinx.coroutines.withContext
 import mychat.framework.butler.ButlerManager
 import mychat.framework.embedding.ModuleSelector
 import mychat.framework.hook.ModuleSource
+import mychat.framework.hook.NeedResolver
 
 /**
- * 把「这一轮该注入哪些技能」算出来。
+ * 把「这一轮该注入哪些技能、入模前要不要先归一化」算出来。
  *
  * 判断交给 [ButlerManager]（语义 / 关键词 / 无管家），这里只负责：
- * 取启用模块 → 问管家 → 套兜底规则。
+ * 取启用模块 → 问管家 → 套兜底规则 → 看模块有没有 needs。
  */
 class HookRouter(
     private val source: ModuleSource,
     private val butlers: ButlerManager,
 ) {
 
-    suspend fun select(enabled: Set<String>, query: String, butlerId: String?): Set<String> {
-        if (enabled.isEmpty()) return emptySet()
+    data class Prepared(
+        /** 要注入的模块。 */
+        val selected: Set<String>,
+        /** 选中模块里有 `needs: [normalize]`。 */
+        val normalize: Boolean,
+        /** 路由原因，供日志。 */
+        val reason: String,
+    )
+
+    suspend fun prepare(enabled: Set<String>, query: String, butlerId: String?): Prepared {
+        if (enabled.isEmpty()) return Prepared(emptySet(), false, "no_modules")
         val modules = source.all().filter { it.id in enabled }
-        if (modules.isEmpty()) return emptySet()
+        if (modules.isEmpty()) return Prepared(emptySet(), false, "no_modules")
         return withContext(Dispatchers.Default) {
-            ModuleSelector.select(modules, butlers.route(butlerId, query, modules))
+            val route = butlers.route(butlerId, query, modules)
+            val selected = ModuleSelector.select(modules, route)
+            Prepared(selected, NeedResolver.needsNormalize(modules, selected), route.reason)
         }
     }
 
-    /** 管家归一化；异常或未实现都返回 null（调用方用原文）。 */
-    fun normalize(butlerId: String?, text: String): String? =
-        runCatching { butlers.current(butlerId).normalize(text) }.getOrNull()
+    /** 归一化：管家没实现（返回 null）或抛异常都当"没归一化"。 */
+    suspend fun normalize(text: String, butlerId: String?): String? =
+        withContext(Dispatchers.Default) {
+            runCatching { butlers.current(butlerId).normalize(text) }.getOrNull()
+        }
 }

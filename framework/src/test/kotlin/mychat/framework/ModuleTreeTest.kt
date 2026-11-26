@@ -26,7 +26,7 @@ private fun eq(name: String, expected: Any?, actual: Any?) =
 fun main() {
     treeEquivalenceTests()
     edgeCaseTests()
-    skillPackageTests()
+    implicitModuleTests()
     assetHealthTest()
 
     println()
@@ -188,33 +188,41 @@ private fun edgeCaseTests() {
 
 // ---------- skill 包兼容（只有 SKILL.md 的目录） ----------
 
-private fun skillPackageTests() {
+private fun implicitModuleTests() {
     val root = tempDir()
-    write(
-        root, "my-skill/SKILL.md",
-        "---\nname: 我的技能\ndescription: 做点什么\n---\n\n正文"
-    )
-    write(root, "my-skill/extra.md", "附加知识")
 
-    write(root, "plural/MODULE.md", "---\nid: plural\nname: P\nhooks: [input]\nentry: main.js\n---\n")
-    write(root, "plural/scripts/main.js", "function (i, h) { return null; }")
-    write(root, "plural/references/SKILL.md", "复数目录的知识")
+    // 只 有 SKILL.md 的目录 → 隐式模块
+    write(
+        root, "novel-writing/SKILL.md",
+        "---\nname: 小说写作\ndescription: 写小说用的\n---\n\n## 何时使用\n写故事时\n"
+    )
+    // 标准目录名：reference/ + script/
+    write(root, "std/MODULE.md", "---\nid: std\nname: 标准\nhooks: []\n---\n")
+    write(root, "std/reference/SKILL.md", "标准正文")
+    // 复数目录名：references/ + scripts/
+    write(root, "alt/MODULE.md", "---\nid: alt\nname: 复数\nhooks: [input]\n---\n")
+    write(root, "alt/scripts/main.js", "function (i, h) { return null; }")
+    write(root, "alt/references/SKILL.md", "复数正文")
 
     val scan = ModuleRegistry.scan(root)
-    val reg = scan.registry
+    eq("implicit: 三个模块都能扫到", 3, scan.registry.all().size)
+    eq("implicit: 扫描无问题", emptyList<String>(), scan.problems)
 
-    val implicit = reg.getPackage("my_skill")
-    check("skill: 只有 SKILL.md 也能成模块", implicit != null, "problems=${scan.problems}")
-    eq("skill: id 连字符转下划线", "my_skill", implicit?.id)
-    eq("skill: name 取 front matter", "我的技能", implicit?.manifest?.name)
-    eq("skill: description 取 front matter", "做点什么", implicit?.manifest?.description)
-    eq("skill: 不挂钩子", emptyList<String>(), implicit?.manifest?.hooks)
-    check("skill: SKILL.md 自己也在 references 里", implicit?.reference("SKILL.md") != null)
-    eq("skill: 目录内其他 md 也收", "附加知识", implicit?.reference("extra.md"))
+    val implicit = scan.registry.getPackage("novel_writing")
+    check("implicit: id 由目录名转换", implicit != null)
+    if (implicit != null) {
+        eq("implicit: name 取自 front matter", "小说写作", implicit.manifest.name)
+        eq("implicit: description 取自 front matter", "写小说用的", implicit.manifest.description)
+        eq("implicit: 不挂钩子", emptyList<String>(), implicit.manifest.hooks)
+        check("implicit: SKILL.md 进了 references", implicit.reference("SKILL.md")?.contains("写故事时") == true)
+    }
 
-    eq("skill: scripts/ 复数目录被识别", true, reg.getPackage("plural")?.script("main.js") != null)
-    eq("skill: references/ 复数目录被识别", "复数目录的知识", reg.getReference("plural", "SKILL.md"))
-    eq("skill: 复数目录不报问题", emptyList<String>(), scan.problems)
+    eq("dirs: reference/ 可读", "标准正文", scan.registry.getReference("std", "SKILL.md"))
+    eq("dirs: references/ 可读", "复数正文", scan.registry.getReference("alt", "SKILL.md"))
+    check(
+        "dirs: scripts/ 目录也认",
+        scan.registry.getPackage("alt")?.script("main.js") != null
+    )
 }
 
 // ---------- assets 自身的健康度（demo 已冻结，不再逐模块对比） ----------

@@ -23,8 +23,6 @@ class HookRunner(
         attachments: List<Attachment> = emptyList(),
         /** 调用方（路由）算出的选中集合；前缀强制时会覆盖它。 */
         selected: Set<String> = emptySet(),
-        /** 管家提供的归一化；null = 没有管家。 */
-        normalizer: TextNormalizer? = null,
     ): HookAResult {
         if (session.activeHardModules.isEmpty()) return HookAResult.Pass(text)
 
@@ -49,8 +47,7 @@ class HookRunner(
             history = history,
             attachments = attachments,
             selected = if (forced == null) selected else setOf(forced.module),
-            forced = forced != null,
-            normalizer = normalizer
+            forced = forced != null
         )
         synchronized(traceLog) {
             if (forced != null) {

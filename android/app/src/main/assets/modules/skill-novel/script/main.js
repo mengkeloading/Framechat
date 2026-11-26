@@ -1,3 +1,4 @@
 function (inputJson, host) {
-  return null;   // 知识型：SKILL.md 由框架在注入时直接读取
+  // 纯知识模块：SKILL.md 由框架在 selected 命中时直接注入，不靠脚本
+  return null;
 }

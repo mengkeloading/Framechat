@@ -124,8 +124,7 @@ private fun skillNovelForced(dispatcher: ModuleDispatcher, session: HookSession)
     )
     check("skill_novel: 强制时返回 context", forced is HookAResult.Context, "实际 ${forced::class.simpleName}")
     val extra = (forced as? HookAResult.Context)?.extra.orEmpty()
-    // 它是纯知识包（hooks: []），正文由框架直接读 SKILL.md 注入
-    check("skill_novel: 注入 SKILL.md 正文", extra.contains("小说写作规范"), extra)
+    check("skill_novel: 注入了 SKILL.md 正文", extra.contains("小说写作规范"), extra.take(120))
     check("skill_novel: 被包装成技能块", extra.contains("id: skill_novel"))
 }
 
