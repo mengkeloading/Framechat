@@ -85,7 +85,7 @@ class App : Application() {
                 runCatching {
                     val lines = mychat.framework.hook.DescriptionCollision.check(
                         modules.registry.all()
-                    ) { a, b -> butlerManager.current("semantic").similarity(a, b) }
+                    ) { a, b -> container.butlerManager.current("semantic").similarity(a, b) }
                     lines.forEach { com.simplechat.app.hook.UsageLog.record("problem=" + it) }
                 }
             }
