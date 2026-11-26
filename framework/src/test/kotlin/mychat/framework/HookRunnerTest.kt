@@ -43,6 +43,7 @@ fun main() {
     localShortCircuitTests()
     traceAccumulationTests()
     sessionCapabilityTests()
+    prefixTests()
     toolTurnSkipsHookBTests()
 
     println()
@@ -53,13 +54,19 @@ fun main() {
     }
 }
 
-private fun pkg(id: String, hooks: List<String>, caps: Map<String, Int> = emptyMap()): ModulePackage =
+private fun pkg(
+    id: String,
+    hooks: List<String>,
+    caps: Map<String, Int> = emptyMap(),
+    prefix: String? = null
+): ModulePackage =
     ModulePackage(
         manifest = ModuleManifest(
             id = id,
             name = id,
             hooks = hooks,
-            capabilities = caps
+            capabilities = caps,
+            prefix = prefix
         ),
         body = "",
         scripts = mapOf("main.js" to "x"),
@@ -145,6 +152,44 @@ private fun sessionCapabilityTests() {
 
     val result = runner.input(session, "x", history = listOf(Message("user", "hi")))
     eq("runner: data.session 拿到当轮会话", "sid=sess-abc", result.text)
+}
+
+/** 前缀 = 强制指令：剥前缀后再入模，落库仍用原文（调用方保存的那个字符串）。 */
+private fun prefixTests() {
+    var seen = ""
+    val novel = pkg("skill_novel", listOf("input"), prefix = "小说")
+    val twin = pkg("twin", listOf("input"), prefix = "小说")
+    val source = ModuleRegistry.of(listOf(novel, twin))
+    val executor = CountingExecutor { _, input, _ ->
+        seen = parseJson(input)?.str("text") ?: ""
+        """{"type":"pass","text":""}"""
+    }
+    val runner = HookRunner(source, executor)
+    val session = HookSession(id = "s", activeHardModules = listOf("skill_novel"))
+
+    val original = "小说：写一段雨夜"
+    val forced = runner.input(session, original)
+    eq("prefix: 去前缀后入模", "写一段雨夜", seen)
+    eq("prefix: 组包文本不含前缀", "写一段雨夜", forced.text)
+    eq("prefix: 原文变量不变", "小说：写一段雨夜", original)
+    check("prefix: 留下强制轨迹", runner.lastTrace().any { it.tag == "prefix" })
+
+    runner.input(session, "小说:英文冒号也算")
+    eq("prefix: 英文冒号也识别", "英文冒号也算", seen)
+
+    runner.clearTrace()
+    runner.input(session, "帮我写个故事")
+    eq("prefix: 无前缀时原样入模", "帮我写个故事", seen)
+    eq("prefix: 无前缀时没有强制轨迹", 0, runner.lastTrace().count { it.tag == "prefix" })
+
+    runner.clearTrace()
+    val both = HookSession(id = "s", activeHardModules = listOf("skill_novel", "twin"))
+    runner.input(both, "小说：歧义")
+    eq(
+        "prefix: 同前缀取第一个",
+        "skill_novel",
+        runner.lastTrace().firstOrNull { it.tag == "prefix" }?.module
+    )
 }
 
 /**

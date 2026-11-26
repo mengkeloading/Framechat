@@ -7,6 +7,7 @@ hooks: [input]
 inject: none
 capabilities:
   resource.read: 3
+prefix: 小说
 entry: script/main.js
 ---
 

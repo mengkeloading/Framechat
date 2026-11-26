@@ -145,9 +145,10 @@ private fun skillHub(dispatcher: ModuleDispatcher, session: HookSession) {
     )
     check("skill_hub: 返回 context", result is HookAResult.Context, "实际 ${result::class.simpleName}")
     val extra = (result as? HookAResult.Context)?.extra.orEmpty()
-    check("skill_hub: 有技能目录", extra.contains("【可用技能目录】"), extra)
-    check("skill_hub: 列出代码审查", extra.contains("skill_code"))
-    check("skill_hub: 列出小说写作", extra.contains("skill_novel"))
+    check("skill_hub: 有技能目录", extra.contains("【技能目录·自动装载】"), extra)
+    check("skill_hub: 列出代码审查", extra.contains("代码审查"))
+    check("skill_hub: 列出小说写作", extra.contains("小说写作"))
+    check("skill_hub: 注入了正文而非只列名", extra.contains("## 技能："))
     check("skill_hub: 被包装成技能块", extra.contains("id: skill_hub"))
     eq(
         "skill_hub: 没有执行异常",

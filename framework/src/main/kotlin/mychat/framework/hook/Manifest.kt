@@ -89,7 +89,9 @@ data class ModuleManifest(
     val inject: String = "none",
     val entry: String = "main.js",
     val capabilities: Map<String, Int> = emptyMap(),
-    val tools: List<JsonValue> = emptyList()
+    val tools: List<JsonValue> = emptyList(),
+    /** 可选：输入以「prefix：」开头时强制使用本模块，跳过路由。 */
+    val prefix: String? = null
 ) {
     /** phase 用 "input" / "output"，与 MODULE.md 里的写法一致。 */
     fun handles(phase: String): Boolean = hooks.contains(phase)
@@ -112,7 +114,8 @@ data class ModuleManifest(
                 // 已经是相对 script/ 的路径，这里统一别名。
                 entry = (fm.scalars["entry"] ?: "main.js").removePrefix("script/"),
                 capabilities = caps,
-                tools = parseInlineTools(fm.scalars["tools"])
+                tools = parseInlineTools(fm.scalars["tools"]),
+                prefix = fm.scalars["prefix"]?.takeIf { it.isNotBlank() }
             )
         }
 

@@ -6,7 +6,7 @@ version: 1.0.0
 hooks: [input]
 inject: none
 capabilities:
-  resource.read: 40
+  skill.read: 40
 entry: script/main.js
 ---
 

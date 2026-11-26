@@ -288,6 +288,36 @@ private fun bridgeTests() {
     eq("bridge: data.session 带会话", "s1", sessionJson?.obj("session")?.str("id"))
     eq("bridge: data.session 只给 20 条", 20, sessionJson?.arr("messages")?.size)
 
+    // skill.read：只能读别的模块的 SKILL.md
+    val reader = pkg("reader", caps = mapOf(Caps.SKILL_READ to 1))
+    val target = pkg("target_mod", refs = mapOf("SKILL.md" to "目标模块的 SKILL"))
+    val readBridge = GatedHostBridge(reader, sourceOf(reader, target), audit, { null })
+    eq(
+        "bridge: skill.read 拿到正文",
+        "目标模块的 SKILL",
+        readBridge.requestLocalAction(Caps.SKILL_READ, """{"id":"target_mod"}""")
+    )
+    eq("bridge: skill.read 记下目标", "target_mod", audit.snapshot().last().target)
+
+    var skillQuota = false
+    try {
+        readBridge.requestLocalAction(Caps.SKILL_READ, """{"id":"target_mod"}""")
+    } catch (e: HostException) {
+        skillQuota = true
+    }
+    check("bridge: skill.read 配额生效", skillQuota)
+
+    var skillMissing = false
+    val freshReader = pkg("reader2", caps = mapOf(Caps.SKILL_READ to 3))
+    val freshBridge = GatedHostBridge(freshReader, sourceOf(freshReader, target), audit, { null })
+    try {
+        freshBridge.requestLocalAction(Caps.SKILL_READ, """{"id":"ghost"}""")
+    } catch (e: HostException) {
+        skillMissing = true
+    }
+    check("bridge: skill.read 不存在时抛异常", skillMissing)
+    eq("bridge: skill.read 失败记 not_found", "not_found", audit.snapshot().last().error)
+
     val noCap = ModulePackage(
         ModuleManifest("m2", "m2", capabilities = mapOf("fake.action" to 1)),
         "", mapOf("main.js" to "x"), emptyMap()

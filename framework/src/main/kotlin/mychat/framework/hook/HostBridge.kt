@@ -29,7 +29,9 @@ data class AuditEntry(
     val action: String,
     val ok: Boolean,
     val error: String?,
-    val at: Long
+    val at: Long,
+    /** 操作对象（如 skill.read 的目标模块 id）。 */
+    val target: String? = null
 )
 
 /** 全局审计，等价于 magisk.log。 */
@@ -90,12 +92,21 @@ class GatedHostBridge(
                     )
                 ).encode()
             }
+            Caps.SKILL_READ -> {
+                val target = parseJson(payloadJson)?.str("id")
+                val content = target?.let { source.getReference(it, SKILL_FILE) }
+                if (content == null) {
+                    throw fail(action, "not_found", "skill_not_found: $target", target)
+                }
+                ok(action, target)
+                content
+            }
             else -> throw fail(action, "not_implemented", "capability_not_implemented: $action")
         }
     }
 
-    private fun ok(action: String) {
-        audit.record(AuditEntry(pkg.id, action, true, null, now()))
+    private fun ok(action: String, target: String? = null) {
+        audit.record(AuditEntry(pkg.id, action, true, null, now(), target))
     }
 
     private fun fail(action: String, code: String, message: String): HostException {
@@ -103,8 +114,21 @@ class GatedHostBridge(
         return HostException(message)
     }
 
+    private fun fail(
+        action: String,
+        code: String,
+        message: String,
+        target: String? = null
+    ): HostException {
+        audit.record(AuditEntry(pkg.id, action, false, code, now(), target))
+        return HostException(message)
+    }
+
     companion object {
         const val SESSION_MESSAGE_LIMIT = 20
+
+        /** 只能读这一个文件，别的 reference / script 一律不给。 */
+        const val SKILL_FILE = "SKILL.md"
 
         fun factory(
             source: ModuleSource,

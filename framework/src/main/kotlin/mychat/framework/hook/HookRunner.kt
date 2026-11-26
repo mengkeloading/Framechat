@@ -23,9 +23,29 @@ class HookRunner(
         attachments: List<Attachment> = emptyList(),
     ): HookAResult {
         if (session.activeHardModules.isEmpty()) return HookAResult.Pass(text)
-        val dispatcher = dispatcherFor(session, history)
-        val result = dispatcher.dispatchInput(session, text, history, attachments)
-        synchronized(traceLog) { traceLog += dispatcher.traces }
+
+        /*
+         * 前缀强制：启用范围内的模块若声明了 `prefix`，输入以「词：」开头就直接用它，
+         * 跳过路由判断。前缀只有一个（第一个匹配的模块），且**不进信封**。
+         */
+        val enabled = session.activeHardModules.mapNotNull { source.getPackage(it) }
+        val forced = PrefixRouter.resolve(text, enabled)
+        val chain = if (forced == null) {
+            session.activeHardModules
+        } else {
+            listOf(forced.module) + session.activeHardModules.filter { it != forced.module }
+        }
+        val hookSession = if (forced == null) session else session.copy(activeHardModules = chain)
+        val hookText = forced?.text ?: text
+
+        val dispatcher = dispatcherFor(hookSession, history)
+        val result = dispatcher.dispatchInput(hookSession, hookText, history, attachments)
+        synchronized(traceLog) {
+            if (forced != null) {
+                traceLog += Trace("prefix", forced.module, "forced by ${forced.prefix}")
+            }
+            traceLog += dispatcher.traces
+        }
         return result
     }
 

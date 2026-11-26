@@ -78,6 +78,9 @@ object Caps {
     const val RESOURCE_READ = "resource.read"
     const val CLOCK_NOW = "clock.now"
     const val DATA_SESSION = "data.session"
+
+    /** 读**别的模块**的 SKILL.md（只限这一个文件）。 */
+    const val SKILL_READ = "skill.read"
 }
 
 /** 一次调度能看到的会话快照。 */
