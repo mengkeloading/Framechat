@@ -1,7 +1,10 @@
 package mychat.framework.sandbox
 
+import mychat.framework.hook.ExecutorOutcome
 import mychat.framework.hook.HostBridge
 import mychat.framework.hook.JsExecutor
+import mychat.framework.hook.ModuleExecutor
+import mychat.framework.hook.ModulePackage
 import mychat.framework.hook.ModuleSource
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ContextFactory
@@ -23,7 +26,20 @@ class RhinoJsExecutor(
     private val source: ModuleSource,
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     private val optimizationLevel: Int = -1
-) : JsExecutor {
+) : JsExecutor, ModuleExecutor {
+
+    override val engineId: String = ENGINE_JS
+
+    /** ModuleExecutor 适配：只是把 execute 的返回值包一层，执行逻辑不变。 */
+    override fun run(
+        module: ModulePackage,
+        phase: String,
+        envelope: String,
+        host: HostBridge
+    ): ExecutorOutcome = ExecutorOutcome.Produced(
+        execute(module.id + "/" + module.manifest.entry, envelope, host)
+    )
+
 
     override fun execute(scriptRef: String, inputJson: String, host: HostBridge): String? {
         val (pkg, file) = source.resolveScript(scriptRef)
@@ -132,6 +148,7 @@ class RhinoJsExecutor(
 
     companion object {
         const val DEFAULT_TIMEOUT_MS = 3000L
+        const val ENGINE_JS = "js"
         private const val INSTRUCTION_CHECK_INTERVAL = 10_000
         private const val SKILL_FILE = "SKILL.md"
 

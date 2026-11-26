@@ -8,7 +8,7 @@ package mychat.framework.hook
  */
 class HookRunner(
     private val source: ModuleSource,
-    private val executor: JsExecutor,
+    private val executors: ExecutorRegistry,
     private val audit: AuditLog = AuditLog(),
     private val maxInvokeDepth: Int = 3,
     /** 格式检查回调（App 层写日志用）。 */
@@ -16,6 +16,23 @@ class HookRunner(
     /** 调试日志回调。 */
     private val onDebug: ((String) -> Unit)? = null,
 ) {
+
+    /** 兼容入口：只给一个 JsExecutor 时，等价于只注册了 js 引擎。 */
+    constructor(
+        source: ModuleSource,
+        executor: JsExecutor,
+        audit: AuditLog = AuditLog(),
+        maxInvokeDepth: Int = 3,
+        onFormatCheck: ((String, Boolean) -> Unit)? = null,
+        onDebug: ((String) -> Unit)? = null
+    ) : this(
+        source = source,
+        executors = ExecutorRegistry(listOf(JsExecutorAdapter(executor))),
+        audit = audit,
+        maxInvokeDepth = maxInvokeDepth,
+        onFormatCheck = onFormatCheck,
+        onDebug = onDebug
+    )
 
     private val traceLog = mutableListOf<Trace>()
 
@@ -144,7 +161,7 @@ class HookRunner(
     private fun dispatcherFor(session: HookSession, history: List<Message>): ModuleDispatcher =
         ModuleDispatcher(
             source = source,
-            executor = executor,
+            executors = executors,
             bridges = GatedHostBridge.factory(
                 source = source,
                 audit = audit,

@@ -11,6 +11,8 @@ import com.simplechat.app.data.SettingsStore
 import com.simplechat.app.hook.AssetModuleTree
 import com.simplechat.app.hook.HookRouter
 import com.simplechat.app.hook.OnnxTextEmbedder
+import mychat.framework.sandbox.NoopExecutor
+import mychat.framework.sandbox.PythonExecutor
 import mychat.framework.butler.ButlerManager
 import mychat.framework.butler.KeywordButler
 import mychat.framework.butler.NoButler
@@ -155,7 +157,13 @@ class AppContainer(private val app: Application) {
     val hookRunner by lazy {
         HookRunner(
             source = moduleRegistry.registry,
-            executor = RhinoJsExecutor(moduleRegistry.registry),
+            executors = mychat.framework.hook.ExecutorRegistry(
+                listOf(
+                    RhinoJsExecutor(moduleRegistry.registry),
+                    PythonExecutor(),
+                    NoopExecutor,
+                )
+            ),
             onFormatCheck = { id, ok ->
                 if (BuildConfig.DEBUG) {
                     com.simplechat.app.hook.UsageLog.record(

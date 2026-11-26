@@ -145,7 +145,8 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
                 name = fm?.scalars?.get("name") ?: name,
                 description = fm?.scalars?.get("description") ?: "",
                 hooks = emptyList(),
-                entry = ""
+                entry = "",
+                engine = "none"
             )
             val refs = LinkedHashMap<String, String>()
             refs.putAll(readTreeAny(tree, dir, REFERENCE_DIRS))

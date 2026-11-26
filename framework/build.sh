@@ -95,3 +95,6 @@ echo "== 自测：注入块预览与快照"
 
 echo "== 自测：组装链路"
 "$JAVA" -Dmychat.repoRoot="$ROOT/.." -cp "$OUT:$STDLIB:$RHINO" mychat.framework.sandbox.EndToEndTestKt
+
+echo "== 自测：执行引擎注册表"
+"$JAVA" -cp "$OUT:$STDLIB:$RHINO" mychat.framework.sandbox.ExecutorTestKt

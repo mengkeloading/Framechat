@@ -9,7 +9,7 @@ import mychat.framework.json.parseJson
  */
 class ModuleDispatcher(
     private val source: ModuleSource,
-    private val executor: JsExecutor,
+    private val executors: ExecutorRegistry,
     private val bridges: HostBridgeFactory,
     private val maxInvokeDepth: Int = 3,
     private val historyLimit: Int = 20,
@@ -18,6 +18,25 @@ class ModuleDispatcher(
     /** 调试日志回调。 */
     private val onDebug: ((String) -> Unit)? = null
 ) {
+
+    /** 兼容入口：只给一个 JsExecutor 时，等价于只注册了 js 引擎。 */
+    constructor(
+        source: ModuleSource,
+        executor: JsExecutor,
+        bridges: HostBridgeFactory,
+        maxInvokeDepth: Int = 3,
+        historyLimit: Int = 20,
+        onFormatCheck: ((String, Boolean) -> Unit)? = null,
+        onDebug: ((String) -> Unit)? = null
+    ) : this(
+        source = source,
+        executors = ExecutorRegistry(listOf(JsExecutorAdapter(executor))),
+        bridges = bridges,
+        maxInvokeDepth = maxInvokeDepth,
+        historyLimit = historyLimit,
+        onFormatCheck = onFormatCheck,
+        onDebug = onDebug
+    )
 
     private val log = mutableListOf<Trace>()
 
@@ -256,12 +275,18 @@ class ModuleDispatcher(
             trace("hook", id, "模块不存在 fail-open")
             return null
         }
-        val ref = "$id/${pkg.manifest.entry}"
-        val raw = try {
-            executor.execute(ref, envJson, bridges.create(pkg))
+        val outcome = try {
+            executors.forModule(pkg).run(pkg, phase, envJson, bridges.create(pkg))
         } catch (e: Exception) {
             trace("hook", id, "执行异常 fail-open: ${e.message}")
             return null
+        }
+        val raw = when (outcome) {
+            is ExecutorOutcome.Skipped -> {
+                trace("hook", id, "skipped: ${outcome.reason}")
+                return null
+            }
+            is ExecutorOutcome.Produced -> outcome.raw
         }
         if (raw.isNullOrEmpty()) return null
 

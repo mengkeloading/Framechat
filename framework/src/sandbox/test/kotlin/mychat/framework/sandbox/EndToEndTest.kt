@@ -77,6 +77,7 @@ fun main() {
     scenarioC(registry)
     scenarioD(registry)
     silentSkipLogs()
+    noopEngineScenario(registry)
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -88,11 +89,18 @@ fun main() {
 
 // ---------- 组装 ----------
 
-private class Harness(registry: ModuleRegistry, val llm: FakeLlm) {
+private class Harness(
+    registry: ModuleRegistry,
+    val llm: FakeLlm,
+    executors: mychat.framework.hook.ExecutorRegistry =
+        mychat.framework.hook.ExecutorRegistry(
+            listOf(mychat.framework.hook.JsExecutorAdapter(RhinoJsExecutor(registry)))
+        ),
+) {
     val log = FakeLog()
     private val runner = HookRunner(
         source = registry,
-        executor = RhinoJsExecutor(registry),
+        executors = executors,
         onFormatCheck = { id, ok ->
             log.record("format_check=" + id + ":" + (if (ok) "ok" else "missing"))
         },
@@ -211,6 +219,27 @@ private fun scenarioD(registry: ModuleRegistry) {
     check("D: sel 行显示空集合", h.log.contains("sel=prefix:false route=[] reason=hit selected=[]"))
     eq("D: 回答原样透传", "你好呀", answer)
     check("D: 没有注入日志", !h.log.contains("inject:len"))
+}
+
+// ---------- 引擎可替换 ----------
+
+/** 换成 Noop 引擎后链路仍通：知识型模块不依赖脚本引擎。 */
+private fun noopEngineScenario(registry: ModuleRegistry) {
+    val h = Harness(
+        registry = registry,
+        llm = FakeLlm(listOf("写成这样\n\n希望有帮助")),
+        executors = mychat.framework.hook.ExecutorRegistry(listOf(NoopExecutor)),
+    )
+    val answer = h.turn(listOf("skill_novel"), setOf("skill_novel"), "帮我写个故事")
+
+    eq("noop: LLM 仍被调用一次", 1, h.llm.callCount)
+    check("noop: 注入块仍产出", h.log.contains("inject:len"), h.log.lines.toString())
+    check("noop: 没有抛异常（拿到回答）", answer.isNotEmpty())
+    check(
+        "noop: 日志里能看到注入长度",
+        h.log.lines.any { it.startsWith("inject:len=") },
+        h.log.lines.toString()
+    )
 }
 
 // ---------- 静默跳过的日志 ----------

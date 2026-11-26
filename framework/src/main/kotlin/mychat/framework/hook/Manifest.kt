@@ -99,7 +99,9 @@ data class ModuleManifest(
     /** 可选的「不要这样做」清单，注入时渲染成【禁止】节。 */
     val forbid: List<String> = emptyList(),
     /** 可选的「必须这样做」清单，注入时渲染成【要求】节。 */
-    val requires: List<String> = emptyList()
+    val requires: List<String> = emptyList(),
+    /** 执行引擎：js（默认）/ py / none。缺失或空值都当 js。 */
+    val engine: String = "js"
 ) {
     /** phase 用 "input" / "output"，与 MODULE.md 里的写法一致。 */
     fun handles(phase: String): Boolean = hooks.contains(phase)
@@ -128,7 +130,8 @@ data class ModuleManifest(
                 formatMarks = fm.lists["format_marks"]
                     ?: parseInlineList(fm.scalars["format_marks"]),
                 forbid = fm.lists["forbid"] ?: parseInlineList(fm.scalars["forbid"]),
-                requires = fm.lists["require"] ?: parseInlineList(fm.scalars["require"])
+                requires = fm.lists["require"] ?: parseInlineList(fm.scalars["require"]),
+                engine = fm.scalars["engine"]?.takeIf { it.isNotBlank() } ?: "js"
             )
         }
 
