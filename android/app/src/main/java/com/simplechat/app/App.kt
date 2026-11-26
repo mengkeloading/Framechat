@@ -149,6 +149,9 @@ class AppContainer(private val app: Application) {
                         "format_check=" + id + ":" + if (ok) "ok" else "missing"
                     )
                 }
+            },
+            onDebug = { line ->
+                if (BuildConfig.DEBUG) com.simplechat.app.hook.UsageLog.record(line)
             }
         )
     }

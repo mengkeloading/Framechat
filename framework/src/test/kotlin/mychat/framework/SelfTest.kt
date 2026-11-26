@@ -674,6 +674,21 @@ private fun formatCheckTests() {
     dLogged.dispatchOutput(session, "[必须改] 第 3 行有越界风险", selected = setOf("fmt"))
     check("format: ok 写进日志", recorded.contains("format_check=fmt:ok"), "recorded=$recorded")
 
+    // 调试行：B 入口 + marks 条数，用来判断“哪一环没跑”
+    val debugLines = mutableListOf<String>()
+    val dDebug = ModuleDispatcher(
+        source = sourceOf(marked, plain),
+        executor = FakeExecutor { _, _, _ -> """{"type":"pass"}""" },
+        bridges = GatedHostBridge.factory(sourceOf(marked, plain), AuditLog(), { null }),
+        onDebug = { debugLines += it }
+    )
+    dDebug.dispatchOutput(session, "[必须改] x", selected = setOf("fmt"))
+    check(
+        "format: marks 条数已记录",
+        debugLines.contains("fmt:marks id=fmt size=2"),
+        "lines=$debugLines"
+    )
+
     dLogged.dispatchOutput(session, "就是有点问题", selected = setOf("fmt"))
     check(
         "format: missing 写进日志",

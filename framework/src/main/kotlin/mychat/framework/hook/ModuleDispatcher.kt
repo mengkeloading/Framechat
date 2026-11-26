@@ -14,7 +14,9 @@ class ModuleDispatcher(
     private val maxInvokeDepth: Int = 3,
     private val historyLimit: Int = 20,
     /** 格式检查结果的外部回调（App 层写日志用；框架不依赖 Android）。 */
-    private val onFormatCheck: ((String, Boolean) -> Unit)? = null
+    private val onFormatCheck: ((String, Boolean) -> Unit)? = null,
+    /** 调试日志回调。 */
+    private val onDebug: ((String) -> Unit)? = null
 ) {
 
     private val log = mutableListOf<Trace>()
@@ -165,6 +167,7 @@ class ModuleDispatcher(
         if (selected.isEmpty()) return
         for (id in selected) {
             val marks = source.getPackage(id)?.manifest?.formatMarks.orEmpty()
+            onDebug?.invoke("fmt:marks id=" + id + " size=" + marks.size)
             if (marks.isEmpty()) continue
             val ok = marks.any { text.contains(it) }
             trace("format_check", id, if (ok) "ok" else "missing")

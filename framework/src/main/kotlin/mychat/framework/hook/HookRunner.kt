@@ -13,6 +13,8 @@ class HookRunner(
     private val maxInvokeDepth: Int = 3,
     /** 格式检查回调（App 层写日志用）。 */
     private val onFormatCheck: ((String, Boolean) -> Unit)? = null,
+    /** 调试日志回调。 */
+    private val onDebug: ((String) -> Unit)? = null,
 ) {
 
     private val traceLog = mutableListOf<Trace>()
@@ -69,6 +71,9 @@ class HookRunner(
         selected: Set<String> = emptySet(),
     ): HookBResult {
         if (session.activeHardModules.isEmpty()) return HookBResult.Pass(rawText)
+        onDebug?.invoke(
+            "hookB:in selected=" + selected.joinToString(",") + " textLen=" + rawText.length
+        )
         val dispatcher = dispatcherFor(session, history)
         val result = dispatcher.dispatchOutput(session, rawText, input, history, attachments, selected)
         synchronized(traceLog) { traceLog += dispatcher.traces }
@@ -92,6 +97,7 @@ class HookRunner(
                 sessionData = { SessionData(session, history) }
             ),
             maxInvokeDepth = maxInvokeDepth,
-            onFormatCheck = onFormatCheck
+            onFormatCheck = onFormatCheck,
+            onDebug = onDebug
         )
 }
