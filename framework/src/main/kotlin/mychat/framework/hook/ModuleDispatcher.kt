@@ -138,6 +138,7 @@ class ModuleDispatcher(
             append('\n')
             append("规范：\n")
             append(b.extra).append('\n')
+            if (b.forbids.isNotEmpty() || b.requires.isNotEmpty()) append('\n')
             if (b.forbids.isNotEmpty()) {
                 append("【禁止】\n")
                 for (line in b.forbids) append("- ").append(line).append('\n')
