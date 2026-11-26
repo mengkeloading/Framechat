@@ -96,11 +96,18 @@ class HookRunner(
             }
         }
 
-    /** 从模块的 SKILL.md 里取「输出结构」节，给补救提示用。 */
+    /** 从模块的 SKILL.md 里取「输出格式/结构」节，给补救提示用。 */
     fun formatStructureOf(id: String): String? {
         val skill = source.getPackage(id)?.reference("SKILL.md") ?: return null
-        return mychat.framework.embedding.ModuleDocuments.sectionOf(skill, "输出结构")
-            .takeIf { it.isNotEmpty() }
+        for (heading in FORMAT_HEADINGS) {
+            val section = mychat.framework.embedding.ModuleDocuments.sectionOf(skill, heading)
+            if (section.isNotEmpty()) return section
+        }
+        return null
+    }
+
+    private companion object {
+        val FORMAT_HEADINGS = listOf("输出格式", "输出结构")
     }
 
     /** 模块声明的格式标记。 */

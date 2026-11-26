@@ -47,7 +47,7 @@ object ModuleDocuments {
         val lines = body.split('\n')
         var start = -1
         for (i in lines.indices) {
-            if (isHeading(lines[i]) && lines[i].removePrefix("##").trim() == heading) {
+            if (isHeading(lines[i]) && lines[i].removePrefix("##").trim().startsWith(heading)) {
                 start = i + 1
                 break
             }
