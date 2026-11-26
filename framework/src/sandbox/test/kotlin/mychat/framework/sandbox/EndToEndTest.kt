@@ -79,6 +79,7 @@ fun main() {
     silentSkipLogs()
     noopEngineScenario(registry)
     partialMissingScenario(registry)
+    cleanScenario(registry)
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -153,7 +154,7 @@ private class Harness(
             val remedied = llm.call(
                 p.systemSuffix + "\n" + p.structure + "\n" + p.answer + "\n" + p.finalInstruction
             )
-            val result = FormatRemediation.apply(finalAnswer, remedied, check.required)
+            val result = FormatRemediation.apply(finalAnswer, remedied, check)
             log.record("remediate:done " + check.moduleId + " " + result.status)
             log.record("remediate:cost +" + result.calls + " call")
             if (result.status == "replaced") finalAnswer = result.text
@@ -195,7 +196,7 @@ private fun scenarioB(registry: ModuleRegistry) {
     check("B: 最终回答是补救后的", answer.contains("[必须改]"), answer)
     check("B: 补救不再包含粗体旧格式", !answer.contains("**问题**"), answer)
     val promptB = h.llm.prompts.getOrNull(1).orEmpty()
-    check("B: 补救请求点名缺「必须改」", promptB.contains("缺少：[必须改]"), promptB)
+    check("B: 补救请求要求按格式重写", promptB.contains("没有使用分级标记"), promptB)
     check("B: 补救请求不含「重新组织」", !promptB.contains("重新组织"), promptB)
     assertOrder(h, "B")
 }
@@ -227,17 +228,43 @@ private fun scenarioD(registry: ModuleRegistry) {
 // ---------- 部分缺失 ----------
 
 private fun partialMissingScenario(registry: ModuleRegistry) {
-    // 只给了 [必须改]，缺 [建议改]/[可选]
-    val partial = "[必须改] a!! 会崩\n- 在哪：第 1 行\n- 为什么：NPE\n- 改成什么：a?.b"
-    val h = harness(registry, partial, GOOD)
-    val answer = h.turn(listOf("skill_code"), setOf("skill_code"), "这段代码有问题吗")
+    // skill_code 不声明 format_required（任一标记即可），所以点名场景要自己造一个模块
+    val pkg = ModulePackage(
+        manifest = ModuleManifest(
+            "fmt_req", "必须含必须改",
+            hooks = emptyList(),
+            formatMarks = listOf("[必须改]", "[建议改]", "[可选]"),
+            formatRequired = listOf("[必须改]"),
+            constraints = listOf("no_preamble")
+        ),
+        body = "",
+        scripts = emptyMap(),
+        references = mapOf("SKILL.md" to "# 规范\n\n## 输出格式\n[必须改] 问题\n")
+    )
+    val src = ModuleRegistry.of(listOf(pkg))
+    val h = Harness(
+        registry = src,
+        llm = FakeLlm(listOf("[建议改] 抽个函数", "[必须改] 越界\n[建议改] 抽个函数")),
+    )
+    val answer = h.turn(listOf("fmt_req"), setOf("fmt_req"), "看看这段")
 
     eq("partial: 触发了补救", 2, h.llm.callCount)
     val prompt = h.llm.prompts.getOrNull(1).orEmpty()
-    check("partial: 点名缺 [建议改]", prompt.contains("缺少：[建议改]"), prompt)
-    check("partial: 点名缺 [可选]", prompt.contains("缺少：[可选]"), prompt)
-    check("partial: 不点名已有的 [必须改]", !prompt.contains("缺少：[必须改]"), prompt)
-    check("partial: 最终仍含 [必须改]", answer.contains("[必须改]"), answer)
+    check("partial: 点名缺 [必须改]", prompt.contains("缺少：[必须改]"), prompt)
+    check("partial: 不点名已有的 [建议改]", !prompt.contains("缺少：[建议改]"), prompt)
+    check("partial: 最终是补救后的", answer.contains("[必须改]"), answer)
+}
+
+// ---------- 代码没问题 ----------
+
+private fun cleanScenario(registry: ModuleRegistry) {
+    val h = harness(registry, "[无问题] 逻辑正确，没有可改的地方")
+    val answer = h.turn(listOf("skill_code"), setOf("skill_code"), "这段代码有问题吗")
+
+    eq("clean: 只调一次模型", 1, h.llm.callCount)
+    check("clean: 判定为 ok", h.log.contains("format_check=skill_code:ok"), h.log.lines.toString())
+    check("clean: 不触发补救", !h.log.contains("remediate:start"))
+    eq("clean: 回答原样", "[无问题] 逻辑正确，没有可改的地方", answer)
 }
 
 // ---------- 引擎可替换 ----------

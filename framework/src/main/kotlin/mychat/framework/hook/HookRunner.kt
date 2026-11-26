@@ -110,8 +110,13 @@ class HookRunner(
     /** 选中的模块里，各自的格式检查结果（只含声明了 format_marks 的模块）。 */
     fun checkFormats(selected: Set<String>, text: String): List<FormatCheckResult> =
         selected.mapNotNull { id ->
-            val marks = source.getPackage(id)?.manifest?.formatMarks.orEmpty()
-            FormatCheckResult.of(id, marks, text)
+            val manifest = source.getPackage(id)?.manifest
+            FormatCheckResult.of(
+                id,
+                manifest?.formatMarks.orEmpty(),
+                text,
+                manifest?.formatRequired.orEmpty()
+            )
         }
 
     /** 只返回缺标记的那些模块。 */

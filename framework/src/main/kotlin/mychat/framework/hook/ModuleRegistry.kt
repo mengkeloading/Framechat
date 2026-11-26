@@ -82,6 +82,11 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
             }
             checkDuplicatePrefixes(pkgs, problems)
             problems += ManifestAudit.auditGuides(pkgs.values.toList())
+            for (p in pkgs.values) {
+                for (id in ConstraintText.unknownIds(p.manifest.constraints)) {
+                    problems += "unknown_constraint:" + p.id + ":" + id
+                }
+            }
             return ScanResult(ModuleRegistry(pkgs), problems)
         }
 

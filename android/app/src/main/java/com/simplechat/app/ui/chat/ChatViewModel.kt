@@ -2761,7 +2761,7 @@ class ChatViewModel(
                     val remedy = mychat.framework.hook.FormatRemediation.apply(
                         finalText,
                         remedied?.let { buffer.toString() },
-                        hookRunner.formatMarksOf(missingId)
+                        check
                     )
                     if (BuildConfig.DEBUG) {
                         com.simplechat.app.hook.UsageLog.record(

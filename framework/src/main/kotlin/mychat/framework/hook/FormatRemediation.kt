@@ -29,11 +29,16 @@ object FormatRemediation {
     fun buildPrompt(check: FormatCheckResult, structure: String, answer: String): Prompt = Prompt(
         systemSuffix = "严格按下面的格式输出，不要改动已有内容，不要加解释。",
         structure = buildString {
-            append("上一条回答缺少以下格式标记，请补齐：\n")
-            for (mark in check.missing) {
-                append("缺少：").append(mark).append('\n')
+            if (check.noFormatAtAll) {
+                // 一点格式都没用：要重写结构，而不是补几个标记
+                append("上一条回答没有使用分级标记，请按下列格式重写：\n")
+            } else {
+                append("上一条回答缺少以下格式标记，请补齐：\n")
+                for (mark in check.missing) {
+                    append("缺少：").append(mark).append('\n')
+                }
+                append("\n每条问题写成这样：\n")
             }
-            append("\n每条问题写成这样：\n")
             append(structure)
         },
         answer = answer,
@@ -51,7 +56,8 @@ object FormatRemediation {
         structure: String,
         call: (Prompt) -> String?
     ): Result {
-        val check = FormatCheckResult.of(moduleId, marks, answer) ?: return Result(answer, "ok", 0)
+        val check = FormatCheckResult.of(moduleId, marks, answer)
+            ?: return Result(answer, "ok", 0)
         if (check.ok) return Result(answer, "ok", 0)
         if (structure.isBlank()) return Result(answer, "error", 0)
 
@@ -60,13 +66,17 @@ object FormatRemediation {
         } catch (e: Exception) {
             return Result(answer, "error", 1)
         }
-        return apply(answer, remedied, marks)
+        return apply(answer, remedied, check)
     }
 
     /** 已经拿到补救结果时用这个：纯判定，不发起调用。 */
-    fun apply(original: String, remedied: String?, marks: List<String>): Result {
+    fun apply(original: String, remedied: String?, check: FormatCheckResult): Result {
         if (remedied.isNullOrBlank()) return Result(original, "error", 1)
-        if (marks.any { remedied.contains(it) }) return Result(remedied, "replaced", 1)
-        return Result(original, "still_missing", 1)
+        val recheck = FormatCheckResult.of(check.moduleId, check.marks, remedied, check.required)
+        return if (recheck != null && recheck.ok) {
+            Result(remedied, "replaced", 1)
+        } else {
+            Result(original, "still_missing", 1)
+        }
     }
 }

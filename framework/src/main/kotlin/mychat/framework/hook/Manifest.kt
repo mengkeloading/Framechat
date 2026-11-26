@@ -96,6 +96,10 @@ data class ModuleManifest(
     val needs: List<String> = emptyList(),
     /** 可选：输出必须含的格式标记（至少一个）。留空 = 不检查。 */
     val formatMarks: List<String> = emptyList(),
+    /** 必须出现的格式标记（逐项检查，用于补救点名）。 */
+    val formatRequired: List<String> = emptyList(),
+    /** 约束枚举 id，展开成禁止/要求文案后注入。 */
+    val constraints: List<String> = emptyList(),
     /** 可选的「不要这样做」清单，注入时渲染成【禁止】节。 */
     val forbid: List<String> = emptyList(),
     /** 可选的「必须这样做」清单，注入时渲染成【要求】节。 */
@@ -129,6 +133,10 @@ data class ModuleManifest(
                 needs = fm.lists["needs"] ?: parseInlineList(fm.scalars["needs"]),
                 formatMarks = fm.lists["format_marks"]
                     ?: parseInlineList(fm.scalars["format_marks"]),
+                formatRequired = fm.lists["format_required"]
+                    ?: parseInlineList(fm.scalars["format_required"]),
+                constraints = fm.lists["constraints"]
+                    ?: parseInlineList(fm.scalars["constraints"]),
                 forbid = fm.lists["forbid"] ?: parseInlineList(fm.scalars["forbid"]),
                 requires = fm.lists["require"] ?: parseInlineList(fm.scalars["require"]),
                 engine = fm.scalars["engine"]?.takeIf { it.isNotBlank() } ?: "js"

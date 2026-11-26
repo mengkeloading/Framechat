@@ -1,30 +1,49 @@
 package mychat.framework.hook
 
 /**
- * 格式检查的完整结论。
+ * 格式检查的结论。
  *
- * 只说"缺"不够——补救提示词需要**点名缺哪个标记**，否则模型只能猜着重排，
- * 这就是"前馈"和"指令"的区别。
+ * 两个层次：
+ * - `format_marks`：**任一**出现就算用了格式（"用了"和"用全"是两回事）
+ * - `format_required`：声明了就逐个检查，用于补救时点名缺哪个
+ *
+ * 为什么这么分：`skill_code` 的规范本身写着"没问题的层级直接省略"，
+ * 要求三个分级标记全出现就会把合规回答判成不合规，每轮白跑一次补救。
  */
 data class FormatCheckResult(
     val moduleId: String,
-    /** 模块声明的全部标记。 */
+    /** 模块声明的分级标记（任一即可）。 */
+    val marks: List<String>,
+    /** 必须出现的标记（逐项检查）。 */
     val required: List<String>,
-    /** 实际缺的那些。 */
-    val missing: List<String>
+    /** 实际缺的 required。 */
+    val missing: List<String>,
+    /** marks/required 里是否至少出现了一个。 */
+    val anyUsed: Boolean
 ) {
-    val ok: Boolean get() = missing.isEmpty()
+    val ok: Boolean get() = anyUsed && missing.isEmpty()
 
-    /** 日志用：ok / missing([必须改],[建议改]) */
-    fun logValue(): String =
-        if (ok) "ok" else "missing(" + missing.joinToString(",") + ")"
+    /** 一个标记都没用 —— 补救时要重写格式，不是补齐。 */
+    val noFormatAtAll: Boolean get() = !anyUsed
+
+    fun logValue(): String = when {
+        ok -> "ok"
+        noFormatAtAll -> "missing"
+        else -> "missing(" + missing.joinToString(",") + ")"
+    }
 
     companion object {
-        /** 声明了 format_marks 的模块才算检查对象；没声明返回 null。 */
-        fun of(moduleId: String, required: List<String>, text: String): FormatCheckResult? {
-            if (required.isEmpty()) return null
+        /** marks 与 required 都为空时返回 null（不检查）。 */
+        fun of(
+            moduleId: String,
+            marks: List<String>,
+            text: String,
+            required: List<String> = emptyList()
+        ): FormatCheckResult? {
+            if (marks.isEmpty() && required.isEmpty()) return null
+            val anyUsed = marks.any { text.contains(it) } || required.any { text.contains(it) }
             val missing = required.filterNot { text.contains(it) }
-            return FormatCheckResult(moduleId, required, missing)
+            return FormatCheckResult(moduleId, marks, required, missing, anyUsed)
         }
     }
 }

@@ -19,7 +19,9 @@ object ManifestAudit {
         val problems = mutableListOf<String>()
         for (p in pkgs) {
             val hasOutput = p.manifest.hooks.contains("output")
-            val hasGuide = p.manifest.forbid.isNotEmpty() || p.manifest.requires.isNotEmpty()
+            val hasGuide = p.manifest.forbid.isNotEmpty() || p.manifest.requires.isNotEmpty() ||
+                ConstraintText.forbids(p.manifest.constraints).isNotEmpty() ||
+                ConstraintText.requires(p.manifest.constraints).isNotEmpty()
             val hasMarks = p.manifest.formatMarks.isNotEmpty()
             val hasStructure = structureOf(p) != null
 

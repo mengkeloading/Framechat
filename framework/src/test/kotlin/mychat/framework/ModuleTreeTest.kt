@@ -295,7 +295,7 @@ private fun assetHealthTest() {
     if (code != null) {
         eq(
             "assets: skill_code 的 format_marks 已解析",
-            listOf("[必须改]", "[建议改]", "[可选]"),
+            listOf("[必须改]", "[建议改]", "[可选]", "[无问题]"),
             code.manifest.formatMarks
         )
     }

@@ -70,6 +70,20 @@ private fun preview(
 
     check("$id: 注入块非空", block.isNotBlank())
     if (id == "skill_code") {
+        fun sectionLines(title: String): List<String> {
+            val start = block.indexOf(title)
+            if (start < 0) return emptyList()
+            val rest = block.substring(start + title.length)
+            val next = rest.indexOf("【")
+            val body = if (next < 0) rest else rest.substring(0, next)
+            return body.lines().filter { it.startsWith("- ") }
+        }
+        val forbids = sectionLines("【禁止】")
+        val requires = sectionLines("【要求】")
+        check("skill_code: 禁止 4 条", forbids.size == 4, forbids.toString())
+        check("skill_code: 要求 3 条", requires.size == 3, requires.toString())
+    }
+    if (id == "skill_code") {
         check("skill_code: 含【禁止】", hasForbid)
         check("skill_code: 含【要求】", hasRequire)
         check("skill_code: SKILL.md 含输出格式节", hasFormat)

@@ -11,17 +11,18 @@ format_marks:
   - "[必须改]"
   - "[建议改]"
   - "[可选]"
-forbid:
-  - 不要开场白（"好的"、"我来看看"）
-  - 不要结尾总结
-  - 不要问"还需要什么"
-  - 不要用 Markdown 二级标题（## 开头）组织内容
-require:
-  - 每个问题必须写全三件事：在哪、为什么、改成什么
-  - 必须给出最小修改版
+  - "[无问题]"
+constraints:
+  - no_preamble
+  - no_summary
+  - no_followup_question
+  - no_heading
+  - each_item_three_parts
+  - minimal_patch
+  - no_hallucination
 ---
 
 纯知识包：不挂钩子，SKILL.md 由框架在 selected 命中时直接注入。
 
-`forbid` / `require` 会渲染成注入块末尾的【禁止】/【要求】两节。
-`format_marks` 声明输出必须含的分级标记，钩子 B 会检查并记 trace。
+`constraints` 是封闭枚举，展开成注入块末尾的【禁止】/【要求】；未知枚举会在启动时报 problem。
+`format_marks` 声明输出使用的分级标记（任一即算用了格式），钩子 B 会检查并记 trace。

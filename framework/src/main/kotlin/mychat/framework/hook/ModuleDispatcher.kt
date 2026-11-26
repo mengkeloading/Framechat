@@ -80,8 +80,8 @@ class ModuleDispatcher(
                                 name = pkg?.manifest?.name ?: id,
                                 description = pkg?.manifest?.description.orEmpty(),
                                 extra = extra,
-                                forbids = pkg?.manifest?.forbid.orEmpty(),
-                                requires = pkg?.manifest?.requires.orEmpty()
+                                forbids = expandedForbids(pkg),
+                                requires = expandedRequires(pkg)
                             )
                         }
                     }
@@ -135,8 +135,8 @@ class ModuleDispatcher(
                 name = pkg.manifest.name,
                 description = pkg.manifest.description,
                 extra = body,
-                forbids = pkg.manifest.forbid,
-                requires = pkg.manifest.requires
+                forbids = expandedForbids(pkg),
+                requires = expandedRequires(pkg)
             )
             trace("hookA", id, "skill_injected")
         }
@@ -206,9 +206,11 @@ class ModuleDispatcher(
         if (selected.isEmpty()) return emptyList()
         val results = mutableListOf<FormatCheckResult>()
         for (id in selected) {
-            val marks = source.getPackage(id)?.manifest?.formatMarks.orEmpty()
+            val manifest = source.getPackage(id)?.manifest
+            val marks = manifest?.formatMarks.orEmpty()
+            val required = manifest?.formatRequired.orEmpty()
             onDebug?.invoke("fmt:marks id=" + id + " size=" + marks.size)
-            val result = FormatCheckResult.of(id, marks, text) ?: continue
+            val result = FormatCheckResult.of(id, marks, text, required) ?: continue
             trace("format_check", id, if (result.ok) "ok" else "missing")
             onFormatCheck?.invoke(result)
             results += result
@@ -334,6 +336,17 @@ class ModuleDispatcher(
         "input" to input?.let { JsonValue.Str(it) },
         "forced" to JsonValue.Bool(forced)
     )
+
+    /** 枚举文案在前，自由文本在后：枚举是"该模块的骨架"，自由文本是补充。 */
+    private fun expandedForbids(pkg: ModulePackage?): List<String> {
+        if (pkg == null) return emptyList()
+        return ConstraintText.forbids(pkg.manifest.constraints) + pkg.manifest.forbid
+    }
+
+    private fun expandedRequires(pkg: ModulePackage?): List<String> {
+        if (pkg == null) return emptyList()
+        return ConstraintText.requires(pkg.manifest.constraints) + pkg.manifest.requires
+    }
 
     private fun trace(tag: String, module: String?, message: String) {
         synchronized(log) { log.add(Trace(tag, module, message)) }

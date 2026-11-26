@@ -11,6 +11,7 @@ import mychat.framework.core.ToolRunner
 import mychat.framework.core.TurnResult
 import mychat.framework.hook.Attachment
 import mychat.framework.hook.AuditLog
+import mychat.framework.hook.ConstraintText
 import mychat.framework.hook.Caps
 import mychat.framework.hook.DescriptionCollision
 import mychat.framework.hook.FormatCheckResult
@@ -66,6 +67,7 @@ fun main() {
     guardTests()
     remediationTests()
     formatCheckMissingTests()
+    constraintTests()
     manifestAuditTests()
     formatCheckTests()
     builderTests()
@@ -707,7 +709,7 @@ private fun formatCheckTests() {
     dLogged.dispatchOutput(session, "就是有点问题", selected = setOf("fmt"))
     check(
         "format: missing 写进日志",
-        recorded.any { it.startsWith("format_check=fmt:missing(") },
+        recorded.any { it == "format_check=fmt:missing" },
         "recorded=$recorded"
     )
 
@@ -821,30 +823,112 @@ private fun guardTests() {
     )
 }
 
+// ---------- 约束枚举 ----------
+
+private fun constraintTests() {
+    fun pkg(id: String, constraints: List<String>, forbid: List<String>) = ModulePackage(
+        manifest = ModuleManifest(
+            id, id,
+            hooks = emptyList(),
+            constraints = constraints,
+            forbid = forbid
+        ),
+        body = "",
+        scripts = emptyMap(),
+        references = mapOf("SKILL.md" to "# 规范\n\n正文\n")
+    )
+
+    fun blockOf(p: ModulePackage): String {
+        val registry = mychat.framework.hook.ModuleRegistry.of(listOf(p))
+        val d = ModuleDispatcher(
+            source = registry,
+            executor = FakeExecutor { _, _, _ -> null },
+            bridges = GatedHostBridge.factory(registry, AuditLog(), { null })
+        )
+        val r = d.dispatchInput(
+            HookSession(id = "s", activeHardModules = listOf(p.id)),
+            "问题",
+            selected = setOf(p.id)
+        )
+        return (r as? HookAResult.Context)?.extra.orEmpty()
+    }
+
+    // 5. 枚举展开成文案
+    val preamble = blockOf(pkg("c1", listOf("no_preamble"), emptyList()))
+    check("constraint: no_preamble 展开", preamble.contains("不要开场白"), preamble)
+
+    // 6. 未知枚举不注入，且能报出来
+    val unknownBlock = blockOf(pkg("c2", listOf("make_it_nice"), emptyList()))
+    check("constraint: 未知枚举不注入", !unknownBlock.contains("make_it_nice"), unknownBlock)
+    check("constraint: 未知枚举被识别", ConstraintText.unknownIds(listOf("make_it_nice")) == listOf("make_it_nice"))
+
+    // 7. 枚举在前，自由文本在后
+    val mixed = blockOf(pkg("c3", listOf("no_summary"), listOf("自定义禁止项")))
+    val iEnum = mixed.indexOf("不要结尾总结")
+    val iFree = mixed.indexOf("自定义禁止项")
+    check("constraint: 枚举排在自由文本之前", iEnum in 0 until iFree, "enum=$iEnum free=$iFree")
+
+    // 8. 只有 forbid 时照常注入（向后兼容）
+    val onlyForbid = blockOf(pkg("c4", emptyList(), listOf("只有自由文本")))
+    check("constraint: 只有 forbid 也能注入", onlyForbid.contains("只有自由文本"), onlyForbid)
+
+    // 9. 要求类进【要求】，禁止类进【禁止】
+    val both = blockOf(pkg("c5", listOf("no_emoji", "minimal_patch"), emptyList()))
+    val iForbid = both.indexOf("【禁止】")
+    val iRequire = both.indexOf("【要求】")
+    check(
+        "constraint: 禁止类进禁止节",
+        iForbid >= 0 && iRequire > iForbid && both.indexOf("不要用 emoji") in iForbid until iRequire,
+        both
+    )
+    check(
+        "constraint: 要求类进要求节",
+        both.indexOf("必须给出最小修改版") > iRequire,
+        both
+    )
+}
+
 // ---------- 格式检查：缺哪些 / 配对审计 ----------
 
 private fun formatCheckMissingTests() {
-    val marks = listOf("[必须改]", "[建议改]", "[可选]")
+    val marks = listOf("[必须改]", "[建议改]", "[可选]", "[无问题]")
 
-    val all = FormatCheckResult.of("m", marks, "[必须改] a [建议改] b [可选] c")
-    eq("check: 全含时 missing 为空", emptyList<String>(), all?.missing)
-    eq("check: 全含时 ok", true, all?.ok)
+    // 1. 任一标记出现即 ok
+    val anyOne = FormatCheckResult.of("m", marks, "[必须改] 第 3 行越界")
+    eq("check: 用到任一标记即 ok", true, anyOne?.ok)
+    eq("check: 没有 required 时 missing 为空", emptyList<String>(), anyOne?.missing)
 
-    val partial = FormatCheckResult.of("m", marks, "[必须改] 只有这个")
-    eq("check: 缺两个", listOf("[建议改]", "[可选]"), partial?.missing)
+    // 2. 一个都没有 → missing（noFormatAtAll）
+    val none = FormatCheckResult.of("m", marks, "1. **问题**：会崩")
+    eq("check: 一个标记都没有 = 不 ok", false, none?.ok)
+    eq("check: 一个标记都没有走重写", true, none?.noFormatAtAll)
+    eq("check: 一个标记都没有的日志", "missing", none?.logValue())
 
-    val none = FormatCheckResult.of("m", marks, "什么都没写")
-    eq("check: 缺全部", marks, none?.missing)
+    // 3. [无问题] 也算用了格式
+    val clean = FormatCheckResult.of("m", marks, "[无问题] 逻辑正确，无并发风险")
+    eq("check: [无问题] 也算 ok", true, clean?.ok)
 
-    eq("check: 没声明 marks 不检查", null, FormatCheckResult.of("m", emptyList(), "随便"))
+    // 4. format_required 逐项点名
+    val req = FormatCheckResult.of(
+        "m", listOf("[建议改]"), "[建议改] 抽个函数", listOf("[必须改]")
+    )
+    eq("check: required 缺项被点名", listOf("[必须改]"), req?.missing)
+    eq("check: required 缺项 = 不 ok", false, req?.ok)
 
-    // 提示词必须点名缺什么，且不能回退成"重新组织"
-    val prompt = FormatRemediation.buildPrompt(none!!, "模板正文", "原回答")
-    check("prompt: 点名缺 [必须改]", prompt.structure.contains("缺少：[必须改]"))
-    check("prompt: 点名缺 [建议改]", prompt.structure.contains("缺少：[建议改]"))
-    check("prompt: 不含「重新组织」", !prompt.structure.contains("重新组织"))
-    check("prompt: 带上结构模板", prompt.structure.contains("模板正文"))
-    eq("prompt: 原回答原样", "原回答", prompt.answer)
+    // 两种补救话术
+    val rewrite = FormatRemediation.buildPrompt(none!!, "模板正文", "原回答")
+    check(
+        "prompt: 完全没用格式时要求重写",
+        rewrite.structure.contains("没有使用分级标记"),
+        rewrite.structure
+    )
+    check("prompt: 重写话术不含「重新组织」", !rewrite.structure.contains("重新组织"))
+    check("prompt: 带上结构模板", rewrite.structure.contains("模板正文"))
+    eq("prompt: 原回答原样", "原回答", rewrite.answer)
+
+    val fill = FormatRemediation.buildPrompt(req!!, "模板正文", "原回答")
+    check("prompt: 缺 required 时点名", fill.structure.contains("缺少：[必须改]"), fill.structure)
+    check("prompt: 补齐话术含模板", fill.structure.contains("模板正文"))
 }
 
 private fun manifestAuditTests() {
@@ -874,6 +958,7 @@ private fun manifestAuditTests() {
 private fun remediationTests() {
     val marks = listOf("[必须改]", "[建议改]")
     val structure = "[必须改] 问题\n- 在哪\n- 为什么\n- 改成什么"
+    fun checkOf(answer: String) = FormatCheckResult.of("m", marks, answer)!!
 
     var calls = 0
     val okResult = FormatRemediation.remediate(
@@ -885,6 +970,7 @@ private fun remediationTests() {
     eq("remedy: 已合规时不补救", 0, calls)
     eq("remedy: 已合规 status=ok", "ok", okResult.status)
     eq("remedy: 已合规时 calls=0", 0, okResult.calls)
+    eq("remedy: apply 认可含标记", "replaced", FormatRemediation.apply("原答", "[必须改] 好了", checkOf("原答")).status)
 
     calls = 0
     val replaced = FormatRemediation.remediate("随便答了一句", "m", marks, structure) {
