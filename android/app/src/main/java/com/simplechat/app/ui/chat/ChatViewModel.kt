@@ -2736,6 +2736,10 @@ class ChatViewModel(
                 if (missingId != null && structure != null) {
                     if (BuildConfig.DEBUG) {
                         com.simplechat.app.hook.UsageLog.record("remediate:start " + missingId)
+                        com.simplechat.app.hook.UsageLog.record(
+                            "remedy:before id=" + replyId + " module=" + missingId +
+                                " len=" + finalText.length
+                        )
                     }
                     val prompt = mychat.framework.hook.FormatRemediation.buildPrompt(
                         check, structure, finalText
@@ -2776,6 +2780,9 @@ class ChatViewModel(
                         if (BuildConfig.DEBUG) {
                             com.simplechat.app.hook.UsageLog.record(
                                 "remediate:applied " + missingId + " len=" + remedy.text.length
+                            )
+                            com.simplechat.app.hook.UsageLog.record(
+                                "remedy:after  id=" + replyId + " len=" + remedy.text.length
                             )
                         }
                     }
@@ -2820,6 +2827,12 @@ class ChatViewModel(
                 reasoningStartedAt?.let { start -> (reasoningEndedAt ?: finishedAt) - start }
             } ?: prefix?.reasoningSeconds?.times(1000)
 
+            if (BuildConfig.DEBUG) {
+                com.simplechat.app.hook.UsageLog.record(
+                    "patch:before id=" + replyId + " len=" +
+                        (messages.firstOrNull { it.id == replyId }?.content?.length ?: -1)
+                )
+            }
             patch(replyId) {
                 it.copy(
                     content = finalAnswer,
@@ -2832,6 +2845,13 @@ class ChatViewModel(
                     timeline = timeline,
                     stopReason = accumulator?.stopReason,
                     imageRequest = directImageRequest ?: it.imageRequest,
+                )
+            }
+
+            if (BuildConfig.DEBUG) {
+                com.simplechat.app.hook.UsageLog.record(
+                    "patch:after  id=" + replyId + " len=" +
+                        (messages.firstOrNull { it.id == replyId }?.content?.length ?: -1)
                 )
             }
 
