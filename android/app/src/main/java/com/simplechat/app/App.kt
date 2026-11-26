@@ -164,10 +164,10 @@ class AppContainer(private val app: Application) {
                     NoopExecutor,
                 )
             ),
-            onFormatCheck = { id, ok ->
+            onFormatCheck = { result ->
                 if (BuildConfig.DEBUG) {
                     com.simplechat.app.hook.UsageLog.record(
-                        "format_check=" + id + ":" + if (ok) "ok" else "missing"
+                        "format_check=" + result.moduleId + ":" + result.logValue()
                     )
                 }
             },

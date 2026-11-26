@@ -13,7 +13,9 @@ import mychat.framework.hook.Attachment
 import mychat.framework.hook.AuditLog
 import mychat.framework.hook.Caps
 import mychat.framework.hook.DescriptionCollision
+import mychat.framework.hook.FormatCheckResult
 import mychat.framework.hook.FormatRemediation
+import mychat.framework.hook.ManifestAudit
 import mychat.framework.hook.FrontMatter
 import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
@@ -63,6 +65,8 @@ fun main() {
     forbidRequireTests()
     guardTests()
     remediationTests()
+    formatCheckMissingTests()
+    manifestAuditTests()
     formatCheckTests()
     builderTests()
     sseTests()
@@ -670,14 +674,20 @@ private fun formatCheckTests() {
         source = sourceOf(marked, plain),
         executor = FakeExecutor { _, _, _ -> """{"type":"pass"}""" },
         bridges = GatedHostBridge.factory(sourceOf(marked, plain), AuditLog(), { null }),
-        onFormatCheck = { id, ok ->
-            recorded += "format_check=" + id + ":" + if (ok) "ok" else "missing"
+        onFormatCheck = { result ->
+            recorded += "format_check=" + result.moduleId + ":" + result.logValue()
         }
     )
     val session = HookSession(id = "s", activeHardModules = listOf("fmt"))
 
-    dLogged.dispatchOutput(session, "[必须改] 第 3 行有越界风险", selected = setOf("fmt"))
-    check("format: ok 写进日志", recorded.contains("format_check=fmt:ok"), "recorded=$recorded")
+    dLogged.dispatchOutput(
+        session, "[必须改] 第 3 行有越界风险\n[建议改] 可以抽个函数", selected = setOf("fmt")
+    )
+    check(
+        "format: ok 写进日志",
+        recorded.any { it == "format_check=fmt:ok" },
+        "recorded=$recorded"
+    )
 
     // 调试行：B 入口 + marks 条数，用来判断“哪一环没跑”
     val debugLines = mutableListOf<String>()
@@ -687,7 +697,7 @@ private fun formatCheckTests() {
         bridges = GatedHostBridge.factory(sourceOf(marked, plain), AuditLog(), { null }),
         onDebug = { debugLines += it }
     )
-    dDebug.dispatchOutput(session, "[必须改] x", selected = setOf("fmt"))
+    dDebug.dispatchOutput(session, "[必须改] x\n[建议改] y", selected = setOf("fmt"))
     check(
         "format: marks 条数已记录",
         debugLines.contains("fmt:marks id=fmt size=2"),
@@ -697,13 +707,13 @@ private fun formatCheckTests() {
     dLogged.dispatchOutput(session, "就是有点问题", selected = setOf("fmt"))
     check(
         "format: missing 写进日志",
-        recorded.contains("format_check=fmt:missing"),
+        recorded.any { it.startsWith("format_check=fmt:missing(") },
         "recorded=$recorded"
     )
 
-    d.dispatchOutput(session, "[必须改] 第 3 行有越界风险", selected = setOf("fmt"))
+    d.dispatchOutput(session, "[必须改] 第 3 行有越界风险\n[建议改] 抽个函数", selected = setOf("fmt"))
     eq(
-        "format: 含标记记 ok",
+        "format: 含全部标记记 ok",
         "ok",
         d.traces.lastOrNull { it.tag == "format_check" }?.message
     )
@@ -811,6 +821,54 @@ private fun guardTests() {
     )
 }
 
+// ---------- 格式检查：缺哪些 / 配对审计 ----------
+
+private fun formatCheckMissingTests() {
+    val marks = listOf("[必须改]", "[建议改]", "[可选]")
+
+    val all = FormatCheckResult.of("m", marks, "[必须改] a [建议改] b [可选] c")
+    eq("check: 全含时 missing 为空", emptyList<String>(), all?.missing)
+    eq("check: 全含时 ok", true, all?.ok)
+
+    val partial = FormatCheckResult.of("m", marks, "[必须改] 只有这个")
+    eq("check: 缺两个", listOf("[建议改]", "[可选]"), partial?.missing)
+
+    val none = FormatCheckResult.of("m", marks, "什么都没写")
+    eq("check: 缺全部", marks, none?.missing)
+
+    eq("check: 没声明 marks 不检查", null, FormatCheckResult.of("m", emptyList(), "随便"))
+
+    // 提示词必须点名缺什么，且不能回退成"重新组织"
+    val prompt = FormatRemediation.buildPrompt(none!!, "模板正文", "原回答")
+    check("prompt: 点名缺 [必须改]", prompt.structure.contains("缺少：[必须改]"))
+    check("prompt: 点名缺 [建议改]", prompt.structure.contains("缺少：[建议改]"))
+    check("prompt: 不含「重新组织」", !prompt.structure.contains("重新组织"))
+    check("prompt: 带上结构模板", prompt.structure.contains("模板正文"))
+    eq("prompt: 原回答原样", "原回答", prompt.answer)
+}
+
+private fun manifestAuditTests() {
+    val noGuide = ModulePackage(
+        manifest = ModuleManifest("out_no_guide", "输出无指南", hooks = listOf("output")),
+        body = "", scripts = emptyMap(), references = emptyMap()
+    )
+    val audit1 = ManifestAudit.auditGuides(listOf(noGuide))
+    check("audit: 输出模块缺 Guide", audit1.any { it.startsWith("no_guides") }, audit1.toString())
+
+    val marksNoStructure = ModulePackage(
+        manifest = ModuleManifest(
+            "fmt_no_struct", "有标记没结构",
+            hooks = emptyList(),
+            formatMarks = listOf("[必须改]"),
+            forbid = listOf("不要废话")
+        ),
+        body = "", scripts = emptyMap(),
+        references = mapOf("SKILL.md" to "# 规范\n\n## 何时使用\n随便\n")
+    )
+    val audit2 = ManifestAudit.auditGuides(listOf(marksNoStructure))
+    check("audit: 有 marks 没结构", audit2.any { it.startsWith("no_structure") }, audit2.toString())
+}
+
 // ---------- 格式补救 ----------
 
 private fun remediationTests() {
@@ -818,7 +876,9 @@ private fun remediationTests() {
     val structure = "[必须改] 问题\n- 在哪\n- 为什么\n- 改成什么"
 
     var calls = 0
-    val okResult = FormatRemediation.remediate("[必须改] 已有标记", marks, structure) {
+    val okResult = FormatRemediation.remediate(
+        "[必须改] 已有标记，[建议改] 也有", "m", marks, structure
+    ) {
         calls++
         "不该被调用"
     }
@@ -827,7 +887,7 @@ private fun remediationTests() {
     eq("remedy: 已合规时 calls=0", 0, okResult.calls)
 
     calls = 0
-    val replaced = FormatRemediation.remediate("随便答了一句", marks, structure) {
+    val replaced = FormatRemediation.remediate("随便答了一句", "m", marks, structure) {
         calls++
         "[必须改] 重排好了"
     }
@@ -836,7 +896,7 @@ private fun remediationTests() {
     eq("remedy: 用补救后的文本", "[必须改] 重排好了", replaced.text)
 
     calls = 0
-    val stillMissing = FormatRemediation.remediate("答得乱七八糟", marks, structure) {
+    val stillMissing = FormatRemediation.remediate("答得乱七八糟", "m", marks, structure) {
         calls++
         "还是没按格式"
     }
@@ -844,7 +904,7 @@ private fun remediationTests() {
     eq("remedy: status=still_missing", "still_missing", stillMissing.status)
 
     calls = 0
-    val errored = FormatRemediation.remediate("原答", marks, structure) {
+    val errored = FormatRemediation.remediate("原答", "m", marks, structure) {
         calls++
         throw IllegalStateException("网络炸了")
     }
@@ -857,7 +917,7 @@ private fun remediationTests() {
     eq(
         "remedy: 无声明不发请求",
         0,
-        FormatRemediation.remediate("答", emptyList(), structure) { calls++; null }.calls
+        FormatRemediation.remediate("答", "m", emptyList(), structure) { calls++; null }.calls
     )
     eq("remedy: 只有 prompt 构造才走 call", 0, calls)
 }

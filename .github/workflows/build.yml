@@ -78,6 +78,14 @@ jobs:
             echo "RELEASE_APK_BYTES=$(stat -c %s "$f") $f"
           done
 
+      # 补救提示词不许回退成"重新组织"（无信息量的指令）
+      - name: 检查补救提示词没有回退
+        run: |
+          if grep -rn "重新组织" --include="*.kt" framework/src/main; then
+            echo "::error::补救提示词回退成无信息量指令"
+            exit 1
+          fi
+
       # 防多语言失效：除 sandbox/ 与 AppContainer(App.kt) 外，业务代码不该直接碰 Rhino
       - name: 检查 RhinoJsExecutor 没泄漏到调用点
         run: |

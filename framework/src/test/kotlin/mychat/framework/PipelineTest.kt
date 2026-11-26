@@ -69,9 +69,20 @@ fun main() {
         File(repoRoot, "android/app/src/main/assets/modules")
     ).registry
     check("assets: 模块可扫描", registry.all().isNotEmpty())
-    eq("assets: 扫描无问题", 0, ModuleRegistry.scan(
+    // 配对审计会报"输出模块缺 Guide"（真实缺口），只要求没有硬错误
+    val auditProblems = ModuleRegistry.scan(
         File(repoRoot, "android/app/src/main/assets/modules")
-    ).problems.size)
+    ).problems
+    eq(
+        "assets: 没有重复前缀",
+        0,
+        auditProblems.count { it.startsWith("dup_prefix") }
+    )
+    eq(
+        "assets: 没有 marks 缺结构",
+        0,
+        auditProblems.count { it.startsWith("no_structure") }
+    )
 
     hitCase(registry)
     fallbackCase(registry)

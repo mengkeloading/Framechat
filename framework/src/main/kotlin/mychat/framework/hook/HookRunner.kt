@@ -12,7 +12,7 @@ class HookRunner(
     private val audit: AuditLog = AuditLog(),
     private val maxInvokeDepth: Int = 3,
     /** 格式检查回调（App 层写日志用）。 */
-    private val onFormatCheck: ((String, Boolean) -> Unit)? = null,
+    private val onFormatCheck: ((FormatCheckResult) -> Unit)? = null,
     /** 调试日志回调。 */
     private val onDebug: ((String) -> Unit)? = null,
 ) {
@@ -23,7 +23,7 @@ class HookRunner(
         executor: JsExecutor,
         audit: AuditLog = AuditLog(),
         maxInvokeDepth: Int = 3,
-        onFormatCheck: ((String, Boolean) -> Unit)? = null,
+        onFormatCheck: ((FormatCheckResult) -> Unit)? = null,
         onDebug: ((String) -> Unit)? = null
     ) : this(
         source = source,
@@ -107,16 +107,16 @@ class HookRunner(
         traceLog.takeLast(limit)
     }
 
-    /** 选中的模块里，有哪些声明的格式标记一个都没出现。 */
-    fun missingFormats(selected: Set<String>, text: String): List<String> =
+    /** 选中的模块里，各自的格式检查结果（只含声明了 format_marks 的模块）。 */
+    fun checkFormats(selected: Set<String>, text: String): List<FormatCheckResult> =
         selected.mapNotNull { id ->
             val marks = source.getPackage(id)?.manifest?.formatMarks.orEmpty()
-            when {
-                marks.isEmpty() -> null
-                marks.any { text.contains(it) } -> null
-                else -> id
-            }
+            FormatCheckResult.of(id, marks, text)
         }
+
+    /** 只返回缺标记的那些模块。 */
+    fun missingFormats(selected: Set<String>, text: String): List<FormatCheckResult> =
+        checkFormats(selected, text).filterNot { it.ok }
 
     /** 从模块的 SKILL.md 里取「输出格式/结构」节，给补救提示用。 */
     fun formatStructureOf(id: String): String? {
@@ -140,14 +140,15 @@ class HookRunner(
      * 需要补救时返回 (模块 id, 输出结构)；不需要补救返回 null。
      * 需要补救但拿不到结构时记一行 skip —— 静默跳过最难查。
      */
-    fun remediationTarget(selected: Set<String>, text: String): Pair<String, String>? {
-        val id = missingFormats(selected, text).firstOrNull() ?: return null
+    fun remediationTarget(selected: Set<String>, text: String): Pair<FormatCheckResult, String>? {
+        val check = missingFormats(selected, text).firstOrNull() ?: return null
+        val id = check.moduleId
         val structure = formatStructureOf(id)
         if (structure.isNullOrBlank()) {
             onDebug?.invoke("remediate:skip " + id + " reason=no_structure")
             return null
         }
-        return id to structure
+        return check to structure
     }
 
     fun clearTrace() = synchronized(traceLog) { traceLog.clear() }

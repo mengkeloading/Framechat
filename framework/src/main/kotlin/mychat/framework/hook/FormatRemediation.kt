@@ -26,11 +26,18 @@ object FormatRemediation {
         val calls: Int
     )
 
-    fun buildPrompt(structure: String, answer: String): Prompt = Prompt(
-        systemSuffix = "严格按下面的格式输出，不要改动内容，不要加解释。",
-        structure = "把上面的回答按以下结构重新组织：\n" + structure,
+    fun buildPrompt(check: FormatCheckResult, structure: String, answer: String): Prompt = Prompt(
+        systemSuffix = "严格按下面的格式输出，不要改动已有内容，不要加解释。",
+        structure = buildString {
+            append("上一条回答缺少以下格式标记，请补齐：\n")
+            for (mark in check.missing) {
+                append("缺少：").append(mark).append('\n')
+            }
+            append("\n每条问题写成这样：\n")
+            append(structure)
+        },
         answer = answer,
-        finalInstruction = "按格式重排，只输出重排后的内容。"
+        finalInstruction = "只输出补齐格式后的完整回答。"
     )
 
     /**
@@ -39,16 +46,17 @@ object FormatRemediation {
      */
     fun remediate(
         answer: String,
+        moduleId: String,
         marks: List<String>,
         structure: String,
         call: (Prompt) -> String?
     ): Result {
-        if (marks.isEmpty()) return Result(answer, "ok", 0)
-        if (marks.any { answer.contains(it) }) return Result(answer, "ok", 0)
+        val check = FormatCheckResult.of(moduleId, marks, answer) ?: return Result(answer, "ok", 0)
+        if (check.ok) return Result(answer, "ok", 0)
         if (structure.isBlank()) return Result(answer, "error", 0)
 
         val remedied = try {
-            call(buildPrompt(structure, answer))
+            call(buildPrompt(check, structure, answer))
         } catch (e: Exception) {
             return Result(answer, "error", 1)
         }

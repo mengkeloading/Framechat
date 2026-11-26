@@ -78,6 +78,7 @@ fun main() {
     scenarioD(registry)
     silentSkipLogs()
     noopEngineScenario(registry)
+    partialMissingScenario(registry)
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -101,8 +102,8 @@ private class Harness(
     private val runner = HookRunner(
         source = registry,
         executors = executors,
-        onFormatCheck = { id, ok ->
-            log.record("format_check=" + id + ":" + (if (ok) "ok" else "missing"))
+        onFormatCheck = { result ->
+            log.record("format_check=" + result.moduleId + ":" + result.logValue())
         },
         onDebug = { log.record(it) }
     )
@@ -144,17 +145,16 @@ private class Harness(
         var finalAnswer = engine.process(afterB).text.ifBlank { afterB }
 
         // 格式补救
-        val missing = runner.missingFormats(selected, finalAnswer).firstOrNull()
-        val structure = missing?.let { runner.formatStructureOf(it) }
-        if (missing != null && !structure.isNullOrBlank()) {
-            log.record("remediate:start " + missing)
+        val check = runner.missingFormats(selected, finalAnswer).firstOrNull()
+        val structure = check?.let { runner.formatStructureOf(it.moduleId) }
+        if (check != null && !structure.isNullOrBlank()) {
+            log.record("remediate:start " + check.moduleId)
+            val p = FormatRemediation.buildPrompt(check, structure, finalAnswer)
             val remedied = llm.call(
-                FormatRemediation.buildPrompt(structure, finalAnswer).answer
+                p.systemSuffix + "\n" + p.structure + "\n" + p.answer + "\n" + p.finalInstruction
             )
-            val result = FormatRemediation.apply(
-                finalAnswer, remedied, runner.formatMarksOf(missing)
-            )
-            log.record("remediate:done " + missing + " " + result.status)
+            val result = FormatRemediation.apply(finalAnswer, remedied, check.required)
+            log.record("remediate:done " + check.moduleId + " " + result.status)
             log.record("remediate:cost +" + result.calls + " call")
             if (result.status == "replaced") finalAnswer = result.text
         }
@@ -164,7 +164,7 @@ private class Harness(
     }
 }
 
-private const val GOOD = "[必须改] a!! 会崩\n- 在哪：第 1 行\n- 为什么：NPE\n- 改成什么：a?.b"
+private const val GOOD = "[必须改] a!! 会崩\n- 在哪：第 1 行\n- 为什么：NPE\n- 改成什么：a?.b\n[建议改] 抽个函数\n[可选] 加个注释"
 private const val BAD = "1. **问题**：a!! 会崩"
 
 private fun harness(registry: ModuleRegistry, vararg replies: String): Harness =
@@ -194,6 +194,9 @@ private fun scenarioB(registry: ModuleRegistry) {
     check("B: 日志含 replaced", h.log.contains("remediate:done skill_code replaced"))
     check("B: 最终回答是补救后的", answer.contains("[必须改]"), answer)
     check("B: 补救不再包含粗体旧格式", !answer.contains("**问题**"), answer)
+    val promptB = h.llm.prompts.getOrNull(1).orEmpty()
+    check("B: 补救请求点名缺「必须改」", promptB.contains("缺少：[必须改]"), promptB)
+    check("B: 补救请求不含「重新组织」", !promptB.contains("重新组织"), promptB)
     assertOrder(h, "B")
 }
 
@@ -219,6 +222,22 @@ private fun scenarioD(registry: ModuleRegistry) {
     check("D: sel 行显示空集合", h.log.contains("sel=prefix:false route=[] reason=hit selected=[]"))
     eq("D: 回答原样透传", "你好呀", answer)
     check("D: 没有注入日志", !h.log.contains("inject:len"))
+}
+
+// ---------- 部分缺失 ----------
+
+private fun partialMissingScenario(registry: ModuleRegistry) {
+    // 只给了 [必须改]，缺 [建议改]/[可选]
+    val partial = "[必须改] a!! 会崩\n- 在哪：第 1 行\n- 为什么：NPE\n- 改成什么：a?.b"
+    val h = harness(registry, partial, GOOD)
+    val answer = h.turn(listOf("skill_code"), setOf("skill_code"), "这段代码有问题吗")
+
+    eq("partial: 触发了补救", 2, h.llm.callCount)
+    val prompt = h.llm.prompts.getOrNull(1).orEmpty()
+    check("partial: 点名缺 [建议改]", prompt.contains("缺少：[建议改]"), prompt)
+    check("partial: 点名缺 [可选]", prompt.contains("缺少：[可选]"), prompt)
+    check("partial: 不点名已有的 [必须改]", !prompt.contains("缺少：[必须改]"), prompt)
+    check("partial: 最终仍含 [必须改]", answer.contains("[必须改]"), answer)
 }
 
 // ---------- 引擎可替换 ----------

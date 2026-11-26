@@ -7,6 +7,11 @@ hooks: [output]
 inject: none
 capabilities: {}
 entry: script/main.js
+forbid:
+  - 不要在回复末尾追加"希望有帮助""还有其他问题"这类套话
+  - 不要改动正文，只删末尾客套
+require:
+  - 结尾停在最后一个实质句子上
 ---
 
 钩子 B。删除末尾"希望有帮助/还有其他问题"一类套话。

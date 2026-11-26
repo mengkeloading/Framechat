@@ -81,6 +81,7 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
                 }
             }
             checkDuplicatePrefixes(pkgs, problems)
+            problems += ManifestAudit.auditGuides(pkgs.values.toList())
             return ScanResult(ModuleRegistry(pkgs), problems)
         }
 

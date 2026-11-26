@@ -14,7 +14,7 @@ class ModuleDispatcher(
     private val maxInvokeDepth: Int = 3,
     private val historyLimit: Int = 20,
     /** 格式检查结果的外部回调（App 层写日志用；框架不依赖 Android）。 */
-    private val onFormatCheck: ((String, Boolean) -> Unit)? = null,
+    private val onFormatCheck: ((FormatCheckResult) -> Unit)? = null,
     /** 调试日志回调。 */
     private val onDebug: ((String) -> Unit)? = null
 ) {
@@ -26,7 +26,7 @@ class ModuleDispatcher(
         bridges: HostBridgeFactory,
         maxInvokeDepth: Int = 3,
         historyLimit: Int = 20,
-        onFormatCheck: ((String, Boolean) -> Unit)? = null,
+        onFormatCheck: ((FormatCheckResult) -> Unit)? = null,
         onDebug: ((String) -> Unit)? = null
     ) : this(
         source = source,
@@ -201,16 +201,19 @@ class ModuleDispatcher(
      * 格式检查：只记录、不补救。
      * 先搞清楚「格式不遵守」的频率，再决定要不要让模型重来。
      */
-    private fun checkFormats(selected: Set<String>, text: String) {
-        if (selected.isEmpty()) return
+    /** 返回每个「声明了 format_marks」的模块的检查结果；没声明的模块不出现。 */
+    fun checkFormats(selected: Set<String>, text: String): List<FormatCheckResult> {
+        if (selected.isEmpty()) return emptyList()
+        val results = mutableListOf<FormatCheckResult>()
         for (id in selected) {
             val marks = source.getPackage(id)?.manifest?.formatMarks.orEmpty()
             onDebug?.invoke("fmt:marks id=" + id + " size=" + marks.size)
-            if (marks.isEmpty()) continue
-            val ok = marks.any { text.contains(it) }
-            trace("format_check", id, if (ok) "ok" else "missing")
-            onFormatCheck?.invoke(id, ok)
+            val result = FormatCheckResult.of(id, marks, text) ?: continue
+            trace("format_check", id, if (result.ok) "ok" else "missing")
+            onFormatCheck?.invoke(result)
+            results += result
         }
+        return results
     }
 
     private fun computeOutput(

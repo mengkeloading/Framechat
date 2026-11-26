@@ -270,7 +270,17 @@ private fun assetHealthTest() {
     val ids = scan.registry.all().map { it.id }.sorted()
 
     check("assets: 能扫描到模块", ids.isNotEmpty())
-    eq("assets: 扫描无问题", emptyList<String>(), scan.problems)
+    // 配对审计会报"输出模块缺 Guide"，那是真实缺口，不该被断言抹平
+    check(
+        "assets: 没有重复前缀或结构缺失",
+        scan.problems.none { it.startsWith("dup_prefix") || it.startsWith("no_structure") },
+        scan.problems.joinToString("; ")
+    )
+    check(
+        "assets: skill_code 的 Guide/Sensor/结构三项齐全",
+        scan.problems.none { it.contains("skill_code") },
+        scan.problems.joinToString("; ")
+    )
 
     // 只钉住「必须有」的关键模块：新增模块直接进 assets，不再与 demo 对比
     val required = listOf("local_calc", "attach_context", "no_fluff", "debug_ctx")

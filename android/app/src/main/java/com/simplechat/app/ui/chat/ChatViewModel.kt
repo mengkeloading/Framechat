@@ -2730,14 +2730,16 @@ class ChatViewModel(
             var finalAnswer = finalText
             if (status == MessageStatus.DONE && pendingSelected.isNotEmpty()) {
                 val target = hookRunner.remediationTarget(pendingSelected, finalText)
-                val missingId = target?.first
+                val check = target?.first
+                val missingId = check?.moduleId
                 val structure = target?.second
                 if (missingId != null && structure != null) {
                     if (BuildConfig.DEBUG) {
                         com.simplechat.app.hook.UsageLog.record("remediate:start " + missingId)
                     }
-                    val prompt =
-                        mychat.framework.hook.FormatRemediation.buildPrompt(structure, finalText)
+                    val prompt = mychat.framework.hook.FormatRemediation.buildPrompt(
+                        check, structure, finalText
+                    )
                     val buffer = StringBuilder()
                     val remedied = runCatching {
                         chatApi.streamChat(
