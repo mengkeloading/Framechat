@@ -9,6 +9,8 @@ import com.simplechat.app.data.LocaleHelper
 import com.simplechat.app.data.Res
 import com.simplechat.app.data.SettingsStore
 import com.simplechat.app.hook.AssetModuleTree
+import com.simplechat.app.hook.HookRouter
+import com.simplechat.app.hook.OnnxTextEmbedder
 import mychat.framework.hook.HookRunner
 import mychat.framework.hook.ModuleRegistry
 import mychat.framework.sandbox.RhinoJsExecutor
