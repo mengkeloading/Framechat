@@ -108,11 +108,13 @@ class ModuleDispatcher(
                 trace("hookA", id, "selected_but_empty")
                 continue
             }
+            // 注入的是「知识正文」，不含 SKILL.md 的 front matter（name/keywords 是给工具看的）
+            val body = FrontMatter.parse(content)?.body?.takeIf { it.isNotEmpty() } ?: content
             blocks += SkillBlock(
                 id = id,
                 name = pkg.manifest.name,
                 description = pkg.manifest.description,
-                extra = content,
+                extra = body,
                 forbids = pkg.manifest.forbid,
                 requires = pkg.manifest.requires
             )

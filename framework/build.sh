@@ -89,3 +89,6 @@ echo "== 自测：管家"
 
 echo "== 自测：端到端链路"
 "$JAVA" -Dmychat.repoRoot="$ROOT/.." -cp "$OUT:$STDLIB" mychat.framework.PipelineTestKt
+
+echo "== 自测：注入块预览与快照"
+"$JAVA" -Dmychat.repoRoot="$ROOT/.." -cp "$OUT:$STDLIB" mychat.framework.InjectionPreviewTestKt
