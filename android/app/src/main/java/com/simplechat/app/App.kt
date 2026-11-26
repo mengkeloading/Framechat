@@ -81,6 +81,7 @@ class App : Application() {
 
             // 扫描问题（含重复前缀）逐条写日志
             modules.problems.forEach { com.simplechat.app.hook.UsageLog.record("problem=" + it) }
+            modules.infos.forEach { com.simplechat.app.hook.UsageLog.record("info=" + it) }
 
             // 描述撞车提醒：需要向量，放后台算，不拖启动
             CoroutineScope(Dispatchers.IO).launch {

@@ -936,8 +936,9 @@ private fun manifestAuditTests() {
         manifest = ModuleManifest("out_no_guide", "输出无指南", hooks = listOf("output")),
         body = "", scripts = emptyMap(), references = emptyMap()
     )
-    val audit1 = ManifestAudit.auditGuides(listOf(noGuide))
-    check("audit: 输出模块缺 Guide", audit1.any { it.startsWith("no_guides") }, audit1.toString())
+    val (p1, i1) = ManifestAudit.auditGuides(listOf(noGuide))
+    check("audit: 输出模块缺 Guide 只作 info", i1.any { it.startsWith("no_guides") }, i1.toString())
+    eq("audit: no_guides 不进 problems", emptyList<String>(), p1)
 
     val marksNoStructure = ModulePackage(
         manifest = ModuleManifest(
@@ -949,8 +950,8 @@ private fun manifestAuditTests() {
         body = "", scripts = emptyMap(),
         references = mapOf("SKILL.md" to "# 规范\n\n## 何时使用\n随便\n")
     )
-    val audit2 = ManifestAudit.auditGuides(listOf(marksNoStructure))
-    check("audit: 有 marks 没结构", audit2.any { it.startsWith("no_structure") }, audit2.toString())
+    val (p2, _) = ManifestAudit.auditGuides(listOf(marksNoStructure))
+    check("audit: 有 marks 没结构仍算 problem", p2.any { it.startsWith("no_structure") }, p2.toString())
 }
 
 // ---------- 格式补救 ----------

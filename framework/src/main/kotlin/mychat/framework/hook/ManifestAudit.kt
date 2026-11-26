@@ -15,8 +15,10 @@ object ManifestAudit {
 
     val STRUCTURE_HEADINGS = listOf("输出格式", "输出结构")
 
-    fun auditGuides(pkgs: List<ModulePackage>): List<String> {
+    fun auditGuides(pkgs: List<ModulePackage>): Pair<List<String>, List<String>> {
         val problems = mutableListOf<String>()
+        // no_guides 是"可以接受但值得知道"：模块没写行为约束，不阻断任何东西
+        val infos = mutableListOf<String>()
         for (p in pkgs) {
             val hasOutput = p.manifest.hooks.contains("output")
             val hasGuide = p.manifest.forbid.isNotEmpty() || p.manifest.requires.isNotEmpty() ||
@@ -26,7 +28,7 @@ object ManifestAudit {
             val hasStructure = structureOf(p) != null
 
             if (hasOutput && !hasGuide) {
-                problems += "no_guides: " + p.id + "（hooks=[output] 但 forbid/require 都为空）"
+                infos += "no_guides: " + p.id + "（hooks=[output] 但 forbid/require 都为空）"
             }
             if (hasMarks && !hasStructure) {
                 problems += "no_structure: " + p.id +
@@ -37,7 +39,7 @@ object ManifestAudit {
                     "（有 format_marks 但没有 forbid/require）"
             }
         }
-        return problems
+        return problems to infos
     }
 
     fun structureOf(p: ModulePackage): String? {

@@ -2728,6 +2728,7 @@ class ChatViewModel(
              * 再问一次模型「只重排不改内容」。只补救一次，失败就用原回答。
              */
             var finalAnswer = finalText
+            var remediedAnswer: String? = null
             if (status == MessageStatus.DONE && pendingSelected.isNotEmpty()) {
                 val target = hookRunner.remediationTarget(pendingSelected, finalText)
                 val check = target?.first
@@ -2777,6 +2778,7 @@ class ChatViewModel(
                     }
                     if (remedy.status == "replaced") {
                         finalAnswer = remedy.text
+                        remediedAnswer = remedy.text
                         if (BuildConfig.DEBUG) {
                             com.simplechat.app.hook.UsageLog.record(
                                 "remediate:applied " + missingId + " len=" + remedy.text.length
@@ -2826,6 +2828,13 @@ class ChatViewModel(
             val thinkingMs = if (accumulator != null) accumulator.thinkingMillis(finishedAt) else {
                 reasoningStartedAt?.let { start -> (reasoningEndedAt ?: finishedAt) - start }
             } ?: prefix?.reasoningSeconds?.times(1000)
+
+            /*
+             * MessageList 在有 timeline 时优先显示 timeline 推出来的正文（为了引用角标），
+             * 补救只改了 content 的话界面不会变 —— 时间线必须同步换掉。
+             * 引用一并清空：重写后的文本和原来的 URL 位置已经对不上。
+             */
+            if (remediedAnswer != null) timeline = rewriteTimelineAnswer(timeline, remediedAnswer)
 
             if (BuildConfig.DEBUG) {
                 com.simplechat.app.hook.UsageLog.record(
@@ -3193,6 +3202,27 @@ class ChatViewModel(
         val trace = hookRunner.lastTrace().joinToString("\n") { it.toString() }
         lastHookTrace = trace
         if (BuildConfig.DEBUG) android.util.Log.d("MyChat/Hook", trace)
+    }
+
+    /**
+     * 把时间线里的正文块换成 [answer]（只留一个正文块，其余正文块合并掉）。
+     * 纯函数，方便以后单测；不改动思考/工具块，它们的位置与文案不受补救影响。
+     */
+    private fun rewriteTimelineAnswer(blocks: List<ReplyBlock>, answer: String): List<ReplyBlock> {
+        if (blocks.none { it is ReplyBlock.Text }) return blocks
+        var placed = false
+        return blocks.mapNotNull { block ->
+            when (block) {
+                is ReplyBlock.Text ->
+                    if (placed) {
+                        null
+                    } else {
+                        placed = true
+                        block.copy(text = answer, citations = emptyList())
+                    }
+                else -> block
+            }
+        }
     }
 
     private inline fun patch(id: String, transform: (UiMessage) -> UiMessage) {

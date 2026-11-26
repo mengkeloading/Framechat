@@ -49,7 +49,12 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
 
     override fun all(): List<ModulePackage> = packages.values.toList()
 
-    data class ScanResult(val registry: ModuleRegistry, val problems: List<String>)
+    data class ScanResult(
+        val registry: ModuleRegistry,
+        val problems: List<String>,
+        /** 可以接受、只是值得知道的（如输出模块没写 Guide）。 */
+        val infos: List<String> = emptyList()
+    )
 
     companion object {
         private val SCRIPT_DIRS = listOf("script", "scripts")
@@ -81,13 +86,14 @@ class ModuleRegistry(private val packages: Map<String, ModulePackage>) : ModuleS
                 }
             }
             checkDuplicatePrefixes(pkgs, problems)
-            problems += ManifestAudit.auditGuides(pkgs.values.toList())
+            val (auditProblems, auditInfos) = ManifestAudit.auditGuides(pkgs.values.toList())
+            problems += auditProblems
             for (p in pkgs.values) {
                 for (id in ConstraintText.unknownIds(p.manifest.constraints)) {
                     problems += "unknown_constraint:" + p.id + ":" + id
                 }
             }
-            return ScanResult(ModuleRegistry(pkgs), problems)
+            return ScanResult(ModuleRegistry(pkgs), problems, auditInfos)
         }
 
         /** 同一前缀声明两次：谁是强制入口就不确定了，必须报出来。 */
