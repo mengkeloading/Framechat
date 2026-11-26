@@ -3,6 +3,7 @@ package mychat.framework
 import mychat.framework.embedding.Candidate
 import mychat.framework.embedding.ModuleDocuments
 import mychat.framework.embedding.ModuleRouter
+import mychat.framework.embedding.ModuleSelector
 import mychat.framework.embedding.TextEmbedder
 import mychat.framework.embedding.Vectors
 import mychat.framework.embedding.WordPieceTokenizer
@@ -33,6 +34,7 @@ fun main() {
     tokenizerTests()
     routingTests()
     routingDecisionTests()
+    selectorTests()
     moduleDocumentTests()
 
     println()
@@ -98,6 +100,47 @@ private fun tokenizerTests() {
         tokenizer.basicTokens("你好，world")
     )
     check("token: 拉丁词按词表贪心切分", tokenizer.wordPieces("coroutine").isNotEmpty())
+}
+
+// ---------- selected 集合（路由 → 兜底） ----------
+
+private fun selectorTests() {
+    fun pkgOf2(id: String, hasSkill: Boolean) = ModulePackage(
+        manifest = ModuleManifest(id = id, name = id, description = "描述"),
+        body = "",
+        scripts = emptyMap(),
+        references = if (hasSkill) mapOf("SKILL.md" to "规范") else emptyMap()
+    )
+
+    val withSkill = pkgOf2("sk", true)
+    val noSkill = pkgOf2("plain", false)
+    val modules = listOf(withSkill, noSkill)
+
+    // 没有启用模块 → 空集
+    eq(
+        "selector: 无模块返回空",
+        emptySet<String>(),
+        ModuleSelector.select(emptyList(), floatArrayOf(1f, 0f), emptyList())
+    )
+
+    // 路由命中 → 只有命中项
+    val hit = ModuleSelector.select(
+        listOf(withSkill), floatArrayOf(1f, 0f),
+        listOf(Candidate("sk", floatArrayOf(1f, 0f)))
+    )
+    eq("selector: 路由命中只选命中项", setOf("sk"), hit)
+
+    // 路由为空（全部分数低于 MIN_SCORE）→ 兜底到 hasSkill
+    val tied = listOf(
+        Candidate("sk", floatArrayOf(1f, 0f)),
+        Candidate("plain", floatArrayOf(0f, 1f))
+    )
+    val fallback = ModuleSelector.select(modules, floatArrayOf(-1f, -1f), tied)
+    eq("selector: 路由为空时兜底", setOf("sk"), fallback)
+    eq("selector: 无 SKILL.md 的模块不在兜底里", false, fallback.contains("plain"))
+
+    // 查询向量算不出来 → 也走兜底
+    eq("selector: 无查询向量时兜底", setOf("sk"), ModuleSelector.select(modules, null, emptyList()))
 }
 
 // ---------- 模块向量化文本 ----------

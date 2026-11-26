@@ -21,6 +21,8 @@ class HookRunner(
         text: String,
         history: List<Message> = emptyList(),
         attachments: List<Attachment> = emptyList(),
+        /** 调用方（路由）算出的选中集合；前缀强制时会覆盖它。 */
+        selected: Set<String> = emptySet(),
     ): HookAResult {
         if (session.activeHardModules.isEmpty()) return HookAResult.Pass(text)
 
@@ -44,7 +46,7 @@ class HookRunner(
             rawInput = hookText,
             history = history,
             attachments = attachments,
-            selected = if (forced == null) emptySet() else setOf(forced.module),
+            selected = if (forced == null) selected else setOf(forced.module),
             forced = forced != null
         )
         synchronized(traceLog) {

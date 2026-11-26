@@ -128,6 +128,11 @@ class AppContainer(private val app: Application) {
         HookRunner(moduleRegistry.registry, RhinoJsExecutor(moduleRegistry.registry))
     }
 
+    /** 向量模型：懒加载，首次路由时才把 23MB 模型读进内存。 */
+    private val embedder by lazy { OnnxTextEmbedder(app.assets) }
+
+    val hookRouter by lazy { HookRouter(moduleRegistry.registry, embedder) }
+
     val database: AppDatabase by lazy { AppDatabase.build(app) }
 
     val chatRepository: ChatRepository by lazy { ChatRepository(database, app) }

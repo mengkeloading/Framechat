@@ -11,3 +11,6 @@ entry: script/main.js
 ---
 
 钩子 A。枚举带 SKILL.md 的模块，全量注入，判断权交给模型。
+
+> 暂时停用：兜底逻辑已移到 App 的 ModuleSelector（selected = 所有 hasSkill）。
+> 它进不了 selected，保留脚本供将来需要「一次注入全部正文」时复用。

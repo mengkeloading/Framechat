@@ -32,6 +32,7 @@ import com.simplechat.app.data.imageAspectRatios
 import com.simplechat.app.data.imageSizeForRatio
 import com.simplechat.app.data.SettingsStore
 import com.simplechat.app.data.StoredSettings
+import com.simplechat.app.hook.HookRouter
 import mychat.framework.directive.DirectiveEngine
 import mychat.framework.hook.HookAResult
 import mychat.framework.hook.HookBResult
@@ -119,6 +120,7 @@ class ChatViewModel(
     private val repository: ChatRepository,
     private val openCodeSessionId: String,
     private val hookRunner: HookRunner,
+    private val hookRouter: HookRouter,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -904,7 +906,11 @@ class ChatViewModel(
                     val historyBase = repository.loadActivePath(conversationId).map {
                         HookMessage(it.role.name.lowercase(), it.content)
                     }
-                    when (val hookA = hookRunner.input(hookSession, text, historyBase)) {
+                    // 前缀强制优先（HookRunner 内部会覆盖）；否则按向量路由，空则兜底 hasSkill
+                    val selected = hookRouter.select(stored.enabledModules, text)
+                    when (val hookA = hookRunner.input(
+                        hookSession, text, historyBase, selected = selected
+                    )) {
                         is HookAResult.Local -> localReply = hookA.text
                         is HookAResult.Context -> {
                             pendingHookAText = hookA.text.takeIf { it != text }
@@ -3353,10 +3359,14 @@ class ChatViewModel(
             repository: ChatRepository,
             openCodeSessionId: String,
             hookRunner: HookRunner,
+            hookRouter: HookRouter,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
-                ChatViewModel(chatApi, settingsStore, repository, openCodeSessionId, hookRunner, state).also { viewModel ->
+                ChatViewModel(
+                    chatApi, settingsStore, repository, openCodeSessionId,
+                    hookRunner, hookRouter, state
+                ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }
             }

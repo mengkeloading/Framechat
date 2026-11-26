@@ -7,6 +7,7 @@ hooks: [input]
 inject: none
 capabilities: {}
 entry: script/main.js
+prefix: 附加
 ---
 
 钩子 A。命中后返回 context，extra 是字符串，会被当成一条 system 消息。

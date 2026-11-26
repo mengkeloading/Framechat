@@ -95,14 +95,20 @@ private fun localCalc(dispatcher: ModuleDispatcher, session: HookSession) {
 
 /** 真模块 attach-context：把「附加：」后面的内容变成 extra。 */
 private fun attachContext(dispatcher: ModuleDispatcher, session: HookSession) {
-    val result = dispatcher.dispatchInput(
-        session.copy(activeHardModules = listOf("attach_context")), "附加：用英文回答",
-        selected = setOf("attach_context")
+    val s = session.copy(activeHardModules = listOf("attach_context"))
+
+    // 没被强制 → 不注入
+    val normal = dispatcher.dispatchInput(s, "用英文回答")
+    check("attach_context: 非强制时不注入", normal is HookAResult.Pass, "实际 ${normal::class.simpleName}")
+
+    // 被「附加：」强制（框架已剥前缀，模块只看到正文）
+    val forced = dispatcher.dispatchInput(
+        s, "用英文回答", selected = setOf("attach_context"), forced = true
     )
-    check("attach_context: 返回 context", result is HookAResult.Context, "实际 ${result::class.simpleName}")
-    val extra = (result as? HookAResult.Context)?.extra.orEmpty()
-    check("attach_context: extra 非空", extra.isNotEmpty())
-    check("attach_context: extra 带上附加内容", extra.contains("用英文回答"), "extra=$extra")
+    check("attach_context: 强制时返回 context", forced is HookAResult.Context, "实际 ${forced::class.simpleName}")
+    val extra = (forced as? HookAResult.Context)?.extra.orEmpty()
+    check("attach_context: extra 带上附加内容", extra.contains("用英文回答"), extra)
+    check("attach_context: 被包装成技能块", extra.contains("id: attach_context"))
 }
 
 /** skill_novel 只在被前缀强制时返回 context（看 ctx.forced）。 */
