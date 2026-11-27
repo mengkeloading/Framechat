@@ -51,46 +51,49 @@ class TagMemoryService(
                 log("recall:miss best=0 threshold=" + fmt(Recall.MIN))
                 return null
             }
-            val best = snapshot.maxByOrNull { cosineOf(query, it.vector) } ?: return null
-            val score = cosineOf(query, best.vector)
-            if (score < Recall.MIN) {
-                log("recall:miss best=" + fmt(score) + " threshold=" + fmt(Recall.MIN))
-                return null
-            }
-            val body = tags.recentContents(best.id, MAX_RECALL_MESSAGES)
-                .take(MAX_RECALL_MESSAGES)
-                .map { it.take(EXCERPT) }
-                .joinToString("\n---\n")
-            if (body.isBlank()) {
-                log("recall:miss best=" + fmt(score) + " threshold=" + fmt(Recall.MIN))
-                return null
-            }
-            log("recall:hit tag=" + best.id + " score=" + fmt(score) + " len=" + body.length)
-            /*
-             * 加权命中的分数和裸余弦不是一回事：先按强度加权排序，
-             * 再用裸余弦判断"够不够像"（阈值只对语义相似有意义）。
-             */
+            val now = System.currentTimeMillis()
+            // 先按「余弦 × 强度加权」挑最值得想起来的，再用裸余弦判断够不够像
+            val best = snapshot.maxByOrNull { tag ->
+                cosineOf(query, tag.vector) * TagStrength.weight(TagStrength.current(tag, now))
+            } ?: return null
             val cosine = cosineOf(query, best.vector)
             if (cosine < Recall.MIN) {
                 log("recall:miss best=" + fmt(cosine) + " threshold=" + fmt(Recall.MIN))
                 return null
             }
-            val hit = Recall.select(
-                query = query,
-                tags = snapshot,
-                summaryOf = { null },
-                recentOf = { tagId -> tags.recentContents(tagId, MAX_RECALL_MESSAGES) },
-            ) ?: return null
 
-            val now = System.currentTimeMillis()
-            val boosted = TagStrength.boosted(best, now)
-            val depth = TagStrength.depthOf(boosted.strength)
-            persist(boosted, boosted.strength, depth, now)
+            val strength = TagStrength.current(best, now)
+            val depth = TagStrength.depthOf(strength)
+            if (depth == "archived") {
+                log("recall:miss reason=archived tag=" + best.id.take(8))
+                return null
+            }
+
+            val body = if (depth == "name_only") {
+                ""
+            } else {
+                tags.recentContents(best.id, MAX_RECALL_MESSAGES)
+                    .take(MAX_RECALL_MESSAGES)
+                    .map { it.take(EXCERPT) }
+                    .joinToString("\n---\n")
+            }
+            if (depth != "name_only" && body.isBlank()) {
+                log("recall:miss best=" + fmt(cosine) + " reason=empty")
+                return null
+            }
+
+            val hit = RecallHit(best.id, best.name, cosine, body, depth)
             log(
-                "mem:boost tag=" + best.id.take(8) + " from=" + fmt(best.strength) +
+                "recall:hit tag=" + best.id.take(8) + " score=" + fmt(cosine) +
+                    " depth=" + depth + " len=" + body.length
+            )
+
+            val boosted = TagStrength.boosted(best, now)
+            persist(boosted, boosted.strength, TagStrength.depthOf(boosted.strength), now)
+            log(
+                "mem:boost tag=" + best.id.take(8) + " from=" + fmt(strength) +
                     " to=" + fmt(boosted.strength) + " reason=recall"
             )
-            if (depth == "archived") log("mem:archive tag=" + best.id.take(8) + " strength=" + fmt(boosted.strength))
             lastHitTagId = hit.tagId
             Recall.formatBlock(hit)
         }.getOrElse { error ->

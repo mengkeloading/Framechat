@@ -85,7 +85,7 @@ class App : Application() {
 
             // 标签强度一览（DEBUG）：衰减是否在跑，看这几行就够
             CoroutineScope(Dispatchers.IO).launch {
-                runCatching { tagMemory.logTopTags() }
+                runCatching { container.tagMemory.logTopTags() }
             }
 
             // 描述撞车提醒：需要向量，放后台算，不拖启动
