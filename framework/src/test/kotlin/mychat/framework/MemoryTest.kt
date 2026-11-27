@@ -249,6 +249,21 @@ private fun feedbackTests() {
         )
     )
     check("feedback: 不对 = 否定", MemoryFeedback.isNegative("不对，这不是我要的"))
+
+    // 负反馈不看召回：入参里根本没有 recall 结果
+    val turns = listOf(TaggedTurn("user", "X"), TaggedTurn("assistant", "X"))
+    eq("feedback: 否定时返回上一轮标签", "X", MemoryFeedback.penaltyTargetOf("不对", turns))
+    eq("feedback: 非否定返回 null", null, MemoryFeedback.penaltyTargetOf("好的", turns))
+
+    // 时效：取的是「本轮 user 尚未加入」时的状态（列表以 assistant 结尾）
+    eq(
+        "feedback: 列表以 assistant 结尾时取它",
+        "Y",
+        MemoryFeedback.penaltyTargetOf(
+            "说错了",
+            listOf(TaggedTurn("user", "X"), TaggedTurn("assistant", "Y"))
+        )
+    )
     check("feedback: 好的 不是否定", !MemoryFeedback.isNegative("好的，谢谢"))
 }
 

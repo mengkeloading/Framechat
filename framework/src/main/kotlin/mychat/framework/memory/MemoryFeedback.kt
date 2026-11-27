@@ -22,6 +22,15 @@ object MemoryFeedback {
      * 为什么要退：老数据只给 assistant 打过标，新数据两个都打。只看 assistant
      * 会让历史会话的负反馈全部失效。
      */
+    /**
+     * 该扣哪个标签：输入是否定语气 → 上一轮的标签；否则 null。
+     *
+     * 注意入参里**没有 recall**：负反馈不依赖本轮召回是否命中。
+     * 早先它被写在召回分支里，结果"召回没命中"就等于"用户的不满没人听"。
+     */
+    fun penaltyTargetOf(text: String, messages: List<TaggedTurn>): String? =
+        if (isNegative(text)) prevTagIdOf(messages) else null
+
     fun prevTagIdOf(messages: List<TaggedTurn>): String? {
         val assistantIndex = messages.indexOfLast { it.role.equals("assistant", ignoreCase = true) }
         if (assistantIndex < 0) return null

@@ -1020,6 +1020,8 @@ class ChatViewModel(
                     model = model,
                 )
 
+                penalizeIfNegative(text)
+
                 // 本地短路：钩子 A 已经给了答案，不发任何请求
                 if (localReply != null) {
                     val text = localReply
@@ -1667,20 +1669,7 @@ class ChatViewModel(
             onPersisted()
 
             // 回复挂在**新的**这条下面
-            val prevTagId = mychat.framework.memory.MemoryFeedback.prevTagIdOf(
-                messages.map { mychat.framework.memory.TaggedTurn(it.role.name.lowercase(), it.tagId) }
-            )
-            val prevNegative = mychat.framework.memory.MemoryFeedback.isNegative(text)
-            // 用户否定的是**上一条回答**，所以扣的是那条消息所属的标签
-            if (prevNegative && prevTagId != null && tagMemory != null) {
-                viewModelScope.launch {
-                    tagMemory.penalize(
-                        prevTagId,
-                        mychat.framework.memory.TagStrength.PENALTY_USER_NEGATIVE,
-                        "user_negative"
-                    )
-                }
-            }
+            penalizeIfNegative(text)
             val replyId = repository.beginAssistantMessage(
                 conversationId = conversationId,
                 parentId = fresh.id,
@@ -1724,6 +1713,37 @@ class ChatViewModel(
     suspend fun clearDraft(key: String) = repository.clearDraft(key)
 
     /** Delete the selected message version, optionally including its sibling versions. */
+    /**
+     * 用户说"不对"时扣上一轮标签的强度。
+     *
+     * 独立于召回：召回没命中是关于"这一轮要不要带旧内容"，而用户的不满
+     * 是关于"上一轮答错了"，两件事不能互相取消。
+     */
+    private fun penalizeIfNegative(userText: String) {
+        val prevTagId = mychat.framework.memory.MemoryFeedback.penaltyTargetOf(
+            userText,
+            messages.map {
+                mychat.framework.memory.TaggedTurn(it.role.name.lowercase(), it.tagId)
+            }
+        )
+        if (BuildConfig.DEBUG) {
+            com.simplechat.app.hook.UsageLog.record(
+                "neg:check text=\"" + userText.take(10) + "\" matched=" +
+                    mychat.framework.memory.MemoryFeedback.isNegative(userText) +
+                    " prevTag=" + (prevTagId?.take(8) ?: "null")
+            )
+        }
+        if (prevTagId != null && tagMemory != null) {
+            viewModelScope.launch {
+                tagMemory.penalize(
+                    prevTagId,
+                    mychat.framework.memory.TagStrength.PENALTY_USER_NEGATIVE,
+                    "user_negative"
+                )
+            }
+        }
+    }
+
     fun deleteMessage(target: UiMessage, onReplacement: (String?) -> Unit = {}) {
         // tagId 必须在删除前拿到：删完这条就不在列表里了
         val tagId = target.tagId
