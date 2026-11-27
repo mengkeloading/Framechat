@@ -80,6 +80,7 @@ fun main() {
     noopEngineScenario(registry)
     partialMissingScenario(registry)
     cleanScenario(registry)
+    intentScenarioTests(registry)
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -119,8 +120,16 @@ private class Harness(
         log.record("routeInput=\"" + input + "\" len=" + input.length)
         log.record("sel=prefix:false route=" + selected + " reason=hit selected=" + selected)
 
+        val intent = mychat.framework.butler.KeywordButler().classify(input)
+        val skipRoute = intent == "chat" && selected.isEmpty()
+        log.record("intent=" + intent + " route=" + (if (skipRoute) "跳过" else "命中"))
+
         val session = HookSession(id = "e2e", activeHardModules = enabled)
-        val hookA = runner.input(session, input, selected = selected)
+        val hookA = runner.input(
+            session, input,
+            selected = if (skipRoute) emptySet() else selected,
+            intentText = mychat.framework.butler.PromptByIntent.textOf(intent)
+        )
         val hookText = hookA.text.ifEmpty { input }
 
         val hookExtra = (hookA as? HookAResult.Context)?.extra
@@ -224,7 +233,40 @@ private fun scenarioD(registry: ModuleRegistry) {
     eq("D: 只调一次模型", 1, h.llm.callCount)
     check("D: sel 行显示空集合", h.log.contains("sel=prefix:false route=[] reason=hit selected=[]"))
     eq("D: 回答原样透传", "你好呀", answer)
-    check("D: 没有注入日志", !h.log.contains("inject:len"))
+    // 闲聊现在只注入类型片段（不再是"什么都不注入"）
+    check("D: 只注入了类型片段", h.log.contains("inject:len"), h.log.lines.toString())
+}
+
+// ---------- 按类型注入 ----------
+
+private fun intentScenarioTests(registry: ModuleRegistry) {
+    // A. 闲聊：不路由，只注入类型片段
+    val h = harness(registry, "今天天气不错，适合出门")
+    val a = h.turn(listOf("skill_code"), emptySet(), "今天天气怎么样")
+    check("A: intent=chat 跳过路由", h.log.contains("intent=chat route=跳过"), h.log.lines.toString())
+    val lenA = h.log.lines.firstOrNull { it.startsWith("inject:len=") }
+        ?.removePrefix("inject:len=")?.toIntOrNull() ?: -1
+    check("A: 注入块小于 200 字", lenA in 1..199, "len=$lenA")
+    check("A: 正常回答", a.isNotEmpty(), a)
+
+    // B. 代码：类型片段 + 完整规范
+    val h2 = harness(registry, GOOD)
+    h2.turn(listOf("skill_code"), setOf("skill_code"), "这段代码有问题吗")
+    check("B: intent=code 命中路由", h2.log.contains("intent=code route=命中"), h2.log.lines.toString())
+    val lenB = h2.log.lines.firstOrNull { it.startsWith("inject:len=") }
+        ?.removePrefix("inject:len=")?.toIntOrNull() ?: -1
+    check("B: 注入块大于 900 字", lenB > 900, "len=$lenB")
+    check("B: 仍注入完整规范", h2.log.contains("【已加载技能】"))
+
+    // C. 前缀强制优先于类型判断
+    val runner = HookRunner(source = registry, executor = RhinoJsExecutor(registry))
+    val forced = runner.input(
+        session = HookSession(id = "s", activeHardModules = listOf("attach_context")),
+        text = "附加：用英文回答",
+        selected = emptySet(),
+        intentText = mychat.framework.butler.PromptByIntent.textOf("chat")
+    )
+    check("C: 前缀命中时仍执行", forced !is HookAResult.Pass, forced.toString())
 }
 
 // ---------- 部分缺失 ----------

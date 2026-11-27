@@ -10,6 +10,7 @@ import mychat.framework.core.StreamOutcome
 import mychat.framework.core.ToolRunner
 import mychat.framework.core.TurnResult
 import mychat.framework.hook.Attachment
+import mychat.framework.butler.PromptByIntent
 import mychat.framework.hook.AuditLog
 import mychat.framework.hook.ConstraintText
 import mychat.framework.hook.Caps
@@ -21,6 +22,7 @@ import mychat.framework.hook.FrontMatter
 import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
 import mychat.framework.hook.HookBResult
+import mychat.framework.hook.HookRunner
 import mychat.framework.hook.HookSession
 import mychat.framework.hook.HostBridge
 import mychat.framework.hook.HostBridgeFactory
@@ -68,6 +70,7 @@ fun main() {
     remediationTests()
     formatCheckMissingTests()
     constraintTests()
+    intentInjectionTests()
     manifestAuditTests()
     formatCheckTests()
     builderTests()
@@ -821,6 +824,47 @@ private fun guardTests() {
         emptyList<String>(),
         DescriptionCollision.check(listOf(plain, plain)) { _, _ -> 1f }
     )
+}
+
+// ---------- 类型片段注入 ----------
+
+private fun intentInjectionTests() {
+    val code = ModulePackage(
+        manifest = ModuleManifest("c", "代码审查", hooks = emptyList()),
+        body = "",
+        scripts = emptyMap(),
+        references = mapOf("SKILL.md" to "# 规范\n\n## 输出格式\n[必须改] x\n")
+    )
+    val registry = ModuleRegistry.of(listOf(code))
+    val runner = HookRunner(
+        source = registry,
+        executor = FakeExecutor { _, _, _ -> null }
+    )
+    val session = HookSession(id = "s", activeHardModules = listOf("c"))
+
+    // CHAT + 无选中 → 只有类型片段
+    val chatOnly = runner.input(
+        session, "今天天气怎么样", selected = emptySet(),
+        intentText = PromptByIntent.textOf("chat")
+    ) as HookAResult.Context
+    check("intent: 只有类型片段时也注入", chatOnly.extra.contains("【对话类型】"), chatOnly.extra)
+    check("intent: 不含技能块", !chatOnly.extra.contains("【已加载技能】"), chatOnly.extra)
+
+    // CODE + 选中 → 两段都有，且类型在前
+    val both = runner.input(
+        session, "这段代码有问题吗", selected = setOf("c"),
+        intentText = PromptByIntent.textOf("code")
+    ) as HookAResult.Context
+    check("intent: 类型 + 技能都在", both.extra.contains("【对话类型】") && both.extra.contains("【已加载技能】"), both.extra)
+    check(
+        "intent: 类型片段在技能块之前",
+        both.extra.indexOf("【对话类型】") < both.extra.indexOf("【已加载技能】"),
+        both.extra
+    )
+
+    // NoButler：intentText 为 null → 行为同现在
+    val plain = runner.input(session, "问一句", selected = setOf("c")) as HookAResult.Context
+    check("intent: 无类型时不加对话类型节", !plain.extra.contains("【对话类型】"), plain.extra)
 }
 
 // ---------- 约束枚举 ----------

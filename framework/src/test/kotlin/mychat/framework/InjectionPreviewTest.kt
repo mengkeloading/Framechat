@@ -62,13 +62,15 @@ private fun preview(
     println("========== INJECT $id ==========")
     println(block)
     println("========== LEN=${block.length} ==========")
+    val hasIntent = block.contains("【对话类型】")
     val hasForbid = block.contains("【禁止】")
     val hasRequire = block.contains("【要求】")
     val hasFormat = block.contains("## 输出格式")
-    println("========== 含【禁止】=$hasForbid 含【要求】=$hasRequire ==========")
+    println("========== 含【对话类型】=$hasIntent 含【禁止】=$hasForbid 含【要求】=$hasRequire ==========")
     println("========== 含「## 输出格式」=$hasFormat ==========")
 
     check("$id: 注入块非空", block.isNotBlank())
+    check("$id: 含【对话类型】", hasIntent)
     if (id == "skill_code") {
         fun sectionLines(title: String): List<String> {
             val start = block.indexOf(title)
@@ -109,15 +111,17 @@ private fun preview(
 }
 
 private fun blockOf(registry: ModuleRegistry, id: String): String {
-    val dispatcher = ModuleDispatcher(
+    // 走 HookRunner（而不是 dispatcher）：预览要还原 App 的真实拼装，含【对话类型】
+    val runner = mychat.framework.hook.HookRunner(
         source = registry,
-        executor = JsExecutor { _, _, _ -> null },
-        bridges = GatedHostBridge.factory(registry, AuditLog(), { null })
+        executor = JsExecutor { _, _, _ -> null }
     )
-    val result = dispatcher.dispatchInput(
+    val intent = if (id == "skill_code") "code" else "writing"
+    val result = runner.input(
         session = HookSession(id = "preview", activeHardModules = listOf(id)),
-        rawInput = "预览用输入",
-        selected = setOf(id)
+        text = "预览用输入",
+        selected = setOf(id),
+        intentText = mychat.framework.butler.PromptByIntent.textOf(intent)
     )
     return (result as? HookAResult.Context)?.extra.orEmpty()
 }

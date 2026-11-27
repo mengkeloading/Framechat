@@ -937,6 +937,10 @@ class ChatViewModel(
                             " reason=" + prepared.reason + " selected=" + selected
                         android.util.Log.d("MyChat/Sel", selLine)
                         com.simplechat.app.hook.UsageLog.record(selLine)
+                        val intentLine = "intent=" + (prepared.intent ?: "none") +
+                            " route=" + (if (prepared.skipRoute) "跳过" else "命中")
+                        android.util.Log.d("MyChat/Sel", intentLine)
+                        com.simplechat.app.hook.UsageLog.record(intentLine)
                     }
                     val hookText = if (prepared.normalize) {
                         hookRouter.normalize(text, stored.butlerId)?.also {
@@ -949,7 +953,9 @@ class ChatViewModel(
                         text
                     }
                     when (val hookA = hookRunner.input(
-                        hookSession, hookText, historyBase, selected = selected
+                        hookSession, hookText, historyBase,
+                        selected = selected,
+                        intentText = prepared.intentText,
                     )) {
                         is HookAResult.Local -> localReply = hookA.text
                         is HookAResult.Context -> {

@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.util.Log
 import mychat.framework.butler.ButlerManager
+import mychat.framework.butler.Intent
+import mychat.framework.butler.PromptByIntent
 import mychat.framework.embedding.ModuleSelector
 import mychat.framework.hook.ModuleSource
 import mychat.framework.hook.NeedResolver
@@ -35,12 +37,44 @@ class HookRouter(
         val routeModules: List<String> = emptyList(),
         /** 前缀命中（只用于日志；实际强制在 HookRunner 里做）。 */
         val prefixModule: String? = null,
+        /** 类型判定（chat/code/...）；null = 管家不判断。 */
+        val intent: String? = null,
+        /** 类型片段，注入到【对话类型】；null = 不加。 */
+        val intentText: String? = null,
+        /** 闲聊且没有前缀：不跑路由，只注入类型片段。 */
+        val skipRoute: Boolean = false,
     )
 
     suspend fun prepare(enabled: Set<String>, query: String, butlerId: String?): Prepared {
-        if (enabled.isEmpty()) return Prepared(emptySet(), false, "no_modules")
         val modules = source.all().filter { it.id in enabled }
-        if (modules.isEmpty()) return Prepared(emptySet(), false, "no_modules")
+        /*
+         * 先判类型：闲聊不该背上模块规范。
+         * 成本账：CHAT 只注入约 40 字片段、不注入模块 → 省 500~900 字；
+         * CODE/WRITING 多 40 字。净效果是闲聊省九成，专业场景多 5%。
+         */
+        val intent = withContext(Dispatchers.Default) {
+            runCatching { butlers.current(butlerId).classify(query) }.getOrNull()
+        }
+        val intentText = PromptByIntent.textOf(intent)
+        if (modules.isEmpty()) {
+            return Prepared(
+                emptySet(), false, "no_modules",
+                intent = intent, intentText = intentText
+            )
+        }
+        val prefix = PrefixRouter.resolve(query, modules)?.module
+        // 前缀是用户显式命令，永远优先于类型判断
+        if (intent == Intent.CHAT.id && prefix == null) {
+            return Prepared(
+                selected = emptySet(),
+                normalize = false,
+                reason = "chat_skip",
+                prefixModule = null,
+                intent = intent,
+                intentText = intentText,
+                skipRoute = true,
+            )
+        }
         return withContext(Dispatchers.Default) {
             val route = butlers.route(butlerId, query, modules)
             val selected = ModuleSelector.select(modules, route)
@@ -54,7 +88,9 @@ class HookRouter(
                 normalize = NeedResolver.needsNormalize(modules, selected),
                 reason = route.reason,
                 routeModules = route.modules,
-                prefixModule = PrefixRouter.resolve(query, modules)?.module
+                prefixModule = prefix,
+                intent = intent,
+                intentText = intentText,
             )
         }
     }

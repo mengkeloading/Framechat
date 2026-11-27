@@ -31,7 +31,15 @@ class KeywordButler : Butler {
         return RouteResult(listOf(best.key), "hit", scores)
     }
 
-    override fun classify(text: String): String? = null
+    override fun classify(text: String): String? {
+        val t = text.trim()
+        if (t.isEmpty()) return null
+        if (t.any { it.isDigit() } && CALC_WORDS.any { t.contains(it) }) return Intent.CALC.id
+        if (CODE_WORDS.any { t.contains(it) }) return Intent.CODE.id
+        if (WRITING_WORDS.any { t.contains(it) }) return Intent.WRITING.id
+        if (QUESTION_WORDS.any { t.contains(it) }) return Intent.QUESTION.id
+        return Intent.CHAT.id
+    }
 
     override fun normalize(text: String): String? = null
 
@@ -53,5 +61,14 @@ class KeywordButler : Butler {
     companion object {
         const val ID = "keyword"
         private val QUOTED = Regex("[\"“]([^\"”]{2,12})[\"”]")
+
+        private val CALC_WORDS = listOf("算", "换算", "等于", "多少")
+        private val CODE_WORDS = listOf("代码", "报错", "编译", "重构", "函数", "类")
+        private val WRITING_WORDS = listOf("写", "故事", "小说", "文案", "续写", "描写")
+        /*
+         * 「怎么」单列出来会误伤："今天天气怎么样" 是闲聊，不是要解释原理。
+         * 所以只认「怎么回事」这种真在问机制的说法，其余带「怎么」的交给 CHAT。
+         */
+        private val QUESTION_WORDS = listOf("是什么", "什么是", "为什么", "怎么回事", "原理", "区别")
     }
 }

@@ -2,9 +2,11 @@ package mychat.framework
 
 import mychat.framework.butler.Butler
 import mychat.framework.butler.ButlerManager
+import mychat.framework.butler.Intent
 import mychat.framework.butler.KeywordButler
-import mychat.framework.butler.ModuleMeta
 import mychat.framework.butler.NoButler
+import mychat.framework.butler.PromptByIntent
+import mychat.framework.butler.ModuleMeta
 import mychat.framework.butler.RouteResult
 import mychat.framework.butler.SemanticButler
 import mychat.framework.embedding.Candidate
@@ -56,6 +58,7 @@ private class MapEmbedder(
 
 fun main() {
     semanticTests()
+    intentTests()
     notReadyTests()
     keywordTests()
     noButlerTests()
@@ -109,9 +112,27 @@ private fun semanticTests() {
     eq("butler: 未知查询拿不到向量", "no_vector", butler.route("ghost", metas).reason)
     eq("butler: 空模块直接 empty", "empty", butler.route("q_story", emptyList()).reason)
 
-    eq("butler: classify 未实现", null, butler.classify("x"))
+    // classify 现在先走关键词规则；判不出特征词时给 chat（最保守的假设）
+    eq("butler: classify 关键词兜底为 chat", "chat", butler.classify("x"))
     eq("butler: normalize 未实现", null, butler.normalize("x"))
     eq("butler: judge 未实现", null, butler.judge("x", "y"))
+}
+
+// ---------- 类型判定 ----------
+
+private fun intentTests() {
+    val keyword = KeywordButler()
+
+    eq("intent: 算一下 12*37", "calc", keyword.classify("算一下 12*37"))
+    eq("intent: 代码有问题吗", "code", keyword.classify("这段代码有问题吗"))
+    eq("intent: 帮我写个故事", "writing", keyword.classify("帮我写个故事"))
+    eq("intent: 什么是协程", "question", keyword.classify("什么是协程"))
+    eq("intent: 今天天气怎么样", "chat", keyword.classify("今天天气怎么样"))
+
+    // 类型片段：五种都有，未知不给
+    check("intent: 五种片段齐全", Intent.entries.all { PromptByIntent.textOf(it.id) != null })
+    eq("intent: 未知类型不给片段", null, PromptByIntent.textOf("lua"))
+    eq("intent: 无管家不判断", null, NoButler().classify("这段代码有问题吗"))
 }
 
 // ---------- 模型未就绪 ----------

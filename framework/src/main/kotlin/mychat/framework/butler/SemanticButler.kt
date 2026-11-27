@@ -17,6 +17,8 @@ class SemanticButler(
     override val id: String = ID
     override val name: String = "语义路由"
 
+    private val keyword = KeywordButler()
+
     private class Cached(val text: String, val vector: FloatArray)
 
     private val cache = HashMap<String, Cached>()
@@ -38,7 +40,41 @@ class SemanticButler(
         return RouteResult(decision.modules, decision.reason, scores)
     }
 
-    override fun classify(text: String): String? = null
+    /**
+     * 先用关键词规则（快、准、可解释），没命中再比向量。
+     *
+     * 关键词那条**总会**给结论（最差也是 CHAT），所以这里的向量分支只在
+     * 关键词判成 CHAT 时才用得上 —— 那是"确实没看到任何特征词"的情况。
+     */
+    override fun classify(text: String): String? {
+        val keyword = keyword.classify(text) ?: return null
+        if (keyword != Intent.CHAT.id) return keyword
+        if (!embedder.ready) return keyword
+        val queryVector = embedder.embedQuery(text) ?: return keyword
+        var best: Intent? = null
+        var bestScore = INTENT_MIN_SCORE
+        for (intent in Intent.entries) {
+            val desc = INTENT_DESCRIPTIONS[intent] ?: continue
+            val vector = intentVector(intent, desc) ?: continue
+            val score = mychat.framework.embedding.Vectors.cosine(queryVector, vector)
+            if (score > bestScore) {
+                bestScore = score
+                best = intent
+            }
+        }
+        return best?.id ?: keyword
+    }
+
+    private class IntentCached(val desc: String, val vector: FloatArray)
+
+    private val intentVectors = HashMap<Intent, IntentCached>()
+
+    private fun intentVector(intent: Intent, desc: String): FloatArray? {
+        intentVectors[intent]?.let { if (it.desc == desc) return it.vector }
+        val vector = embedder.embedPassage(desc) ?: return null
+        intentVectors[intent] = IntentCached(desc, vector)
+        return vector
+    }
 
     override fun normalize(text: String): String? = null
 
@@ -61,5 +97,16 @@ class SemanticButler(
 
     companion object {
         const val ID = "semantic"
+
+        /** 向量判类型的门槛：低于它宁可保留关键词的结论。 */
+        const val INTENT_MIN_SCORE = 0.45f
+
+        private val INTENT_DESCRIPTIONS = mapOf(
+            Intent.CHAT to "闲聊、寒暄、天气、日常问候",
+            Intent.CODE to "代码审查、报错排查、重构、函数与类的问题",
+            Intent.WRITING to "写故事、写小说、写文案、续写、场景描写",
+            Intent.CALC to "数学计算、单位换算、数值求解",
+            Intent.QUESTION to "知识问答、概念解释、原理与区别",
+        )
     }
 }

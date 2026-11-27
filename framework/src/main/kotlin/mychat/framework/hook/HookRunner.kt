@@ -44,8 +44,13 @@ class HookRunner(
         attachments: List<Attachment> = emptyList(),
         /** 调用方（路由）算出的选中集合；前缀强制时会覆盖它。 */
         selected: Set<String> = emptySet(),
+        /** 类型片段（【对话类型】）；空则不加。 */
+        intentText: String? = null,
     ): HookAResult {
-        if (session.activeHardModules.isEmpty()) return HookAResult.Pass(text)
+        // 没有启用任何模块也要给类型片段：闲聊唯一拿到的就是它
+        if (session.activeHardModules.isEmpty()) {
+            return withIntent(HookAResult.Pass(text), text, intentText)
+        }
 
         /*
          * 前缀强制：启用范围内的模块若声明了 `prefix`，输入以「词：」开头就直接用它，
@@ -81,7 +86,28 @@ class HookRunner(
             }
             traceLog += dispatcher.traces
         }
-        return result
+        return withIntent(result, text, intentText)
+    }
+
+    /**
+     * 把类型片段插到最前面。
+     *
+     * 顺序是刻意的：先定调（这段是什么类型的对话），再给规范（这个领域怎么做）。
+     * 反过来模型会先被规范带偏，把闲聊也答成分级清单。
+     */
+    private fun withIntent(result: HookAResult, text: String, intentText: String?): HookAResult {
+        if (intentText.isNullOrBlank()) return result
+        val block = "【对话类型】\n" + intentText
+        return when (result) {
+            is HookAResult.Local -> result
+            is HookAResult.Pass -> HookAResult.Context(text, block)
+            is HookAResult.Context ->
+                if (result.extra.isBlank()) {
+                    HookAResult.Context(result.text, block)
+                } else {
+                    HookAResult.Context(result.text, block + "\n\n" + result.extra)
+                }
+        }
     }
 
     fun output(
