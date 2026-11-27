@@ -228,8 +228,8 @@ private fun recallAssemblyTests() {
 
 private fun feedbackTests() {
     eq(
-        "feedback: 取最后一条 assistant 的标签",
-        "X",
+        "feedback: 没有 assistant 标签时返回 null",
+        null,
         MemoryFeedback.prevTagIdOf(
             listOf(TaggedTurn("user", "X"), TaggedTurn("assistant", null))
         )
@@ -241,31 +241,65 @@ private fun feedbackTests() {
             listOf(TaggedTurn("user", null), TaggedTurn("assistant", null))
         )
     )
-    // 语义写死：取**最后一条** assistant（多条时用户刚看到的是最近那条）
-    eq(
-        "feedback: 多条 assistant 取最近的一条",
-        "Y",
-        MemoryFeedback.prevTagIdOf(
-            listOf(TaggedTurn("user", "X"), TaggedTurn("assistant", "Y"))
-        )
-    )
     check("feedback: 不对 = 否定", MemoryFeedback.isNegative("不对，这不是我要的"))
+    check("feedback: 好的 不是否定", !MemoryFeedback.isNegative("好的，谢谢"))
 
-    // 负反馈不看召回：入参里根本没有 recall 结果
-    val turns = listOf(TaggedTurn("user", "X"), TaggedTurn("assistant", "X"))
-    eq("feedback: 否定时返回上一轮标签", "X", MemoryFeedback.penaltyTargetOf("不对", turns))
-    eq("feedback: 非否定返回 null", null, MemoryFeedback.penaltyTargetOf("好的", turns))
-
-    // 时效：取的是「本轮 user 尚未加入」时的状态（列表以 assistant 结尾）
+    // 本轮的空回答已在列表里（tagId=null）：必须越过它，取上一轮的
+    val withPlaceholder = listOf(
+        TaggedTurn("user", "T1", "u1"),
+        TaggedTurn("assistant", "T1", "a1"),
+        TaggedTurn("user", null, "u2"),
+        TaggedTurn("assistant", null, "a2"),
+    )
     eq(
-        "feedback: 列表以 assistant 结尾时取它",
-        "Y",
-        MemoryFeedback.penaltyTargetOf(
-            "说错了",
-            listOf(TaggedTurn("user", "X"), TaggedTurn("assistant", "Y"))
+        "feedback: 越过本轮空回答取上一轮",
+        "T1",
+        MemoryFeedback.prevTagIdOf(withPlaceholder, currentUserId = "u2")
+    )
+    eq(
+        "feedback: 同场景负反馈扣的是上一轮",
+        "T1",
+        MemoryFeedback.penaltyTargetOf("不对，我说的不是这个", withPlaceholder, "u2")
+    )
+
+    // 前面已经有两轮，各带不同标签 → 取最近的一条
+    val twoTagged = listOf(
+        TaggedTurn("user", "T1", "u1"),
+        TaggedTurn("assistant", "T1", "a1"),
+        TaggedTurn("user", null, "u2"),
+        TaggedTurn("assistant", "T2", "a2"),
+        TaggedTurn("user", null, "u3"),
+    )
+    eq(
+        "feedback: 取最近一条带标签的",
+        "T2",
+        MemoryFeedback.prevTagIdOf(twoTagged, currentUserId = "u3")
+    )
+
+    // 前面没有 assistant → 不扣
+    eq(
+        "feedback: 第一条消息不扣",
+        null,
+        MemoryFeedback.prevTagIdOf(
+            listOf(TaggedTurn("user", null, "u1"), TaggedTurn("assistant", null, "a1")),
+            currentUserId = "u1"
         )
     )
-    check("feedback: 好的 不是否定", !MemoryFeedback.isNegative("好的，谢谢"))
+
+    // 连续两次否定：第二次仍指向同一个标签（空回答不带标签，不会把目标往前挪）
+    val secondRound = listOf(
+        TaggedTurn("user", "T1", "u1"),
+        TaggedTurn("assistant", "T1", "a1"),
+        TaggedTurn("user", null, "u2"),
+        TaggedTurn("assistant", null, "a2"),
+        TaggedTurn("user", null, "u3"),
+        TaggedTurn("assistant", null, "a3"),
+    )
+    eq(
+        "feedback: 连续否定仍指向同一标签",
+        "T1",
+        MemoryFeedback.penaltyTargetOf("不对", secondRound, "u3")
+    )
 }
 
 // ---------- 打标后同步内存 ----------

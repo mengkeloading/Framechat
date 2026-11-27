@@ -994,6 +994,8 @@ class ChatViewModel(
                 currentConversationTitle = repository.findConversation(conversationId)?.title
                 if (generation != switchGeneration || conversationId != currentConversationId) return@launch
                 messages += user
+                // 用户否定的是本轮**之前**那条回答；本轮的空回复还没建，不会误取
+                penalizeIfNegative(text, user.id)
 
                 // 回复挂在**刚发的这条**下面
                 val assistantId = repository.beginAssistantMessage(
@@ -1019,8 +1021,6 @@ class ChatViewModel(
                      */
                     model = model,
                 )
-
-                penalizeIfNegative(text)
 
                 // 本地短路：钩子 A 已经给了答案，不发任何请求
                 if (localReply != null) {
@@ -1676,7 +1676,7 @@ class ChatViewModel(
             onPersisted()
 
             // 回复挂在**新的**这条下面
-            penalizeIfNegative(text)
+            penalizeIfNegative(text, target.id)
             val replyId = repository.beginAssistantMessage(
                 conversationId = conversationId,
                 parentId = fresh.id,
@@ -1726,7 +1726,7 @@ class ChatViewModel(
      * 独立于召回：召回没命中是关于"这一轮要不要带旧内容"，而用户的不满
      * 是关于"上一轮答错了"，两件事不能互相取消。
      */
-    private fun penalizeIfNegative(userText: String) {
+    private fun penalizeIfNegative(userText: String, currentUserId: String) {
         if (BuildConfig.DEBUG) {
             val lastAssistant = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
             com.simplechat.app.hook.UsageLog.record(
@@ -1739,8 +1739,9 @@ class ChatViewModel(
         val prevTagId = mychat.framework.memory.MemoryFeedback.penaltyTargetOf(
             userText,
             messages.map {
-                mychat.framework.memory.TaggedTurn(it.role.name.lowercase(), it.tagId)
-            }
+                mychat.framework.memory.TaggedTurn(it.role.name.lowercase(), it.tagId, it.id)
+            },
+            currentUserId = currentUserId,
         )
         if (BuildConfig.DEBUG) {
             com.simplechat.app.hook.UsageLog.record(
