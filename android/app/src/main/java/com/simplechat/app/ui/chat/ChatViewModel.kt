@@ -2977,7 +2977,15 @@ class ChatViewModel(
                 conversationId == currentConversationId &&
                 stored.memoryEnabled && tagMemory != null
             ) {
-                withContext(NonCancellable) { memoryTurn?.tag(replyId, userMessageId) }
+                val tagId = withContext(NonCancellable) { memoryTurn?.tag(replyId, userMessageId) }
+                /*
+                 * 打标只写了库，内存里那两条还是 null —— 下一轮的负反馈要靠
+                 * prevTagIdOf(messages) 取值，不同步就永远是 null。
+                 */
+                if (tagId != null) {
+                    patch(replyId) { it.copy(tagId = tagId) }
+                    userMessageId?.let { uid -> patch(uid) { it.copy(tagId = tagId) } }
+                }
             }
 
             if (BuildConfig.DEBUG) {

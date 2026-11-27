@@ -55,6 +55,7 @@ fun main() {
     recallRoleTests()
     recallAssemblyTests()
     feedbackTests()
+    tagSyncTests()
     gateTests()
 
     println()
@@ -265,6 +266,33 @@ private fun feedbackTests() {
         )
     )
     check("feedback: 好的 不是否定", !MemoryFeedback.isNegative("好的，谢谢"))
+}
+
+// ---------- 打标后同步内存 ----------
+
+/**
+ * 打标返回的 id 必须能进入"内存消息列表"，否则下一轮 prevTagIdOf 永远是 null。
+ * 这里模拟 ViewModel 的 patch：把 tagId 写到消息上，再问"上一轮是谁"。
+ */
+private fun tagSyncTests() {
+    var prev = TaggedTurn("user", null)
+    var reply = TaggedTurn("assistant", null)
+    eq("sync: 打标前取不到", null, MemoryFeedback.prevTagIdOf(listOf(prev, reply)))
+
+    // tag() 返回 id 后分别写回两条消息
+    val tagId = "3b222009"
+    prev = prev.copy(tagId = tagId)
+    reply = reply.copy(tagId = tagId)
+
+    eq("sync: 打标后回复带 tagId", tagId, reply.tagId)
+    eq("sync: 打标后用户消息带 tagId", tagId, prev.tagId)
+    eq("sync: 下一轮取得到上一条的 tagId", tagId, MemoryFeedback.prevTagIdOf(listOf(prev, reply)))
+
+    eq(
+        "sync: 否定时扣的就是这个标签",
+        tagId,
+        MemoryFeedback.penaltyTargetOf("不对", listOf(prev, reply))
+    )
 }
 
 // ---------- 强度 ----------

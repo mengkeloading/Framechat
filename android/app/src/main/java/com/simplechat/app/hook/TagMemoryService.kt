@@ -104,13 +104,15 @@ class TagMemoryService(
         }
 
         /** 打标：与检索用同一份快照，新建的标签本轮不参与召回。 */
-        suspend fun tag(messageId: String, userMessageId: String? = null) {
-            runCatching {
+        /** @return 打上的标签 id；没打上（模糊/超限/出错）返回 null。 */
+        suspend fun tag(messageId: String, userMessageId: String? = null): String? {
+            return runCatching {
                 when (val decision = Tagger.decide(query, snapshot, text)) {
                     is TagDecision.Assign -> {
                         tags.setMessageTag(messageId, decision.tagId)
                         userMessageId?.let { tags.setMessageTag(it, decision.tagId) }
                         log("tag:assign id=" + decision.tagId + " score=" + fmt(decision.score))
+                        decision.tagId
                     }
                     is TagDecision.Create -> {
                         val id = UUID.randomUUID().toString()
@@ -128,19 +130,22 @@ class TagMemoryService(
                                 " total=" + (snapshot.size + 1) +
                                 (decision.reason?.let { " reason=" + it } ?: "")
                         )
+                        id
                     }
                     is TagDecision.Skip -> {
                         tags.setMessageTag(messageId, null)
                         log("tag:skip score=" + fmt(decision.score) + " reason=" + decision.reason)
+                        null
                     }
                     is TagDecision.LimitReached -> {
                         tags.setMessageTag(messageId, null)
                         log("tag:limit_reached total=" + snapshot.size)
+                        null
                     }
                 }
             }.onFailure { error ->
                 log("tag:error " + error.javaClass.simpleName)
-            }
+            }.getOrNull()
         }
     }
 
