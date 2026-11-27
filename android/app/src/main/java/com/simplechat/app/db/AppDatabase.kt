@@ -17,6 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DraftEntity::class,
         AttachmentRefEntity::class,
         TagEntity::class,
+        TagSummaryEntity::class,
     ],
     // v2：messages 从「槽位」改成「树」（slotIndex → parentId）
     // v3：messages 增加 attachments（图片 / 纯文本附件）
