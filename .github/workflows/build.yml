@@ -56,6 +56,12 @@ jobs:
         working-directory: framework
         run: MYCHAT_JDK="$JAVA_HOME" sh build.sh
 
+      # Robolectric 单元测试：内存 ↔ Room 这一层（不需要模拟器）
+      - name: 单元测试（Robolectric）
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --tests "com.simplechat.app.data.TagMemoryFlowTest"             --stacktrace --no-daemon
+
       - name: assembleDebug
         run: |
           chmod +x gradlew
