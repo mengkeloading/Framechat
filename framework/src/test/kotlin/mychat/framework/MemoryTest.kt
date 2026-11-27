@@ -356,13 +356,9 @@ private fun strengthTests() {
     repeat(10) { many = TagStrength.boosted(many, now) }
     eq("strength: 封顶 3.0", TagStrength.MAX, many.strength)
 
-    // 5. 30 天不读：0.02 * 30 = 0.6
+    // 5. 30 天不读：指数衰减，τ = 7 + 10*2.0 = 27 → 2.0 * e^(-30/27) ≈ 0.659
     val stale = fresh.copy(strength = 2.0f, lastDecayAt = now - 30 * DAY)
-    check(
-        "strength: 30 天衰减到 1.4",
-        kotlin.math.abs(TagStrength.current(stale, now) - 1.4f) < 0.01f,
-        TagStrength.current(stale, now).toString()
-    )
+    near("strength: 30 天按指数衰减", 0.659f, TagStrength.current(stale, now))
 
     // 6. readCount 高衰减更慢
     val cold = fresh.copy(strength = 2.0f, readCount = 0, lastDecayAt = now - 30 * DAY)
@@ -438,11 +434,12 @@ private fun penaltyTests() {
     eq("penalty: 惩罚后 lastDecayAt=now", now, written.lastDecayAt)
 
     /*
-     * 起点被重置：惩罚后 30 天掉 0.6；若没重置会掉 1.2。
+     * 起点被重置：惩罚后 30 天按 τ=22 衰减到 1.5 * e^(-30/22) ≈ 0.384；
+     * 若没重置（起点早 30 天）会掉到 1.5 * e^(-60/22) ≈ 0.098。
      */
     val later30 = now + 30 * DAY
     val decayed30 = TagStrength.current(written, later30)
-    near("penalty: 30 天后只掉 0.6", 0.9f, decayed30)
+    near("penalty: 30 天后按 τ=22 衰减", 0.384f, decayed30)
 
     val notReset = TagStrength.current(written.copy(lastDecayAt = now - 30 * DAY), later30)
     check(

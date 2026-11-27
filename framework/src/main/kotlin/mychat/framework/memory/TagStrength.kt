@@ -1,5 +1,7 @@
 package mychat.framework.memory
 
+import mychat.framework.memory.compress.Decay
+
 /**
  * 记忆强度：惰性衰减 + 命中的奖励 + 负反馈的惩罚。
  *
@@ -16,28 +18,21 @@ object TagStrength {
     const val PENALTY_JUDGE = 0.2f
     const val PENALTY_DELETE = 0.3f
 
-    /** 每天衰减的基准速率。 */
-    private const val DAILY_RATE = 0.02f
-
     /** 低于它就归档，不再参与召回。 */
     const val ARCHIVE_BELOW = 0.1f
 
     /** 召回加权时的参考强度：1.5 以上不再加分。 */
     private const val FULL_WEIGHT_AT = 1.5f
 
-    private const val DAY_MS = 86_400_000L
-
     /**
      * 当前强度（含衰减）。
      *
-     * 读得越多衰减越慢：`1 + readCount*0.2` —— 一个被反复回想的话题，
-     * 该比三年没碰过的更牢固。
+     * 公式在 [mychat.framework.memory.compress.Decay]：指数衰减，τ 随强度与
+     * 使用次数增长。这里只负责"上次衰减到现在"的时间锚点。
      */
     fun current(tag: TagRecord, now: Long): Float {
         val anchor = if (tag.lastDecayAt > 0) tag.lastDecayAt else now
-        val days = (now - anchor).coerceAtLeast(0L) / DAY_MS.toFloat()
-        val rate = DAILY_RATE / (1f + tag.readCount * 0.2f)
-        return (tag.strength - rate * days).coerceAtLeast(0f)
+        return Decay.strengthAt(tag.strength, anchor, now, tag.readCount)
     }
 
     /** 召回加权：强度不到 1.5 时按比例打折，避免弱记忆抢走强记忆的位置。 */

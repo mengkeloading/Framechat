@@ -12,6 +12,8 @@ import mychat.framework.core.TurnResult
 import mychat.framework.hook.Attachment
 import mychat.framework.butler.PromptByIntent
 import mychat.framework.log.AppendLog
+import mychat.framework.memory.compress.Decay
+import mychat.framework.memory.compress.LevelPolicy
 import mychat.framework.hook.AuditLog
 import mychat.framework.hook.ConstraintText
 import mychat.framework.hook.Caps
@@ -76,6 +78,7 @@ fun main() {
     intentInjectionTests()
     outputJudgeTests()
     appendLogTests()
+    compressTests()
     manifestAuditTests()
     formatCheckTests()
     builderTests()
@@ -829,6 +832,59 @@ private fun guardTests() {
         emptyList<String>(),
         DescriptionCollision.check(listOf(plain, plain)) { _, _ -> 1f }
     )
+}
+
+// ---------- 指数衰减与层策略 ----------
+
+private fun compressTests() {
+    val day = 86_400_000L
+    val t0 = 1_700_000_000_000L
+
+    // 1. 同一时刻不变
+    eq("decay: 0 天不变", 1.0f, Decay.strengthAt(1.0f, t0, t0, 0))
+    eq("decay: 时钟回拨不变", 1.0f, Decay.strengthAt(1.0f, t0 + day, t0, 0))
+
+    // 2. strength=1.0, readCount=0, 30 天 → e^(-30/17) ≈ 0.171
+    val thirty = Decay.strengthAt(1.0f, t0, t0 + 30 * day, 0)
+    check("decay: 30 天剩约 0.171", kotlin.math.abs(thirty - 0.171f) < 0.02f, thirty.toString())
+
+    // 3. 同样 30 天，强标签（τ=37）比弱标签（τ=17）掉得慢
+    val strong = Decay.strengthAt(3.0f, t0, t0 + 30 * day, 0)
+    val weak = Decay.strengthAt(1.0f, t0, t0 + 30 * day, 0)
+    check("decay: 强度高的掉得慢", strong / 3.0f > weak / 1.0f, "strong=$strong weak=$weak")
+
+    // 4. 同样 30 天、strength=1.0：readCount=10（τ=47）比 0（τ=17）掉得慢
+    val used = Decay.strengthAt(1.0f, t0, t0 + 30 * day, 10)
+    check("decay: 常用的掉得慢", used > weak, "used=$used weak=$weak")
+
+    // 5. 巩固窗口：新建 1 小时不压
+    eq(
+        "level: 48 小时内不压",
+        null,
+        LevelPolicy.goalLevel(0.1f, 0, createdAt = t0, lastCompressedAt = t0, now = t0 + 3_600_000L)
+    )
+
+    // 6. 强度 0.15、已到 L3、60 天未压 → L4
+    eq(
+        "level: 极弱 60 天压到 L4",
+        4,
+        LevelPolicy.goalLevel(0.15f, 3, t0 - 100 * day, t0, t0 + 60 * day)
+    )
+
+    // 7. 强度 1.0、已到 L1、8 天未压 → L2
+    eq(
+        "level: 中等 8 天压到 L2",
+        2,
+        LevelPolicy.goalLevel(1.0f, 1, t0 - 100 * day, t0, t0 + 8 * day)
+    )
+
+    // 8. displayLevel 的边界
+    eq("level: 1.5 → L1", 1, LevelPolicy.displayLevel(1.5f))
+    eq("level: 1.499 → L2", 2, LevelPolicy.displayLevel(1.499f))
+    eq("level: 0.5 → L2", 2, LevelPolicy.displayLevel(0.5f))
+    eq("level: 0.499 → L3", 3, LevelPolicy.displayLevel(0.499f))
+    eq("level: 0.2 → L3", 3, LevelPolicy.displayLevel(0.2f))
+    eq("level: 0.199 → L4", 4, LevelPolicy.displayLevel(0.199f))
 }
 
 // ---------- 日志：一次安装、多次追加 ----------
