@@ -56,7 +56,8 @@ object ReferenceInliner {
             }
             items += Item(name = path.substringAfterLast('/'), size = text.length, text = text)
         }
-        log("refs:scan skill=$skillId found=${items.size}")
+        // found = 扫到几个路径；success = 其中真的读到了几个
+        log("refs:scan skill=$skillId found=${paths.size} success=${items.size}")
         if (items.isEmpty()) return skillBody
 
         // 先按大小定初始档位

@@ -1231,7 +1231,11 @@ private fun referenceTests() {
     )
     eq("refs: 缺失文件不改正文", "见 reference/gone.md", r6)
     check("refs: 缺失有日志", logs.contains("refs:missing path=reference/gone.md"), logs.joinToString())
-    check("refs: 扫描日志带 id", logs.contains("refs:scan skill=skill_code found=0"), logs.joinToString())
+    check(
+        "refs: 扫描日志带 found/success",
+        logs.contains("refs:scan skill=skill_code found=1 success=0"),
+        logs.joinToString()
+    )
 }
 
 // ---------- 路由日志 ----------
