@@ -194,6 +194,17 @@ private fun penaltyTests() {
 
     val floor = TagStrength.penalized(good.copy(strength = 0.2f), now, 0.5f)
     eq("penalty: 不低于 0", 0f, floor.strength)
+
+    // 删除消息：1.5 → 1.2；0.2 → 0（不是 -0.1）
+    val deleted = TagStrength.penalized(
+        good.copy(strength = 1.5f, lastDecayAt = now), now, TagStrength.PENALTY_DELETE
+    )
+    near("penalty: 删除消息 1.5 → 1.2", 1.2f, deleted.strength)
+
+    val small = TagStrength.penalized(
+        good.copy(strength = 0.2f, lastDecayAt = now), now, TagStrength.PENALTY_DELETE
+    )
+    eq("penalty: 0.2 删除后是 0 不是负数", 0f, small.strength)
 }
 
 /** 强度 × 召回 × 归档的组装。 */

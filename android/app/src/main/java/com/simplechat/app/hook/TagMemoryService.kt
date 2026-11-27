@@ -196,6 +196,18 @@ class TagMemoryService(
         }.onFailure { error -> log("mem:error " + error.javaClass.simpleName) }
     }
 
+    /**
+     * 按 id 直接扣分：删除消息这类场景没有 Turn（不在某一次发送里）。
+     * 失败只记日志 —— 记忆坏了不该让删除失败。
+     */
+    suspend fun penalize(tagId: String?, amount: Float, reason: String) {
+        if (tagId == null) return
+        runCatching {
+            tags.penalizeTag(tagId, amount)
+            log("mem:penalty tag=" + tagId.take(8) + " amount=" + fmt(amount) + " reason=" + reason)
+        }.onFailure { error -> log("mem:error " + error.javaClass.simpleName) }
+    }
+
     /** 用当前强度与深度把一句标签落库。 */
     private suspend fun persist(tag: TagRecord, strength: Float, depth: String, now: Long) {
         tags.updateStrength(

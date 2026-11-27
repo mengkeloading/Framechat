@@ -62,6 +62,10 @@ interface TagDao {
         now: Long,
     )
 
+    /** 扣强度：SQL 里 MAX(0, …) 保证不会变负。 */
+    @Query("UPDATE tags SET strength = MAX(0, strength - :amount) WHERE id = :id")
+    suspend fun penalizeTag(id: String, amount: Float)
+
     @Query("SELECT * FROM tags ORDER BY strength DESC LIMIT :limit")
     suspend fun top(limit: Int): List<TagEntity>
 

@@ -222,6 +222,8 @@ data class UiMessage(
     val content: String,
     /** 补救前的原回答；null = 没补救过。折叠显示在正文下方。 */
     val originalContent: String? = null,
+    /** 话题标签 id；null = 没打上。 */
+    val tagId: String? = null,
     /** 附件（图片 / 纯文本文件）。见 [com.simplechat.app.data.Attachment]。 */
     val attachments: List<com.simplechat.app.data.Attachment> = emptyList(),
     val reasoning: String? = null,

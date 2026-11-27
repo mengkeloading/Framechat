@@ -1700,9 +1700,16 @@ class ChatViewModel(
 
     /** Delete the selected message version, optionally including its sibling versions. */
     fun deleteMessage(target: UiMessage, onReplacement: (String?) -> Unit = {}) {
+        // tagId 必须在删除前拿到：删完这条就不在列表里了
+        val tagId = target.tagId
         mutateMessageHistory(setOf(target.id), onReplacement = onReplacement) { conversationId ->
             repository.deleteMessageVersions(conversationId, setOf(target.id))
             null
+        }
+        if (tagId != null && tagMemory != null) {
+            viewModelScope.launch {
+                tagMemory.penalize(tagId, DELETE_PENALTY, "message_deleted")
+            }
         }
     }
 
@@ -3554,6 +3561,9 @@ class ChatViewModel(
 
         /** 用户否定信号：命中就扣该标签的强度。 */
         private val NEGATIVE_WORDS = listOf("不对", "错了", "不是这样")
+
+        /** 删除一条属于某标签的消息 → 那个话题的记忆变淡。 */
+        private const val DELETE_PENALTY = 0.3f
 
         fun factory(
             chatApi: ChatApi,
