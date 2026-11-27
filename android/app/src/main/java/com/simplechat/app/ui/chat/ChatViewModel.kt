@@ -1115,6 +1115,13 @@ class ChatViewModel(
         val generation = switchGeneration
         val path = repository.loadActivePath(conversationId)
         if (conversationId != currentConversationId || generation != switchGeneration) return
+        if (BuildConfig.DEBUG) {
+            com.simplechat.app.hook.UsageLog.record(
+                "reload:trigger size=" + messages.size +
+                    " keptTagIds=" + messages.count { it.tagId != null } +
+                    " fromDbTagIds=" + path.count { it.tagId != null }
+            )
+        }
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
             beforePublish()
             messages.clear()
@@ -1724,7 +1731,9 @@ class ChatViewModel(
             val lastAssistant = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
             com.simplechat.app.hook.UsageLog.record(
                 "neg:input size=" + messages.size +
-                    " lastAsst=" + (lastAssistant?.let { it.id + ":" + it.tagId } ?: "null")
+                    " lastAsst=" + (lastAssistant?.let { it.id + ":" + it.tagId } ?: "null") +
+                    " lastWithTag=" + (messages.lastOrNull { it.tagId != null }
+                    ?.let { it.id + ":" + it.tagId } ?: "null")
             )
         }
         val prevTagId = mychat.framework.memory.MemoryFeedback.penaltyTargetOf(
@@ -2994,17 +3003,13 @@ class ChatViewModel(
                     userMessageId?.let { uid -> patch(uid) { it.copy(tagId = tagId) } }
                 }
                 if (BuildConfig.DEBUG) {
-                    com.simplechat.app.hook.UsageLog.record(
-                        "tag:sync replyId=" + replyId +
-                            " inList=" + messages.any { it.id == replyId } +
-                            " tagId=" + messages.firstOrNull { it.id == replyId }?.tagId
-                    )
-                    com.simplechat.app.hook.UsageLog.record(
-                        "tag:sync userMessageId=" + userMessageId +
-                            " inList=" + (userMessageId != null &&
-                            messages.any { it.id == userMessageId }) +
-                            " tagId=" + messages.firstOrNull { it.id == userMessageId }?.tagId
-                    )
+                    listOfNotNull(replyId, userMessageId).forEach { id ->
+                        com.simplechat.app.hook.UsageLog.record(
+                            "tag:sync id=" + id +
+                                " inList=" + messages.any { it.id == id } +
+                                " tagId=" + messages.firstOrNull { it.id == id }?.tagId
+                        )
+                    }
                 }
             }
 
