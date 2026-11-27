@@ -1051,6 +1051,8 @@
     <string name="theme_text_switch_to_light">切换至浅色预览</string>
     <string name="theme_text_switch_to_dark">切换至深色预览</string>
     <string name="theme_text_color_value">当前预览文字色</string>
+    <string name="remediation_original_show">补救前的回答（点击展开）</string>
+    <string name="remediation_original_hide">收起补救前的回答</string>
 </resources>
 
 

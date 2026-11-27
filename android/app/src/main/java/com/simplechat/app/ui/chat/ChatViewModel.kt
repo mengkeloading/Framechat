@@ -2845,6 +2845,7 @@ class ChatViewModel(
             patch(replyId) {
                 it.copy(
                     content = finalAnswer,
+                    originalContent = remediedAnswer?.let { finalText },
                     reasoning = finalReasoning.ifEmpty { null },
                     status = status,
                     errorMessage = failure,
@@ -2873,6 +2874,7 @@ class ChatViewModel(
                         repository.finishMessage(
                             id = replyId,
                             content = finalAnswer,
+                            originalContent = remediedAnswer?.let { finalText },
                             reasoning = finalReasoning,
                             status = status,
                             errorMessage = failure,

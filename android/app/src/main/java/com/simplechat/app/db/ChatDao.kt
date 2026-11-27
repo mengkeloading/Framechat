@@ -427,7 +427,8 @@ interface MessageDao {
         SET content = :content, reasoning = :reasoning, status = :status, errorMessage = :error,
             ttftMs = :ttftMs, tps = :tps, thinkingMs = :thinkingMs,
             timeline = :timeline, stopReason = :stopReason, imageRequest = COALESCE(:directImageRequest, imageRequest),
-            tokens_in = :tokensIn, tokens_out = :tokensOut, tokens_cache_hit = :cacheHitTokens
+            tokens_in = :tokensIn, tokens_out = :tokensOut, tokens_cache_hit = :cacheHitTokens,
+            originalContent = COALESCE(:originalContent, originalContent)
         WHERE id = :id
         """,
     )
@@ -446,6 +447,7 @@ interface MessageDao {
         tokensOut: Int?,
         cacheHitTokens: Int?,
         directImageRequest: String? = null,
+        originalContent: String? = null,
     )
 
     /**

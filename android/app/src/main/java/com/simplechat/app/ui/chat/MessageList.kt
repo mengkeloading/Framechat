@@ -31,6 +31,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1096,6 +1097,33 @@ fun AssistantBlock(
                         MarkdownWithMath(content = answer, streaming = message.streaming)
                     }
                 }
+            }
+        }
+
+        /*
+         * 补救过就把原回答折叠在下面，默认收起。
+         * 直接替换会让人以为"回答突然变了"——原样保留才有对照。
+         */
+        val originalAnswer = message.originalContent
+        if (!originalAnswer.isNullOrBlank()) {
+            var showOriginal by remember(message.id) { mutableStateOf(false) }
+            Spacer(Modifier.size(8.dp))
+            Text(
+                text = stringResource(
+                    if (showOriginal) R.string.remediation_original_hide
+                    else R.string.remediation_original_show
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = LocalChatColors.current.processText,
+                modifier = Modifier.clickable { showOriginal = !showOriginal },
+            )
+            AnimatedVisibility(visible = showOriginal) {
+                Text(
+                    text = originalAnswer,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
 

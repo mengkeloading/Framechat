@@ -148,6 +148,13 @@ data class MessageEntity(
     val attachments: String? = null,
     /** reasoning_content，仅本地展示，构造请求时不回传（§11.1）。 */
     val reasoning: String? = null,
+    /**
+     * 补救前的原始回答。
+     *
+     * 补救会重写整段正文，界面上"突然变了"像眼花 —— 原回答留在这里，
+     * 折叠显示在补救结果下方。null = 没补救过。
+     */
+    val originalContent: String? = null,
     /** DONE | STREAMING | STOPPED | ERROR */
     val status: String = "DONE",
     val errorMessage: String? = null,

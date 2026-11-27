@@ -44,6 +44,7 @@ fun MessageEntity.toUi(): UiMessage = UiMessage(
     id = id,
     role = if (role == "user") MessageRole.USER else MessageRole.ASSISTANT,
     content = content,
+    originalContent = originalContent,
     attachments = Attachments.decode(attachments),
     reasoning = reasoning,
     reasoningSeconds = thinkingMs?.let { it / 1000 },
