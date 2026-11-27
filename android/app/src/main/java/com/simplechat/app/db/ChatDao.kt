@@ -364,6 +364,13 @@ interface MessageDao {
     ): List<MemoryMessage>
 
     /** 按 id 批量取整条消息（活跃路径上的那些）。 */
+    /** 某个标签下参与压缩的消息，按时间升序（压缩要按发生顺序读）。 */
+    @Query(
+        "SELECT * FROM messages WHERE tagId = :tagId AND isDeletedNode = 0 " +
+            "ORDER BY createdAt ASC"
+    )
+    suspend fun byTagId(tagId: String): List<MessageEntity>
+
     @Query("SELECT * FROM messages WHERE id IN (:ids)")
     suspend fun getByIds(ids: List<String>): List<MessageEntity>
 

@@ -46,6 +46,9 @@ interface TagSummaryDao {
     @Query("SELECT * FROM tag_summaries WHERE tagId = :tagId AND level = :level LIMIT 1")
     suspend fun at(tagId: String, level: Int): TagSummaryEntity?
 
+    @Query("DELETE FROM tag_summaries WHERE tagId = :tagId AND level = :level")
+    suspend fun deleteAt(tagId: String, level: Int)
+
     @Query("DELETE FROM tag_summaries WHERE tagId = :tagId")
     suspend fun deleteAllOf(tagId: String)
 }
