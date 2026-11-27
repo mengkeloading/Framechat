@@ -25,6 +25,7 @@ import com.simplechat.app.net.ChatApi
 import com.simplechat.app.net.SseClient
 import com.simplechat.app.net.anthropic.AnthropicApi
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,10 +78,18 @@ class App : Application() {
                 "version=" + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")"
             )
             com.simplechat.app.hook.UsageLog.record(
-                "model=" + container.settingsStore.settings.value.model.id +
-                    " modules=" + modules.registry.all().size +
+                "modules=" + modules.registry.all().size +
                     " problems=" + modules.problems.size
             )
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    val stored = container.settingsStore.flow.first()
+                    com.simplechat.app.hook.UsageLog.record(
+                        "model=" + stored.model.id + " butler=" + stored.butlerId +
+                            " memory=" + stored.memoryEnabled
+                    )
+                }
+            }
 
             // 启动时把各模块声明的格式标记写进日志：没有 marks= 行就是没解析到
             modules.registry.all()
