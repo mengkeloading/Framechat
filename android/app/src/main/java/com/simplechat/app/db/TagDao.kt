@@ -28,6 +28,13 @@ data class TagEntity(
     val lastDecayAt: Long = 0,
     /** name_only / summary / full / archived，由 strength 推出，落库只为查询。 */
     val depth: String = "summary",
+    /** 当前层级最浓缩的那份摘要。 */
+    val summary: String? = null,
+    /** 被用户否定的次数；只增不减。 */
+    val negativeCount: Int = 0,
+    /** 0 = 还没压过（内容是原文），1..4 = 已压到第几层，见 TagSummaryEntity。 */
+    val currentLevel: Int = 0,
+    val lastCompressedAt: Long = 0,
 ) {
     override fun equals(other: Any?): Boolean =
         this === other || (other is TagEntity && id == other.id && name == other.name)
@@ -75,6 +82,12 @@ interface TagDao {
     /** 一批消息各自属于哪些标签（去重后的非空 tagId）。 */
     @Query("SELECT DISTINCT tagId FROM messages WHERE id IN (:ids) AND tagId IS NOT NULL")
     suspend fun tagIdsOf(ids: List<String>): List<String>
+
+    @Query("UPDATE tags SET summary = :summary, currentLevel = :level, lastCompressedAt = :now WHERE id = :id")
+    suspend fun setCompressed(id: String, summary: String, level: Int, now: Long)
+
+    @Query("SELECT * FROM tags WHERE currentLevel < 4")
+    suspend fun allCompressible(): List<TagEntity>
 
     @Query("SELECT * FROM tags ORDER BY strength DESC LIMIT :limit")
     suspend fun top(limit: Int): List<TagEntity>

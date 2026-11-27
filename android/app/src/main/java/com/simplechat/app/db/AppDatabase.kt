@@ -27,7 +27,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // v8：新增 attachment_refs（落盘图片的引用，删会话时据此清理文件）
     // v9：附件可被多个会话引用（分叉后删除原会话不能丢图）
     // v10：消息记录 prompt 缓存命中量（用量与余额页按命中/未命中分别计价）
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -47,6 +47,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun attachmentRefDao(): AttachmentRefDao
 
     abstract fun tagDao(): TagDao
+
+    abstract fun tagSummaryDao(): TagSummaryDao
 
     companion object {
 
@@ -201,6 +203,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS tag_summaries (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        tagId TEXT NOT NULL,
+                        level INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        sourceRefs TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tag_summaries_tagId ON tag_summaries(tagId)")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_tag_summaries_tagId_level " +
+                        "ON tag_summaries(tagId, level)"
+                )
+                db.execSQL("ALTER TABLE tags ADD COLUMN summary TEXT")
+                db.execSQL("ALTER TABLE tags ADD COLUMN negativeCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE tags ADD COLUMN currentLevel INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE tags ADD COLUMN lastCompressedAt INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_18_19 = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -285,6 +313,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .build()
     }

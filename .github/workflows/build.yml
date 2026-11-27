@@ -60,7 +60,7 @@ jobs:
       - name: 单元测试（Robolectric）
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest --tests "com.simplechat.app.db.TagMemoryFlowTest" --stacktrace --no-daemon
+          ./gradlew testDebugUnitTest --tests "com.simplechat.app.db.*" --stacktrace --no-daemon
 
       - name: assembleDebug
         run: |
