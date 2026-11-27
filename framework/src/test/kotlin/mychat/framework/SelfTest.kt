@@ -18,6 +18,7 @@ import mychat.framework.memory.consolidate.ConsolidateSettings
 import mychat.framework.memory.consolidate.ConsolidationSource
 import mychat.framework.memory.consolidate.DefaultConsolidator
 import mychat.framework.debug.DebugCommands
+import mychat.framework.hook.ReferenceInliner
 import mychat.framework.memory.TagNaming
 import mychat.framework.memory.compress.DefaultCompressor
 import mychat.framework.memory.compress.Decay
@@ -90,6 +91,7 @@ fun main() {
     consolidateTests()
     debugCommandTests()
     routeLogTests()
+    referenceTests()
     tagNamingTests()
     promptTests()
     manifestAuditTests()
@@ -1165,6 +1167,71 @@ private fun promptTests() {
         DefaultCompressor.buildPrompt("x", 40, 3).contains("不超过 40 字"),
         DefaultCompressor.buildPrompt("x", 40, 3)
     )
+}
+
+// ---------- references 按需加载 ----------
+
+private fun referenceTests() {
+    val logs = mutableListOf<String>()
+
+    // 1. 没有引用 → 正文原样
+    val plain = "只有正文，没有附件。"
+    eq(
+        "refs: 无引用不变",
+        plain,
+        ReferenceInliner.render(plain, { null }, log = { logs += it })
+    )
+    check("refs: 无引用不打 inline 日志", !logs.any { it.contains("refs:inline") })
+
+    // 2. 小文件（300 字）→ 全文
+    val small = "小文件正文".repeat(60) // 300 字
+    val body2 = "看 reference/small.md"
+    val r2 = ReferenceInliner.render(body2, { if (it.endsWith("small.md")) small else null })
+    check("refs: 小文件给全文", r2.contains(small), r2.length.toString())
+    check("refs: 小文件标 full", r2.contains("【附件：small.md】"), r2)
+
+    // 3. 中文件（1000 字）→ 前 200 字 + 共 N 字
+    val mid = "中".repeat(1000)
+    val r3 = ReferenceInliner.render("见 references/mid.md", { if (it.endsWith("mid.md")) mid else null })
+    check("refs: 中文件给前 200 字", r3.contains("中".repeat(200)), r3.length.toString())
+    check("refs: 中文件标字数", r3.contains("（共 1000 字）"), r3)
+    check("refs: 中文件提示可索取", r3.contains("需要完整内容请说明"), r3)
+
+    // 4. 大文件（3000 字）→ 只有目录项
+    val big = "第一行标题\n" + "大".repeat(2995)
+    val r4 = ReferenceInliner.render("见 reference/big.md", { if (it.endsWith("big.md")) big else null })
+    check("refs: 大文件只留首行", r4.contains("首行：第一行标题"), r4)
+    check("refs: 大文件不塞正文", !r4.contains("大大大"), r4.length.toString())
+
+    // 5. 超出预算 → 大的先降级
+    val a = "甲".repeat(400)
+    val b = "乙".repeat(480)
+    val logs5 = mutableListOf<String>()
+    val r5 = ReferenceInliner.render(
+        "见 reference/a.md 与 reference/b.md",
+        { path -> when { path.endsWith("a.md") -> a; path.endsWith("b.md") -> b; else -> null } },
+        log = { logs5 += it },
+        // 只够放下 a 的全文 + b 的摘要：b 更大，先降它
+        budget = 700,
+    )
+    check(
+        "refs: 超预算时大的先降级",
+        logs5.any { it.contains("file=b.md") && it.contains("mode=summary") } &&
+            logs5.any { it.contains("file=a.md") && it.contains("mode=full") },
+        logs5.joinToString(" | ")
+    )
+
+    // 6. 文件不存在 → 跳过 + 日志
+    logs.clear()
+    val r6 = ReferenceInliner.render(
+        "见 reference/gone.md",
+        { null },
+        skillId = "skill_code",
+        log = { logs += it },
+    )
+    eq("refs: 缺失文件不改正文", "见 reference/gone.md", r6)
+    check("refs: 缺失有日志", logs.contains("refs:missing path=reference/gone.md"), logs.joinToString())
+    check("refs: 扫描日志带 id", logs.contains("refs:scan skill=skill_code found=0"), logs.joinToString())
 }
 
 // ---------- 路由日志 ----------

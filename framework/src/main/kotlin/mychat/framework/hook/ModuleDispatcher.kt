@@ -130,16 +130,35 @@ class ModuleDispatcher(
             }
             // 注入的是「知识正文」，不含 SKILL.md 的 front matter（name/keywords 是给工具看的）
             val body = FrontMatter.parse(content)?.body?.takeIf { it.isNotEmpty() } ?: content
+            // 正文里提到的 reference/*.md 按大小分档附上，总共不超过预算
+            val extra = ReferenceInliner.render(
+                skillBody = body,
+                lookup = { path -> resolveReference(pkg, path) },
+                skillId = id,
+                log = { line -> onDebug?.invoke(line) },
+            )
             blocks += SkillBlock(
                 id = id,
                 name = pkg.manifest.name,
                 description = pkg.manifest.description,
-                extra = body,
+                extra = extra,
                 forbids = expandedForbids(pkg),
                 requires = expandedRequires(pkg)
             )
             trace("hookA", id, "skill_injected")
         }
+    }
+
+    /**
+     * SKILL.md 里写的是 `reference/x.md` 或 `references/x.md`，而模块树里的 key
+     * 是相对 reference 目录的（`x.md`）。两种前缀与纯文件名都试一遍，
+     * 作者按习惯怎么写都能读到。
+     */
+    private fun resolveReference(pkg: ModulePackage, path: String): String? {
+        pkg.reference(path)?.let { return it }
+        val stripped = path.removePrefix("references/").removePrefix("reference/")
+        pkg.reference(stripped)?.let { return it }
+        return pkg.reference(path.substringAfterLast('/'))
     }
 
     /**
