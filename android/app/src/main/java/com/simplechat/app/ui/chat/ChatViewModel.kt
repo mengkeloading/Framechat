@@ -911,6 +911,7 @@ class ChatViewModel(
                 pendingHookAText = null
                 pendingSelected = emptySet()
                 var localReply: String? = null
+                var memoryTurn: com.simplechat.app.hook.TagMemoryService.Turn? = null
                 if (stored.enabledModules.isNotEmpty()) {
                     val hookSession = HookSession(
                         id = conversationId,
@@ -954,7 +955,7 @@ class ChatViewModel(
                         text
                     }
                     // 本轮的记忆快照：检索与打标共用，本轮新建的标签不参与本轮召回
-                    val memoryTurn = if (stored.memoryEnabled) tagMemory?.begin(text) else null
+                    memoryTurn = if (stored.memoryEnabled) tagMemory?.begin(text) else null
                     val memoryBlock = memoryTurn?.recallBlock()
                     when (val hookA = hookRunner.input(
                         hookSession, hookText, historyBase,
