@@ -56,10 +56,10 @@ object EmbedProbe {
             embedder.close()
         }
 
-        val name = "embed-" + EmbedLog.stamp() + ".log"
         runCatching { EmbedLog.prune(context, "embed-") }
-        val path = EmbedLog.append(context, lines, name)
-        Log.d(TAG, "written -> $path")
+        val sink = EmbedLog.openSession(context, "embed-")
+        sink.append(lines.joinToString("") { "[${EmbedLog.timeStamp()}] $it\n" })
+        Log.d(TAG, "written -> Download/mychat/embed-*.log")
         lines.forEach { Log.d(TAG, it) }
     }
 

@@ -11,6 +11,7 @@ import mychat.framework.core.ToolRunner
 import mychat.framework.core.TurnResult
 import mychat.framework.hook.Attachment
 import mychat.framework.butler.PromptByIntent
+import mychat.framework.log.AppendLog
 import mychat.framework.hook.AuditLog
 import mychat.framework.hook.ConstraintText
 import mychat.framework.hook.Caps
@@ -74,6 +75,7 @@ fun main() {
     constraintTests()
     intentInjectionTests()
     outputJudgeTests()
+    appendLogTests()
     manifestAuditTests()
     formatCheckTests()
     builderTests()
@@ -827,6 +829,42 @@ private fun guardTests() {
         emptyList<String>(),
         DescriptionCollision.check(listOf(plain, plain)) { _, _ -> 1f }
     )
+}
+
+// ---------- 日志：一次安装、多次追加 ----------
+
+private fun appendLogTests() {
+    var creates = 0
+    val log = AppendLog {
+        creates++
+        mychat.framework.log.LogSink { }
+    }
+
+    // 安装两次只建一个落点
+    log.install()
+    log.install()
+    eq("log: 安装两次只创建一次", 1, creates)
+
+    // 装之前写：丢弃，不崩
+    var freshCreates = 0
+    val fresh = AppendLog {
+        freshCreates++
+        mychat.framework.log.LogSink { }
+    }
+    eq("log: 未安装时写入返回 false", false, fresh.record("x"))
+    eq("log: 未安装时不创建落点", 0, freshCreates)
+
+    // 连续 100 条 → 100 行，仍只有一个落点
+    val bulk = mutableListOf<String>()
+    var bulkCreates = 0
+    val bulkLog = AppendLog {
+        bulkCreates++
+        mychat.framework.log.LogSink { bulk += it }
+    }
+    bulkLog.install()
+    repeat(100) { bulkLog.record("line " + it) }
+    eq("log: 100 条只建一个落点", 1, bulkCreates)
+    eq("log: 100 条正好 100 行", 100, bulk.size)
 }
 
 // ---------- 输出质检 ----------

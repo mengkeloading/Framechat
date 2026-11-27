@@ -2161,7 +2161,7 @@ class ChatViewModel(
                     delay(STREAM_THROTTLE_MS)
                     if (dirty) {
                         refreshBuffered()
-                        patch(replyId) { it.copy(reasoning = reasoningText.ifEmpty { null }, content = contentText, timeline = timeline) }
+                        patch(replyId, streaming = true) { it.copy(reasoning = reasoningText.ifEmpty { null }, content = contentText, timeline = timeline) }
                         dirty = false
                         needsCheckpoint = true
                     }
@@ -2257,7 +2257,7 @@ class ChatViewModel(
                                 accumulator?.seed(accumulator.blocks.filterNot { it is ReplyBlock.Text })
                                 contentBuf.clear()
                                 refreshBuffered()
-                                patch(replyId) { it.copy(content = contentText, timeline = timeline) }
+                                patch(replyId, streaming = true) { it.copy(content = contentText, timeline = timeline) }
                                 try {
                                     generateTurnImage(turnImageRequest(invocation.prompt, edit))
                                     AgentToolOutcome.success("Image generated and attached to this reply by SimpleChat. No image pixels were sent to the chat model.")
@@ -2383,7 +2383,7 @@ class ChatViewModel(
                     reasoningStartedAt = null
                     reasoningEndedAt = null
                     refreshBuffered()
-                    patch(replyId) { it.copy(content = contentText, reasoning = reasoningText.ifEmpty { null }, timeline = timeline) }
+                    patch(replyId, streaming = true) { it.copy(content = contentText, reasoning = reasoningText.ifEmpty { null }, timeline = timeline) }
                     dirty = true
                 }
                 fun resolveSearchAnswerFailure() {
@@ -3277,12 +3277,17 @@ class ChatViewModel(
         }
     }
 
-    private inline fun patch(id: String, transform: (UiMessage) -> UiMessage) {
+    private inline fun patch(
+        id: String,
+        streaming: Boolean = false,
+        transform: (UiMessage) -> UiMessage,
+    ) {
         val index = messages.indexOfLast { it.id == id }
         if (index < 0) return
         val before = messages[index]
         val after = transform(before)
-        if (BuildConfig.DEBUG && after.content != before.content) {
+        // 流式每一帧都在改内容，逐帧记日志只会把文件写爆
+        if (BuildConfig.DEBUG && !streaming && after.content != before.content) {
             val caller = Throwable().stackTrace
                 .firstOrNull { it.className.endsWith("ChatViewModel") && it.methodName != "patch" }
                 ?.methodName ?: "?"
