@@ -1663,7 +1663,7 @@ class ChatViewModel(
             )
 
             reloadPath(conversationId)
-            startStream(conversationId, replyId)
+            startStream(conversationId, replyId, memoryTurn = memoryTurn)
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -1986,6 +1986,7 @@ class ChatViewModel(
         replyId: String,
         prefix: UiMessage? = null,
         omitAttachmentsAndTools: Boolean = false,
+        memoryTurn: com.simplechat.app.hook.TagMemoryService.Turn? = null,
     ) {
         if (conversationId != currentConversationId) return
         retrySkipNotice = if (omitAttachmentsAndTools && stored.showRetrySkipNotice) Res.get(R.string.retry_skipped_notice) else null
