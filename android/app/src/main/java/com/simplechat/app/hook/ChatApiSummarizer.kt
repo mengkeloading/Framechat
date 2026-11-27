@@ -13,8 +13,9 @@ import mychat.framework.memory.compress.Summarizer
  * OkHttp / SseClient / AnthropicApi 的具体类，测试里没法替换。
  */
 class ChatApiSummarizer(
-    private val stream: suspend (String) -> Flow<StreamEvent>,
+    // stream 放最后，调用方才能用尾随 lambda：ChatApiSummarizer { prompt -> … }
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    private val stream: suspend (String) -> Flow<StreamEvent>,
 ) : Summarizer {
 
     override suspend fun summarize(prompt: String): String? = withTimeoutOrNull(timeoutMs) {
