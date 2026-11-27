@@ -53,6 +53,14 @@ class TagMemoryFlowTest {
     }
 
     private suspend fun seedMessages(userId: String, replyId: String) {
+        // messages.conversationId 有外键（ON DELETE CASCADE），会话得先存在
+        db.conversationDao().upsert(
+            ConversationEntity(
+                id = "c1", title = "测试会话", mode = "CREATIVE",
+                provider = "DEEPSEEK", model = "deepseek-flash",
+                createdAt = 0L, updatedAt = 0L,
+            )
+        )
         db.messageDao().upsert(
             MessageEntity(
                 id = userId, conversationId = "c1", parentId = "root", variantIndex = 0,
