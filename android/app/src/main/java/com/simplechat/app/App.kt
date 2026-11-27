@@ -85,7 +85,7 @@ class App : Application() {
                 runCatching {
                     val stored = container.settingsStore.flow.first()
                     com.simplechat.app.hook.UsageLog.record(
-                        "model=" + stored.model.id + " butler=" + stored.butlerId +
+                        "model=" + stored.modelId + " butler=" + stored.butlerId +
                             " memory=" + stored.memoryEnabled
                     )
                 }
