@@ -16,6 +16,9 @@ interface Consolidator {
 
     /** 无条件执行一次（手动触发 / 测试） */
     suspend fun runNow(): ConsolidateReport
+
+    /** 忽略 12 小时窗口与 48 小时巩固窗口与压缩间隔，把到期的一次压完 */
+    suspend fun runNowIgnoringWindow(): ConsolidateReport
 }
 
 data class ConsolidateReport(
@@ -24,6 +27,8 @@ data class ConsolidateReport(
     val skipped: Int,
     val failed: Int,
     val durationMs: Long,
+    /** true = 触到单次上限，还有没处理的标签 */
+    val capped: Boolean = false,
 )
 
 /** 整理需要知道的标签快照（强度是**落库值**，衰减在这里算）。 */
@@ -54,6 +59,7 @@ class DefaultConsolidator(
     private val settings: ConsolidateSettings,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val intervalMs: Long = DEFAULT_INTERVAL_MS,
+    private val maxPerRun: Int = DEFAULT_MAX_PER_RUN,
     private val log: (String) -> Unit = {},
 ) : Consolidator {
 
@@ -69,7 +75,11 @@ class DefaultConsolidator(
         return report
     }
 
-    override suspend fun runNow(): ConsolidateReport {
+    override suspend fun runNow(): ConsolidateReport = execute(force = false)
+
+    override suspend fun runNowIgnoringWindow(): ConsolidateReport = execute(force = true)
+
+    private suspend fun execute(force: Boolean): ConsolidateReport {
         val start = clock()
         var scanned = 0
         var compressed = 0
@@ -81,6 +91,7 @@ class DefaultConsolidator(
             return ConsolidateReport(0, 0, 0, 0, clock() - start)
         }
 
+        var capped = false
         for (tag in tags) {
             scanned++
             val strength = Decay.strengthAt(
@@ -95,25 +106,43 @@ class DefaultConsolidator(
                 createdAt = tag.createdAt,
                 lastCompressedAt = tag.lastCompressedAt,
                 now = start,
+                force = force,
+                ignoreInterval = force,
             )
             if (goal == null) {
                 skipped++
                 continue
+            }
+            // 配额只数"真的要压的"：前几个都不该压，不该用掉配额
+            if (compressed + failed >= maxPerRun) {
+                capped = true
+                break
             }
             // 单个失败不影响其他标签
             val ok = runCatching { compressor.compress(tag.id, goal) }.getOrElse { false }
             if (ok) compressed++ else failed++
         }
 
-        val report = ConsolidateReport(scanned, compressed, skipped, failed, clock() - start)
+        val report = ConsolidateReport(
+            scanned = scanned,
+            compressed = compressed,
+            skipped = skipped,
+            failed = failed,
+            durationMs = clock() - start,
+            capped = capped,
+        )
         log(
             "consolidate:done scanned=${report.scanned} compressed=${report.compressed} " +
-                "skipped=${report.skipped} failed=${report.failed} ms=${report.durationMs}"
+                "skipped=${report.skipped} failed=${report.failed} " +
+                "capped=${report.capped} ms=${report.durationMs}"
         )
         return report
     }
 
     companion object {
         const val DEFAULT_INTERVAL_MS = 12 * 3_600_000L
+
+        /** 单次整理最多压几个：一次调模型太多会很慢，也会把内存预算吃满。 */
+        const val DEFAULT_MAX_PER_RUN = 5
     }
 }

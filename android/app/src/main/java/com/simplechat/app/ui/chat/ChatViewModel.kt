@@ -122,6 +122,7 @@ class ChatViewModel(
     private val hookRunner: HookRunner,
     private val hookRouter: HookRouter,
     private val tagMemory: com.simplechat.app.hook.TagMemoryService? = null,
+    private val consolidator: mychat.framework.memory.consolidate.Consolidator? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -871,6 +872,11 @@ class ChatViewModel(
          * `model` 字段一旦为空，服务端只会回一句看不懂的 400。在这里拦下来
          * 并直接说"去哪儿选"。
          */
+        if (mychat.framework.debug.DebugCommands.isCompressCommand(text, BuildConfig.DEBUG)) {
+            runDebugCompress()
+            return
+        }
+
         if (stored.modelId.isBlank()) {
             banner = Res.get(R.string.error_no_model)
             return
@@ -1720,6 +1726,37 @@ class ChatViewModel(
     suspend fun clearDraft(key: String) = repository.clearDraft(key)
 
     /** Delete the selected message version, optionally including its sibling versions. */
+    /** DEBUG 命令：立刻强制整理一次记忆，把结果当一条回复贴出来。 */
+    private fun runDebugCompress() {
+        val c = consolidator
+        val conversationId = currentConversationId
+        if (c == null || conversationId == null) {
+            banner = "没有可用的整理器"
+            return
+        }
+        viewModelScope.launch {
+            val report = runCatching { c.runNowIgnoringWindow() }.getOrElse {
+                banner = "整理失败：" + it.javaClass.simpleName
+                return@launch
+            }
+            val text = "压缩完成：扫描 " + report.scanned + "，压缩 " + report.compressed +
+                "，跳过 " + report.skipped + "，失败 " + report.failed +
+                (if (report.capped) "（已达单次上限）" else "")
+            val replyId = repository.beginAssistantMessage(
+                conversationId = conversationId,
+                parentId = messages.lastOrNull()?.id ?: "root",
+                model = settings.model.id,
+            )
+            repository.finishMessage(
+                id = replyId,
+                content = text,
+                reasoning = null,
+                status = MessageStatus.DONE,
+            )
+            reloadPath(conversationId)
+        }
+    }
+
     /**
      * 用户说"不对"时扣上一轮标签的强度。
      *
@@ -3660,12 +3697,13 @@ class ChatViewModel(
             hookRunner: HookRunner,
             hookRouter: HookRouter,
             tagMemory: com.simplechat.app.hook.TagMemoryService? = null,
+            consolidator: mychat.framework.memory.consolidate.Consolidator? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
                 ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
-                    hookRunner, hookRouter, tagMemory, state
+                    hookRunner, hookRouter, tagMemory, consolidator, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

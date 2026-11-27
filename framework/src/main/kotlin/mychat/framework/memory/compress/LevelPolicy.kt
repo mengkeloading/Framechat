@@ -32,16 +32,22 @@ object LevelPolicy {
      * 间隔从 `lastCompressedAt` 算而不是 `createdAt`：压过一次之后重新计时，
      * 否则一个半年前建的标签会每一轮都被判定为"该压"。
      */
+    /**
+     * @param force 跳过 48 小时巩固窗口（手动触发用）
+     * @param ignoreInterval 连 7/14/30 天的间隔也不要（完全强制）
+     */
     fun goalLevel(
         strength: Float,
         currentLevel: Int,
         createdAt: Long,
         lastCompressedAt: Long,
         now: Long,
+        force: Boolean = false,
+        ignoreInterval: Boolean = false,
     ): Int? {
-        if (now - createdAt < CONSOLIDATION_MS) return null
+        if (!force && now - createdAt < CONSOLIDATION_MS) return null
 
-        val days = (now - lastCompressedAt) / DAY_MS
+        val days = if (ignoreInterval) Double.MAX_VALUE else (now - lastCompressedAt) / DAY_MS
         return when {
             strength < 0.2f && currentLevel < 4 && days > 30 -> 4
             strength < 0.5f && currentLevel < 3 && days > 14 -> 3

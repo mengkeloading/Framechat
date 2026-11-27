@@ -17,6 +17,7 @@ import mychat.framework.memory.consolidate.CompressibleTag
 import mychat.framework.memory.consolidate.ConsolidateSettings
 import mychat.framework.memory.consolidate.ConsolidationSource
 import mychat.framework.memory.consolidate.DefaultConsolidator
+import mychat.framework.debug.DebugCommands
 import mychat.framework.memory.compress.Decay
 import mychat.framework.memory.compress.LevelPolicy
 import mychat.framework.hook.AuditLog
@@ -85,6 +86,7 @@ fun main() {
     appendLogTests()
     compressTests()
     consolidateTests()
+    debugCommandTests()
     manifestAuditTests()
     formatCheckTests()
     builderTests()
@@ -899,6 +901,33 @@ private fun compressTests() {
     eq("archive: 0.09 不归档", "name_only", mychat.framework.memory.TagStrength.depthOf(0.09f))
     eq("archive: 0.07 归档", "archived", mychat.framework.memory.TagStrength.depthOf(0.07f))
 
+    // 8a-1. force：新建 1 小时也能压（跳过巩固窗口）
+    eq(
+        "level: force 跳过巩固窗口",
+        2,
+        LevelPolicy.goalLevel(
+            1.0f, 1, createdAt = t0, lastCompressedAt = t0 - 8 * day, now = t0 + 3_600_000L,
+            force = true,
+        )
+    )
+    // 8a-2. ignoreInterval：刚压过的也能重压
+    eq(
+        "level: ignoreInterval 忽略间隔",
+        2,
+        LevelPolicy.goalLevel(
+            1.0f, 1, createdAt = t0 - 100 * day, lastCompressedAt = t0, now = t0,
+            force = true, ignoreInterval = true,
+        )
+    )
+    // 8a-3. 不加 force 时，新建 1 小时仍然不压
+    eq(
+        "level: 默认仍有巩固窗口",
+        null,
+        LevelPolicy.goalLevel(
+            1.0f, 1, createdAt = t0, lastCompressedAt = t0 - 8 * day, now = t0 + 3_600_000L
+        )
+    )
+
     // 8. displayLevel 的边界
     eq("level: 1.5 → L1", 1, LevelPolicy.displayLevel(1.5f))
     eq("level: 1.499 → L2", 2, LevelPolicy.displayLevel(1.499f))
@@ -981,6 +1010,57 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     eq("consolidate: 失败计数", 1, partial.failed)
     eq("consolidate: 成功计数", 1, partial.compressed)
 
+    // 9. 单次上限：10 个到期标签，只压 5 个，capped=true
+    settings = FakeSettings(0)
+    logs.clear()
+    val many = (1..10).map { compressible.copy(id = "m$it") }
+    val cappedReport = DefaultConsolidator(
+        source = FakeTags(many),
+        compressor = FakeCompressor(),
+        settings = settings,
+        clock = { now },
+        maxPerRun = 5,
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: 上限 5", 5, cappedReport.compressed)
+    eq("consolidate: capped=true", true, cappedReport.capped)
+
+    // 10. 3 个到期标签，上限 5 → 全压，capped=false
+    val three = (1..3).map { compressible.copy(id = "n$it") }
+    val uncapped = DefaultConsolidator(
+        source = FakeTags(three),
+        compressor = FakeCompressor(),
+        settings = settings,
+        clock = { now },
+        maxPerRun = 5,
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: 未触顶", false, uncapped.capped)
+
+    // 11. 抛异常的 compressor：failed+1，循环继续
+    val throwing = object : Compressor {
+        val seen = mutableListOf<String>()
+        override suspend fun compress(tagId: String, toLevel: Int): Boolean {
+            seen += tagId
+            if (tagId == "x1") error("boom")
+            return true
+        }
+    }
+    val mixed2 = listOf(
+        compressible.copy(id = "x1"),
+        compressible.copy(id = "x2"),
+    )
+    val survived = DefaultConsolidator(
+        source = FakeTags(mixed2),
+        compressor = throwing,
+        settings = FakeSettings(0),
+        clock = { now },
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: 异常计失败", 1, survived.failed)
+    eq("consolidate: 异常后继续", 1, survived.compressed)
+    eq("consolidate: 两个都试过", listOf("x1", "x2"), throwing.seen)
+
     // 8. 终态日志字段完整
     val done = logs.lastOrNull { it.contains("consolidate:done") }
     check(
@@ -988,6 +1068,24 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
         done != null && done.contains("scanned=") && done.contains("compressed=") &&
             done.contains("skipped=") && done.contains("failed=") && done.contains("ms="),
         done ?: "缺日志"
+    )
+}
+
+// ---------- 调试命令 ----------
+
+private fun debugCommandTests() {
+    check("debug: 包里识别命令", DebugCommands.isCompressCommand("debug:compress", true))
+    check(
+        "debug: 允许前后空格",
+        DebugCommands.isCompressCommand("  debug:compress\n", true)
+    )
+    check(
+        "debug: release 包当普通消息",
+        !DebugCommands.isCompressCommand("debug:compress", false)
+    )
+    check(
+        "debug: 别的文本不是命令",
+        !DebugCommands.isCompressCommand("压缩一下记忆", true)
     )
 }
 
