@@ -53,6 +53,7 @@ fun main() {
     penaltyTests()
     strengthAssemblyTests()
     recallRoleTests()
+    recallAssemblyTests()
     feedbackTests()
     gateTests()
 
@@ -159,6 +160,67 @@ private fun recallRoleTests() {
     // 空列表也要给兜底，而不是 null
     val empty = Recall.select(origin, tags, { null }, { emptyList() })
     check("recall: 空列表给兜底", empty?.text?.contains(Recall.NO_DETAIL) == true, empty?.text)
+}
+
+// ---------- 组装：两轮对话后召回 ----------
+
+private class StoredMsg(val seq: Int, val tagId: String, val role: String, val text: String)
+
+private class TagStore {
+    private val all = mutableListOf<StoredMsg>()
+    private var seq = 0
+
+    fun add(tagId: String, role: String, text: String) {
+        all += StoredMsg(seq++, tagId, role, text)
+    }
+
+    /** 模拟 DAO：该标签下最近的消息（倒序）。 */
+    fun recent(tagId: String): List<MemoryItem> =
+        all.filter { it.tagId == tagId }
+            .sortedByDescending { it.seq }
+            .map { MemoryItem(it.role, it.text) }
+}
+
+private fun recallAssemblyTests() {
+    val tagId = "t1"
+    val store = TagStore()
+    // 两轮对话：user 与 assistant 都打上同一个标签（模拟修复后的行为）
+    store.add(tagId, "user", "我在做 MyChat 这个 App")
+    store.add(tagId, "assistant", "第一轮回答：MyChat 是一个模块化聊天应用")
+    store.add(tagId, "user", "MyChat 的模块系统怎么设计")
+    store.add(tagId, "assistant", "第二轮回答：模块系统用 HookResult 分层")
+
+    val tags = listOf(TagRecord(tagId, "MyChat 开发", vector = origin, strength = 1.0f, lastDecayAt = 0))
+    val hit = Recall.select(origin, tags, { null }, { store.recent(it) })
+    val block = hit?.let { Recall.formatBlock(it) } ?: ""
+
+    check("asm: 含第 1 轮用户原话", block.contains("我在做 MyChat 这个 App"), block)
+    check("asm: 含第 2 轮用户原话", block.contains("MyChat 的模块系统怎么设计"), block)
+    check(
+        "asm: 不含任何 assistant 回答",
+        !block.contains("第一轮回答") && !block.contains("第二轮回答"),
+        block
+    )
+    check("asm: 不是空回忆", !block.contains(Recall.NO_DETAIL), block)
+
+    // 边界 5：只有 assistant（老数据）→ 兜底
+    val onlyAssistant = TagStore()
+    onlyAssistant.add(tagId, "assistant", "只有这段回答")
+    val fallbackHit = Recall.select(origin, tags, { null }, { onlyAssistant.recent(it) })
+    check(
+        "asm: 只有 assistant 时给兜底",
+        fallbackHit?.text?.contains(Recall.NO_DETAIL) == true,
+        fallbackHit?.text
+    )
+
+    // 边界 6：user 超过 2 条 → 只取最近 2 条
+    val many = TagStore()
+    many.add(tagId, "user", "最早的一句")
+    many.add(tagId, "user", "中间的一句")
+    many.add(tagId, "user", "最近的一句")
+    val manyHit = Recall.select(origin, tags, { null }, { many.recent(it) })
+    check("asm: 只取最近两条", manyHit?.text?.contains("最近的一句") == true, manyHit?.text)
+    check("asm: 不含最早的", manyHit?.text?.contains("最早的一句") == false, manyHit?.text)
 }
 
 // ---------- 负反馈：取哪一条标签 ----------
