@@ -912,6 +912,10 @@ class ChatViewModel(
                 pendingSelected = emptySet()
                 var localReply: String? = null
                 var memoryTurn: com.simplechat.app.hook.TagMemoryService.Turn? = null
+                if (stored.enabledModules.isEmpty() && stored.memoryEnabled && tagMemory != null) {
+                    // 记忆目前挂在 A 钩子的注入块上，没有模块就没有注入机会
+                    com.simplechat.app.hook.UsageLog.record("mem:off reason=no_modules")
+                }
                 if (stored.enabledModules.isNotEmpty()) {
                     val hookSession = HookSession(
                         id = conversationId,

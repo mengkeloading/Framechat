@@ -4,6 +4,7 @@ import mychat.framework.memory.Recall
 import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
 import mychat.framework.memory.TagRecord
+import mychat.framework.memory.MemoryGate
 import mychat.framework.memory.TagStrength
 import mychat.framework.memory.Tagger
 import kotlin.system.exitProcess
@@ -45,6 +46,7 @@ fun main() {
     depthTests()
     penaltyTests()
     strengthAssemblyTests()
+    gateTests()
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -103,6 +105,16 @@ private fun recallTests() {
 
     // 无标签不注入
     eq("recall: 无标签", null, Recall.select(origin, emptyList(), { null }, { emptyList() }))
+}
+
+// ---------- 为什么没跑 ----------
+
+private fun gateTests() {
+    eq("gate: 关闭 → disabled", "disabled", MemoryGate.offReason(false, true, true))
+    eq("gate: 模型未就绪", "embedder_not_ready", MemoryGate.offReason(true, false, true))
+    eq("gate: 没有启用模块", "no_modules", MemoryGate.offReason(true, true, false))
+    eq("gate: 都正常 → null", null, MemoryGate.offReason(true, true, true))
+    eq("gate: 关闭时优先报 disabled", "disabled", MemoryGate.offReason(false, false, false))
 }
 
 // ---------- 强度 ----------

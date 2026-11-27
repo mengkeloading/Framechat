@@ -28,7 +28,15 @@ class TagMemoryService(
 
     /** 一轮的记忆句柄；开关关闭、模型未就绪或算不出向量时为 null。 */
     suspend fun begin(text: String): Turn? {
-        if (!enabled() || !embedder.ready) return null
+        val off = mychat.framework.memory.MemoryGate.offReason(
+            enabled = enabled(),
+            embedderReady = embedder.ready,
+            hasModules = true,
+        )
+        if (off != null) {
+            log("mem:off reason=" + off)
+            return null
+        }
         return runCatching {
             val query = embedder.embedQuery(text) ?: return null
             Turn(query, load(), text)
