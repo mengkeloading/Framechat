@@ -1031,7 +1031,7 @@ class ChatViewModel(
                     return@launch
                 }
 
-                startStream(conversationId, assistantId)
+                startStream(conversationId, assistantId, memoryTurn = memoryTurn)
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -1663,7 +1663,7 @@ class ChatViewModel(
             )
 
             reloadPath(conversationId)
-            startStream(conversationId, replyId, memoryTurn = memoryTurn)
+            startStream(conversationId, replyId)
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (error: Exception) {
