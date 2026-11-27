@@ -105,11 +105,11 @@ class TagCompressorTest {
         assertEquals(1, rows.single().level)
         // 3 条消息各一个来源，方向是 msg:
         val refs = rows.single().sourceRefs
-        assertEquals("""["msg:m0","msg:m1","msg:m2"]""", refs)
+        assertEquals("refs 实际是: " + refs, """["msg:m0","msg:m1","msg:m2"]""", refs)
         val tag = db.tagDao().byId("t1")!!
-        assertEquals("技术栈 Kotlin，团队熟", tag.summary)
+        assertEquals("summary 实际是: " + tag.summary, "技术栈 Kotlin，团队熟", tag.summary)
         assertEquals(1, tag.currentLevel)
-        assertEquals(5000L, tag.lastCompressedAt)
+        assertEquals("lastCompressedAt 实际是: " + tag.lastCompressedAt, 5000L, tag.lastCompressedAt)
     }
 
     @Test
