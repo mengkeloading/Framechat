@@ -98,3 +98,6 @@ echo "== 自测：组装链路"
 
 echo "== 自测：执行引擎注册表"
 "$JAVA" -cp "$OUT:$STDLIB:$RHINO" mychat.framework.sandbox.ExecutorTestKt
+
+echo "== 自测：标签记忆"
+"$JAVA" -cp "$OUT:$STDLIB" mychat.framework.MemoryTestKt

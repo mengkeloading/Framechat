@@ -156,6 +156,7 @@ fun RootScreen(chat: ChatViewModel? = null, history: HistoryViewModel? = null) {
             openCodeSessionId = container.openCodeSessionId,
             hookRunner = container.hookRunner,
             hookRouter = container.hookRouter,
+            tagMemory = container.tagMemory,
         ),
     )
     val historyViewModel: HistoryViewModel = history ?: viewModel(

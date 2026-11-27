@@ -179,7 +179,7 @@ class AppContainer(private val app: Application) {
     }
 
     /** 向量模型：懒加载，首次路由时才把 23MB 模型读进内存。 */
-    private val embedder by lazy { OnnxTextEmbedder(app.assets) }
+    val embedder by lazy { OnnxTextEmbedder(app.assets) }
 
     /** 管家工厂：semantic 共享 embedder，切来切去不会重载模型。 */
     val butlerManager by lazy {
@@ -197,6 +197,15 @@ class AppContainer(private val app: Application) {
     val database: AppDatabase by lazy { AppDatabase.build(app) }
 
     val chatRepository: ChatRepository by lazy { ChatRepository(database, app) }
+
+    /** 标签记忆：开关在调用点判断（SettingsStore.memoryEnabled）。 */
+    val tagMemory: com.simplechat.app.hook.TagMemoryService by lazy {
+        com.simplechat.app.hook.TagMemoryService(
+            embedder = embedder,
+            tags = database.tagDao(),
+            enabled = { true },
+        )
+    }
 
     /**
      * OpenCode Go 的路由标识（`x-opencode-session`），安装级稳定即可。

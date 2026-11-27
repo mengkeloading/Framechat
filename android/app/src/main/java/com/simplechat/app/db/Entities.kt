@@ -155,6 +155,8 @@ data class MessageEntity(
      * 折叠显示在补救结果下方。null = 没补救过。
      */
     val originalContent: String? = null,
+    /** 话题标签 id（见 [TagEntity]）；null = 没打上。 */
+    val tagId: String? = null,
     /** DONE | STREAMING | STOPPED | ERROR */
     val status: String = "DONE",
     val errorMessage: String? = null,

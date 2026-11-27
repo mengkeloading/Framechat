@@ -46,10 +46,12 @@ class HookRunner(
         selected: Set<String> = emptySet(),
         /** 类型片段（【对话类型】）；空则不加。 */
         intentText: String? = null,
+        /** 回忆块（【回忆】）；空则不加。放在类型片段之前 —— 先给"相关旧内容"，再定调。 */
+        memoryText: String? = null,
     ): HookAResult {
         // 没有启用任何模块也要给类型片段：闲聊唯一拿到的就是它
         if (session.activeHardModules.isEmpty()) {
-            return withIntent(HookAResult.Pass(text), text, intentText)
+            return withBlocks(HookAResult.Pass(text), text, intentText, memoryText)
         }
 
         /*
@@ -86,7 +88,7 @@ class HookRunner(
             }
             traceLog += dispatcher.traces
         }
-        return withIntent(result, text, intentText)
+        return withBlocks(result, text, intentText, memoryText)
     }
 
     /**
@@ -95,9 +97,18 @@ class HookRunner(
      * 顺序是刻意的：先定调（这段是什么类型的对话），再给规范（这个领域怎么做）。
      * 反过来模型会先被规范带偏，把闲聊也答成分级清单。
      */
-    private fun withIntent(result: HookAResult, text: String, intentText: String?): HookAResult {
-        if (intentText.isNullOrBlank()) return result
-        val block = "【对话类型】\n" + intentText
+    private fun withBlocks(
+        result: HookAResult,
+        text: String,
+        intentText: String?,
+        memoryText: String?,
+    ): HookAResult {
+        val parts = buildList {
+            memoryText?.takeIf { it.isNotBlank() }?.let { add(it) }
+            intentText?.takeIf { it.isNotBlank() }?.let { add("【对话类型】\n" + it) }
+        }
+        if (parts.isEmpty()) return result
+        val block = parts.joinToString("\n\n")
         return when (result) {
             is HookAResult.Local -> result
             is HookAResult.Pass -> HookAResult.Context(text, block)

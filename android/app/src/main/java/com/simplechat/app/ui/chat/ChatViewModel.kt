@@ -121,6 +121,7 @@ class ChatViewModel(
     private val openCodeSessionId: String,
     private val hookRunner: HookRunner,
     private val hookRouter: HookRouter,
+    private val tagMemory: com.simplechat.app.hook.TagMemoryService? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -952,10 +953,16 @@ class ChatViewModel(
                     } else {
                         text
                     }
+                    val memoryBlock = if (stored.memoryEnabled && tagMemory != null) {
+                        tagMemory.recall(text)
+                    } else {
+                        null
+                    }
                     when (val hookA = hookRunner.input(
                         hookSession, hookText, historyBase,
                         selected = selected,
                         intentText = prepared.intentText,
+                        memoryText = memoryBlock,
                     )) {
                         is HookAResult.Local -> localReply = hookA.text
                         is HookAResult.Context -> {
@@ -2906,6 +2913,14 @@ class ChatViewModel(
                 }.isSuccess
             }
 
+            // 打标：零模型成本，坏了也不影响对话（服务内部 fail-open）
+            if (persisted && status == MessageStatus.DONE &&
+                conversationId == currentConversationId &&
+                stored.memoryEnabled && tagMemory != null
+            ) {
+                withContext(NonCancellable) { tagMemory.tag(text, replyId) }
+            }
+
             /*
              * 把这轮的用量写回内存里那条消息：落库的已是最新值，但界面统计读的是
              * 内存列表 —— 不补这一下，「本会话消耗」要等重新打开会话才会更新。
@@ -3524,12 +3539,13 @@ class ChatViewModel(
             openCodeSessionId: String,
             hookRunner: HookRunner,
             hookRouter: HookRouter,
+            tagMemory: com.simplechat.app.hook.TagMemoryService? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
                 ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
-                    hookRunner, hookRouter, state
+                    hookRunner, hookRouter, tagMemory, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

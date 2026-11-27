@@ -157,6 +157,8 @@ data class StoredSettings(
     val butlerId: String = "semantic",
     val showImageSkipNotice: Boolean = true,
     val showRetrySkipNotice: Boolean = true,
+    /** 标签记忆：关掉后既不检索也不打标，行为等同旧版本。 */
+    val memoryEnabled: Boolean = true,
     /** Include messages from inactive conversation branches in global search. */
     val searchInactiveBranches: Boolean = false,
     val searchReasoning: Boolean = false,
@@ -348,6 +350,7 @@ class SettingsStore(
             enabledModules = prefs[Keys.MODULES_ENABLED] ?: emptySet(),
             butlerId = prefs[Keys.BUTLER_ID] ?: "semantic",
             showRetrySkipNotice = prefs[Keys.RETRY_SKIP_NOTICE] ?: true,
+            memoryEnabled = prefs[Keys.MEMORY_ENABLED] ?: true,
             showImageSkipNotice = prefs[Keys.IMAGE_SKIP_NOTICE] ?: true,
             searchInactiveBranches = prefs[Keys.SEARCH_INACTIVE_BRANCHES]
                 ?: StoredSettings().searchInactiveBranches,
@@ -818,6 +821,10 @@ class SettingsStore(
         preferences.edit { it[Keys.IMAGE_SKIP_NOTICE] = enabled }
     }
 
+    suspend fun setMemoryEnabled(enabled: Boolean) {
+        preferences.edit { it[Keys.MEMORY_ENABLED] = enabled }
+    }
+
     suspend fun setSearchInactiveBranches(enabled: Boolean) {
         preferences.edit { it[Keys.SEARCH_INACTIVE_BRANCHES] = enabled }
     }
@@ -1002,6 +1009,7 @@ class SettingsStore(
         val IMAGE_GEN_API = stringPreferencesKey("image_gen_api_config")
         val ACTIVE_PROFILE = stringPreferencesKey("active_api_profile")
         val RETRY_SKIP_NOTICE = booleanPreferencesKey("show_retry_skip_notice")
+        val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
         val IMAGE_SKIP_NOTICE = booleanPreferencesKey("show_image_skip_notice")
         val LOADING_WORDS = stringPreferencesKey("loading_words")
         val LOADING_WORDS_USE_THEME_COLOR = booleanPreferencesKey("loading_words_use_theme_color")
