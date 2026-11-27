@@ -89,6 +89,7 @@ fun main() {
     compressTests()
     consolidateTests()
     debugCommandTests()
+    routeLogTests()
     tagNamingTests()
     promptTests()
     manifestAuditTests()
@@ -1042,6 +1043,29 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     ).runNow()
     eq("consolidate: 未触顶", false, uncapped.capped)
 
+    // 10b. 没有原文：noSource+1，不算失败
+    val noMsg = compressible.copy(id = "empty", messageCount = 0)
+    val emptyReport = DefaultConsolidator(
+        source = FakeTags(listOf(noMsg)),
+        compressor = FakeCompressor(),
+        settings = FakeSettings(0),
+        clock = { now },
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: 无原文计 noSource", 1, emptyReport.noSource)
+    eq("consolidate: 无原文不算失败", 0, emptyReport.failed)
+
+    // 10c. 有原文但压缩失败：failed+1，noSource 不动
+    val failing = DefaultConsolidator(
+        source = FakeTags(listOf(compressible.copy(id = "has", messageCount = 3))),
+        compressor = FakeCompressor { false },
+        settings = FakeSettings(0),
+        clock = { now },
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: 失败计 failed", 1, failing.failed)
+    eq("consolidate: 失败不算 noSource", 0, failing.noSource)
+
     // 11. 抛异常的 compressor：failed+1，循环继续
     val throwing = object : Compressor {
         val seen = mutableListOf<String>()
@@ -1098,11 +1122,20 @@ private fun debugCommandTests() {
 // ---------- 标签命名 ----------
 
 private fun tagNamingTests() {
-    eq("naming: 去「我在」", "做 MyChat 这个", TagNaming.nameOf("我在做 MyChat 这个 App"))
+    // 截断落在「这个」上，虚词一并去掉
+    eq("naming: 去「我在」", "做 MyChat", TagNaming.nameOf("我在做 MyChat 这个 App"))
     eq("naming: 去「帮我」", "写个故事", TagNaming.nameOf("帮我写个故事"))
     eq("naming: 12 字以内不动", "今天天气怎么样", TagNaming.nameOf("今天天气怎么样"))
     eq("naming: 全空给兜底", "未命名话题", TagNaming.nameOf("   "))
     eq("naming: 去结尾语气词", "这个东西怎么用", TagNaming.nameOf("这个东西怎么用呢"))
+    // 截断后停在虚词上 → 去掉，别留半截"这"
+    val cut = TagNaming.nameOf("我想用 Kotlin 重写这个模块吗")
+    check("naming: 不以「这」结尾", !cut.endsWith("这"), cut)
+    eq("naming: 末尾不是虚词就不动", "我看看这个函数", TagNaming.nameOf("我看看这个函数"))
+    // 整句都是虚词：删空就退回截断结果，不能给空标题
+    val particles = TagNaming.nameOf("吗呢吧啊了吗呢吧啊了吗呢吧")
+    check("naming: 全是虚词不返回空", particles.isNotEmpty(), particles)
+    check("naming: 长度不超 12", cut.length <= TagNaming.MAX_LENGTH, cut)
     check(
         "naming: 不超过 12 字",
         TagNaming.nameOf("我想问一下记忆系统的强度到底是怎么算的").length <= 12,
@@ -1131,6 +1164,32 @@ private fun promptTests() {
         "prompt: L3 更短",
         DefaultCompressor.buildPrompt("x", 40, 3).contains("不超过 40 字"),
         DefaultCompressor.buildPrompt("x", 40, 3)
+    )
+}
+
+// ---------- 路由日志 ----------
+
+private fun routeLogTests() {
+    val route = mychat.framework.butler.RouteResult(
+        modules = listOf("skill_code"),
+        reason = "hit",
+        scores = linkedMapOf("skill_code" to 0.812f, "skill_novel" to 0.604f),
+    )
+    val line = mychat.framework.embedding.RouteLog.line(route)
+    check(
+        "route: 含 best 与分数",
+        line.contains("best=skill_code") && line.contains("score=0.812"),
+        line
+    )
+    check("route: 含 margin", line.contains("margin=0.208"), line)
+
+    val single = mychat.framework.embedding.RouteLog.line(
+        mychat.framework.butler.RouteResult(emptyList(), "not_ready")
+    )
+    check(
+        "route: 没有候选也不崩",
+        single.contains("best=-") && single.contains("reason=not_ready"),
+        single
     )
 }
 

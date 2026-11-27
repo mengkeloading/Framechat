@@ -50,6 +50,8 @@ data class CompressibleTag(
     val currentLevel: Int,
     val createdAt: Long,
     val lastCompressedAt: Long,
+    /** 标签下有几条原文消息；0 = 压不出东西，-1 = 调用方没提供 */
+    val messageCount: Int = -1,
 )
 
 /** 取可压缩的标签。App 侧用 Room 实现。 */
@@ -133,6 +135,12 @@ class DefaultConsolidator(
                 notDue++
                 continue
             }
+            // 没有原文就没法压：不算失败，也不算"该压没压"
+            if (tag.messageCount == 0) {
+                skipped++
+                noSource++
+                continue
+            }
             // 配额只数"真的要压的"：前几个都不该压，不该用掉配额
             if (compressed + failed >= maxPerRun) {
                 capped = true
@@ -141,13 +149,7 @@ class DefaultConsolidator(
             onProgress?.invoke(compressed + failed, allowed)
             // 单个失败不影响其他标签
             val ok = runCatching { compressor.compress(tag.id, goal) }.getOrElse { false }
-            if (ok) {
-                compressed++
-            } else {
-                failed++
-                // 失败里最常见的是"没有原文"：区分开，否则 skipped 看不出含义
-                if (tag.currentLevel == 0) noSource++
-            }
+            if (ok) compressed++ else failed++
         }
 
         val report = ConsolidateReport(

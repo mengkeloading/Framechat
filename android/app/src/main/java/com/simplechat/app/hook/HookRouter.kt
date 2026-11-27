@@ -43,6 +43,8 @@ class HookRouter(
         val intentText: String? = null,
         /** 闲聊且没有前缀：不跑路由，只注入类型片段。 */
         val skipRoute: Boolean = false,
+        /** 路由分数（best/second/margin），供日志。 */
+        val routeScore: String = "",
     )
 
     suspend fun prepare(enabled: Set<String>, query: String, butlerId: String?): Prepared {
@@ -83,11 +85,13 @@ class HookRouter(
                 "candidates=" + modules.joinToString { "${it.id}(skill=${ModuleSelector.hasSkill(it)})" }
             )
             Log.d(TAG, "route=${route.modules} reason=${route.reason} selected=$selected")
+            Log.d(TAG, mychat.framework.embedding.RouteLog.line(route))
             Prepared(
                 selected = selected,
                 normalize = NeedResolver.needsNormalize(modules, selected),
                 reason = route.reason,
                 routeModules = route.modules,
+                routeScore = mychat.framework.embedding.RouteLog.line(route),
                 prefixModule = prefix,
                 intent = intent,
                 intentText = intentText,

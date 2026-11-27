@@ -9,8 +9,9 @@ import mychat.framework.memory.consolidate.ConsolidationSource
 /** 可压缩的标签：currentLevel < 4 的那些。 */
 class RoomConsolidationSource(private val tags: TagDao) : ConsolidationSource {
 
-    override suspend fun compressible(): List<CompressibleTag> =
-        tags.allCompressible().map { tag ->
+    override suspend fun compressible(): List<CompressibleTag> {
+        val counts = tags.messageCounts().associate { it.tagId to it.count }
+        return tags.allCompressible().map { tag ->
             CompressibleTag(
                 id = tag.id,
                 strength = tag.strength,
@@ -19,8 +20,10 @@ class RoomConsolidationSource(private val tags: TagDao) : ConsolidationSource {
                 currentLevel = tag.currentLevel,
                 createdAt = tag.createdAt,
                 lastCompressedAt = tag.lastCompressedAt,
+                messageCount = counts[tag.id] ?: 0,
             )
         }
+    }
 }
 
 /** 上次整理时间存在 DataStore 里，跟其它设置一样。 */

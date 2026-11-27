@@ -953,6 +953,9 @@ class ChatViewModel(
                             " reason=" + prepared.reason + " selected=" + selected
                         android.util.Log.d("MyChat/Sel", selLine)
                         com.simplechat.app.hook.UsageLog.record(selLine)
+                        if (prepared.routeScore.isNotEmpty()) {
+                            com.simplechat.app.hook.UsageLog.record(prepared.routeScore)
+                        }
                         val intentLine = "intent=" + (prepared.intent ?: "none") +
                             " route=" + (if (prepared.skipRoute) "跳过" else "命中")
                         android.util.Log.d("MyChat/Sel", intentLine)

@@ -95,6 +95,17 @@ interface TagDao {
     @Query("UPDATE tags SET lastDecayAt = :now WHERE lastDecayAt = 0")
     suspend fun fixMissingDecayAnchor(now: Long): Int
 
+    /**
+     * 每个标签下有几条原文消息。LEFT JOIN 保证没有消息的标签也出现（count=0），
+     * 否则"没原文的标签"在结果里根本不存在，就分不清它和"还没该压的"。
+     */
+    @Query(
+        "SELECT t.id AS tagId, COUNT(m.id) AS count FROM tags t " +
+            "LEFT JOIN messages m ON m.tagId = t.id AND m.isDeletedNode = 0 " +
+            "GROUP BY t.id"
+    )
+    suspend fun messageCounts(): List<TagMessageCount>
+
     @Query("SELECT * FROM tags WHERE currentLevel < 4")
     suspend fun allCompressible(): List<TagEntity>
 
@@ -116,3 +127,9 @@ interface TagDao {
     )
     suspend fun recentUserContents(tagId: String, limit: Int): List<String>
 }
+
+/** 聚合查询的投影：不是表。 */
+data class TagMessageCount(
+    val tagId: String,
+    val count: Int,
+)

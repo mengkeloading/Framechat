@@ -9,7 +9,16 @@ package mychat.framework.memory
 object TagNaming {
 
     private val PREFIXES = listOf("我在", "帮我", "我想", "请问", "能不能", "可以")
+
+    /** 结尾的语气词：整句只删一个（"写个故事吧" → "写个故事"）。 */
     private val SUFFIXES = listOf("吧", "呢", "啊", "吗", "了")
+
+    /**
+     * 截断后可能停在虚词上（"用 Kotlin 重写这"），那半截字没有信息量，
+     * 一并去掉。含指示代词是因为硬截最容易落在"这/那/个"上。
+     */
+    private val TAIL_PARTICLES =
+        listOf("吗", "呢", "吧", "啊", "了", "的", "着", "么", "这", "那", "个", "些")
 
     const val MAX_LENGTH = 12
     const val FALLBACK = "未命名话题"
@@ -18,7 +27,19 @@ object TagNaming {
         var s = firstUserMessage.trim()
         PREFIXES.firstOrNull { s.startsWith(it) }?.let { s = s.removePrefix(it).trim() }
         SUFFIXES.firstOrNull { s.endsWith(it) }?.let { s = s.dropLast(1).trim() }
-        if (s.length > MAX_LENGTH) s = s.take(MAX_LENGTH).trim()
+        if (s.length > MAX_LENGTH) s = trimTail(s.take(MAX_LENGTH).trim())
         return s.ifBlank { FALLBACK }
+    }
+
+    /**
+     * 去掉结尾的虚词。**删空就返回原文** —— 输入整句都是语气词时（"嗯呢吧"），
+     * 给空标题不如给原文，至少能认出这轮聊了什么。
+     */
+    private fun trimTail(s: String): String {
+        var out = s
+        while (out.isNotEmpty() && TAIL_PARTICLES.any { out.endsWith(it) }) {
+            out = out.dropLast(1).trimEnd()
+        }
+        return out.ifBlank { s }
     }
 }
