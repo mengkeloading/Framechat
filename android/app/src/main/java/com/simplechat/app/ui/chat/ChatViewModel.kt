@@ -953,11 +953,9 @@ class ChatViewModel(
                     } else {
                         text
                     }
-                    val memoryBlock = if (stored.memoryEnabled && tagMemory != null) {
-                        tagMemory.recall(text)
-                    } else {
-                        null
-                    }
+                    // 本轮的记忆快照：检索与打标共用，本轮新建的标签不参与本轮召回
+                    val memoryTurn = if (stored.memoryEnabled) tagMemory?.begin(text) else null
+                    val memoryBlock = memoryTurn?.recallBlock()
                     when (val hookA = hookRunner.input(
                         hookSession, hookText, historyBase,
                         selected = selected,
@@ -2918,7 +2916,7 @@ class ChatViewModel(
                 conversationId == currentConversationId &&
                 stored.memoryEnabled && tagMemory != null
             ) {
-                withContext(NonCancellable) { tagMemory.tag(latestQuestion, replyId) }
+                withContext(NonCancellable) { memoryTurn?.tag(replyId) }
             }
 
             /*
@@ -3250,7 +3248,19 @@ class ChatViewModel(
 
     private inline fun patch(id: String, transform: (UiMessage) -> UiMessage) {
         val index = messages.indexOfLast { it.id == id }
-        if (index >= 0) messages[index] = transform(messages[index])
+        if (index < 0) return
+        val before = messages[index]
+        val after = transform(before)
+        if (BuildConfig.DEBUG && after.content != before.content) {
+            val caller = Throwable().stackTrace
+                .firstOrNull { it.className.endsWith("ChatViewModel") && it.methodName != "patch" }
+                ?.methodName ?: "?"
+            com.simplechat.app.hook.UsageLog.record(
+                "patch:reason " + caller + " id=" + id +
+                    " " + before.content.length + "→" + after.content.length
+            )
+        }
+        messages[index] = after
     }
 
     /**

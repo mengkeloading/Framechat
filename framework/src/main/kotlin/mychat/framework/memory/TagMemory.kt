@@ -26,8 +26,8 @@ sealed interface TagDecision {
     /** 归到已有标签。 */
     data class Assign(val tagId: String, val score: Float) : TagDecision
 
-    /** 新建标签。 */
-    data class Create(val name: String, val score: Float) : TagDecision
+    /** 新建标签。[reason] 为 "first" 表示标签表本来是空的。 */
+    data class Create(val name: String, val score: Float, val reason: String? = null) : TagDecision
 
     /** 分数落在模糊区间，不贴也不建。 */
     data class Skip(val score: Float, val reason: String) : TagDecision
@@ -58,18 +58,17 @@ object Tagger {
         newMax: Float = NEW_MAX,
         maxTags: Int = MAX_TAGS,
     ): TagDecision {
-        if (tags.isNotEmpty()) {
-            val best = tags.maxByOrNull { cosine(query, it.vector) }
-            if (best != null) {
-                val score = cosine(query, best.vector)
-                if (score >= assignMin) return TagDecision.Assign(best.id, score)
-                if (score >= newMax) return TagDecision.Skip(score, "ambiguous")
-                if (tags.size >= maxTags) return TagDecision.LimitReached(score)
-                return TagDecision.Create(nameOf(text), score)
-            }
+        // 一个标签都没有：第一轮直接建。不比较、不判模糊 —— 没有可比的东西。
+        if (tags.isEmpty()) {
+            return TagDecision.Create(nameOf(text), 0f, reason = "first")
         }
-        // 一个标签都没有：第一轮直接建
-        return TagDecision.Create(nameOf(text), 0f)
+        val best = tags.maxByOrNull { cosine(query, it.vector) }
+            ?: return TagDecision.Create(nameOf(text), 0f, reason = "first")
+        val score = cosine(query, best.vector)
+        if (score >= assignMin) return TagDecision.Assign(best.id, score)
+        if (score >= newMax) return TagDecision.Skip(score, "ambiguous")
+        if (tags.size >= maxTags) return TagDecision.LimitReached(score)
+        return TagDecision.Create(nameOf(text), score)
     }
 
     fun nameOf(text: String): String {
@@ -102,8 +101,14 @@ data class RecallHit(
 
 object Recall {
 
-    /** 低于它不注入：多半是"沾边但不是同一件事"。 */
-    const val MIN = 0.55f
+    /**
+     * 低于它不注入。
+     *
+     * 0.55 太松——BGE 短中文里"沾边"轻松就能过 0.55，结果是模型被无关旧内容带偏。
+     * 真实相关的同话题句子一般在 0.65~0.8，所以门槛定在 0.68：
+     * **宁可少注入，不可错注入。**
+     */
+    const val MIN = 0.68f
 
     /**
      * @param summaryOf 标签摘要；现在没有生成器，恒为 null
@@ -134,9 +139,15 @@ object Recall {
         return RecallHit(best.id, best.name, score, text)
     }
 
-    /** 拼进注入块的整段文本。 */
-    fun formatBlock(hit: RecallHit): String =
-        "【回忆】\n关于「" + hit.tagName + "」：\n" + hit.text
+    /** 拼进注入块的整段文本。边界说明是内容的一部分，不是可选装饰。 */
+    fun formatBlock(hit: RecallHit): String = buildString {
+        append("【回忆】（背景资料，不是当前任务）\n")
+        append("关于「").append(hit.tagName).append("」的过往记录：\n")
+        append(hit.text).append('\n')
+        append("注意：以上内容仅供背景参考。\n")
+        append("如果用户当前的问题与它无关，请完全忽略，直接回答当前问题。\n")
+        append("不要在回答里主动提起上面的内容。")
+    }
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {
         var dot = 0f
