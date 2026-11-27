@@ -1039,7 +1039,10 @@ class ChatViewModel(
                     return@launch
                 }
 
-                startStream(conversationId, assistantId, memoryTurn = memoryTurn)
+                startStream(
+                    conversationId, assistantId,
+                    memoryTurn = memoryTurn, userMessageId = user.id,
+                )
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -1664,8 +1667,10 @@ class ChatViewModel(
             onPersisted()
 
             // 回复挂在**新的**这条下面
-            val prevTagId = messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.tagId
-            val prevNegative = NEGATIVE_WORDS.any { text.contains(it) }
+            val prevTagId = mychat.framework.memory.MemoryFeedback.prevTagIdOf(
+                messages.map { mychat.framework.memory.TaggedTurn(it.role.name.lowercase(), it.tagId) }
+            )
+            val prevNegative = mychat.framework.memory.MemoryFeedback.isNegative(text)
             // 用户否定的是**上一条回答**，所以扣的是那条消息所属的标签
             if (prevNegative && prevTagId != null && tagMemory != null) {
                 viewModelScope.launch {
@@ -2020,6 +2025,7 @@ class ChatViewModel(
         prefix: UiMessage? = null,
         omitAttachmentsAndTools: Boolean = false,
         memoryTurn: com.simplechat.app.hook.TagMemoryService.Turn? = null,
+        userMessageId: String? = null,
     ) {
         if (conversationId != currentConversationId) return
         retrySkipNotice = if (omitAttachmentsAndTools && stored.showRetrySkipNotice) Res.get(R.string.retry_skipped_notice) else null
@@ -2951,7 +2957,7 @@ class ChatViewModel(
                 conversationId == currentConversationId &&
                 stored.memoryEnabled && tagMemory != null
             ) {
-                withContext(NonCancellable) { memoryTurn?.tag(replyId) }
+                withContext(NonCancellable) { memoryTurn?.tag(replyId, userMessageId) }
             }
 
             if (BuildConfig.DEBUG) {

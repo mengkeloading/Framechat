@@ -5,7 +5,9 @@ import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
 import mychat.framework.memory.TagRecord
 import mychat.framework.memory.MemoryGate
+import mychat.framework.memory.MemoryFeedback
 import mychat.framework.memory.MemoryItem
+import mychat.framework.memory.TaggedTurn
 import mychat.framework.memory.TagStrength
 import mychat.framework.memory.Tagger
 import kotlin.system.exitProcess
@@ -51,6 +53,7 @@ fun main() {
     penaltyTests()
     strengthAssemblyTests()
     recallRoleTests()
+    feedbackTests()
     gateTests()
 
     println()
@@ -145,6 +148,46 @@ private fun recallRoleTests() {
     val onlyAssistant = listOf(MemoryItem("assistant", "只有我说话"))
     val fallback = Recall.select(origin, tags, { null }, { onlyAssistant })
     check("recall: 没有用户消息时给兜底", fallback?.text?.contains(Recall.NO_DETAIL) == true, fallback?.text)
+
+    // role 大小写不敏感：不同写入路径可能给大写
+    val upper = listOf(MemoryItem("USER", "大写角色"))
+    check(
+        "recall: role 大小写都能匹配",
+        Recall.select(origin, tags, { null }, { upper })?.text?.contains("大写角色") == true
+    )
+
+    // 空列表也要给兜底，而不是 null
+    val empty = Recall.select(origin, tags, { null }, { emptyList() })
+    check("recall: 空列表给兜底", empty?.text?.contains(Recall.NO_DETAIL) == true, empty?.text)
+}
+
+// ---------- 负反馈：取哪一条标签 ----------
+
+private fun feedbackTests() {
+    eq(
+        "feedback: 取最后一条 assistant 的标签",
+        "X",
+        MemoryFeedback.prevTagIdOf(
+            listOf(TaggedTurn("user", "X"), TaggedTurn("assistant", null))
+        )
+    )
+    eq(
+        "feedback: 全是 null 时返回 null",
+        null,
+        MemoryFeedback.prevTagIdOf(
+            listOf(TaggedTurn("user", null), TaggedTurn("assistant", null))
+        )
+    )
+    // 语义写死：取**最后一条** assistant（多条时用户刚看到的是最近那条）
+    eq(
+        "feedback: 多条 assistant 取最近的一条",
+        "Y",
+        MemoryFeedback.prevTagIdOf(
+            listOf(TaggedTurn("user", "X"), TaggedTurn("assistant", "Y"))
+        )
+    )
+    check("feedback: 不对 = 否定", MemoryFeedback.isNegative("不对，这不是我要的"))
+    check("feedback: 好的 不是否定", !MemoryFeedback.isNegative("好的，谢谢"))
 }
 
 // ---------- 强度 ----------

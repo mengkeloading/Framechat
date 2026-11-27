@@ -154,7 +154,7 @@ object Recall {
         val best = scored.maxByOrNull { it.finalScore } ?: return null
         if (best.cosine < min) return null
 
-        val userLines = recentOf(best.tag.id).filter { it.role == "user" }
+        val userLines = recentOf(best.tag.id).filter { it.role.equals("user", ignoreCase = true) }
         val text = when (best.depth) {
             DEPTH_NAME_ONLY -> ""
             DEPTH_FULL -> {

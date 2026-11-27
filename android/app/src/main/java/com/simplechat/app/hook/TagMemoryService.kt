@@ -104,11 +104,12 @@ class TagMemoryService(
         }
 
         /** 打标：与检索用同一份快照，新建的标签本轮不参与召回。 */
-        suspend fun tag(messageId: String) {
+        suspend fun tag(messageId: String, userMessageId: String? = null) {
             runCatching {
                 when (val decision = Tagger.decide(query, snapshot, text)) {
                     is TagDecision.Assign -> {
                         tags.setMessageTag(messageId, decision.tagId)
+                        userMessageId?.let { tags.setMessageTag(it, decision.tagId) }
                         log("tag:assign id=" + decision.tagId + " score=" + fmt(decision.score))
                     }
                     is TagDecision.Create -> {
@@ -116,6 +117,7 @@ class TagMemoryService(
                         val now = System.currentTimeMillis()
                         tags.insert(TagEntity(id, decision.name, null, encode(query), now, now))
                         tags.setMessageTag(messageId, id)
+                        userMessageId?.let { tags.setMessageTag(it, id) }
                         val score = if (decision.reason == "first") {
                             "none"
                         } else {
