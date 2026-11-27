@@ -21,6 +21,13 @@ data class TagEntity(
     val embedding: ByteArray,
     val createdAt: Long,
     val updatedAt: Long,
+    /** 记忆强度，惰性衰减；见 TagStrength。 */
+    val strength: Float = 1f,
+    val readCount: Int = 0,
+    val lastReadAt: Long = 0,
+    val lastDecayAt: Long = 0,
+    /** name_only / summary / full / archived，由 strength 推出，落库只为查询。 */
+    val depth: String = "summary",
 ) {
     override fun equals(other: Any?): Boolean =
         this === other || (other is TagEntity && id == other.id && name == other.name)
@@ -39,6 +46,24 @@ interface TagDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(tag: TagEntity)
+
+    @Query(
+        "UPDATE tags SET strength = :strength, readCount = :readCount, " +
+            "lastReadAt = :lastReadAt, lastDecayAt = :lastDecayAt, depth = :depth, " +
+            "updatedAt = :now WHERE id = :id"
+    )
+    suspend fun updateStrength(
+        id: String,
+        strength: Float,
+        readCount: Int,
+        lastReadAt: Long,
+        lastDecayAt: Long,
+        depth: String,
+        now: Long,
+    )
+
+    @Query("SELECT * FROM tags ORDER BY strength DESC LIMIT :limit")
+    suspend fun top(limit: Int): List<TagEntity>
 
     /** 打标：只写 tagId，正文不动。 */
     @Query("UPDATE messages SET tagId = :tagId WHERE id = :id")

@@ -12,6 +12,13 @@ data class TagRecord(
     val description: String? = null,
     /** 标签的代表向量（创建时就是那轮输入的查询向量）。 */
     val vector: FloatArray,
+    /** 可选摘要；现在没有生成器，恒为 null。 */
+    val summary: String? = null,
+    val strength: Float = TagStrength.INITIAL,
+    val readCount: Int = 0,
+    val lastReadAt: Long = 0,
+    /** 衰减起点；0 表示"就是现在"，避免新标签一创建就欠几十天。 */
+    val lastDecayAt: Long = 0,
 ) {
     // FloatArray 的默认 equals 是引用比较，data class 生成的实现会误判
     override fun equals(other: Any?): Boolean =
@@ -97,6 +104,8 @@ data class RecallHit(
     val tagName: String,
     val score: Float,
     val text: String,
+    /** name_only / summary / full */
+    val depth: String = "summary",
 )
 
 object Recall {
@@ -122,32 +131,68 @@ object Recall {
         min: Float = MIN,
         maxMessages: Int = 2,
         excerpt: Int = 200,
+        now: Long = System.currentTimeMillis(),
     ): RecallHit? {
         if (tags.isEmpty()) return null
-        val best = tags.maxByOrNull { cosine(query, it.vector) } ?: return null
-        val score = cosine(query, best.vector)
-        if (score < min) return null
-        val summary = summaryOf(best.id)
-        val text = if (!summary.isNullOrBlank()) {
-            summary
-        } else {
-            recentOf(best.id).take(maxMessages)
-                .map { it.take(excerpt) }
-                .joinToString("\n---\n")
+
+        // 归档的不参与召回；其余按「余弦 × 强度加权」排序
+        val scored = tags.mapNotNull { tag ->
+            val strength = TagStrength.current(tag, now)
+            val depth = TagStrength.depthOf(strength)
+            if (depth == DEPTH_ARCHIVED) return@mapNotNull null
+            val cosine = cosine(query, tag.vector)
+            Scored(tag, cosine * TagStrength.weight(strength), cosine, depth)
         }
-        if (text.isBlank()) return null
-        return RecallHit(best.id, best.name, score, text)
+        val best = scored.maxByOrNull { it.finalScore } ?: return null
+        if (best.cosine < min) return null
+
+        val text = when (best.depth) {
+            DEPTH_NAME_ONLY -> ""
+            DEPTH_FULL -> {
+                val body = summaryOf(best.tag.id) ?: recentOf(best.tag.id)
+                    .take(FULL_MESSAGES).map { it.take(excerpt) }.joinToString("\n---\n")
+                body.takeIf { it.isNotBlank() }?.plus("\n（可展开原文）").orEmpty()
+            }
+            else -> {
+                val summary = summaryOf(best.tag.id)
+                if (!summary.isNullOrBlank()) {
+                    summary
+                } else {
+                    recentOf(best.tag.id).take(maxMessages)
+                        .map { it.take(excerpt) }
+                        .joinToString("\n---\n")
+                }
+            }
+        }
+        if (best.depth != DEPTH_NAME_ONLY && text.isBlank()) return null
+        return RecallHit(best.tag.id, best.tag.name, best.finalScore, text, best.depth)
     }
+
+    private class Scored(
+        val tag: TagRecord,
+        val finalScore: Float,
+        val cosine: Float,
+        val depth: String,
+    )
 
     /** 拼进注入块的整段文本。边界说明是内容的一部分，不是可选装饰。 */
     fun formatBlock(hit: RecallHit): String = buildString {
         append("【回忆】（背景资料，不是当前任务）\n")
-        append("关于「").append(hit.tagName).append("」的过往记录：\n")
-        append(hit.text).append('\n')
+        if (hit.depth == DEPTH_NAME_ONLY) {
+            append("关于「").append(hit.tagName).append("」的记忆（只记得话题，细节已淡）。\n")
+        } else {
+            append("关于「").append(hit.tagName).append("」的过往记录：\n")
+            append(hit.text).append('\n')
+        }
         append("注意：以上内容仅供背景参考。\n")
         append("如果用户当前的问题与它无关，请完全忽略，直接回答当前问题。\n")
         append("不要在回答里主动提起上面的内容。")
     }
+
+    private const val DEPTH_ARCHIVED = "archived"
+    private const val DEPTH_NAME_ONLY = "name_only"
+    private const val DEPTH_FULL = "full"
+    private const val FULL_MESSAGES = 4
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {
         var dot = 0f

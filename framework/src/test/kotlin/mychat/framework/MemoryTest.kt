@@ -4,6 +4,7 @@ import mychat.framework.memory.Recall
 import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
 import mychat.framework.memory.TagRecord
+import mychat.framework.memory.TagStrength
 import mychat.framework.memory.Tagger
 import kotlin.system.exitProcess
 
@@ -22,6 +23,9 @@ private fun check(name: String, cond: Boolean, detail: String? = null) {
 private fun eq(name: String, expected: Any?, actual: Any?) =
     check(name, expected == actual, "expected=$expected actual=$actual")
 
+private fun near(name: String, expected: Float, actual: Float) =
+    check(name, kotlin.math.abs(expected - actual) < 0.001f, "expected=$expected actual=$actual")
+
 /** 造一个与 [1,0] 余弦恰好等于 [c] 的向量。 */
 private fun vec(c: Float): FloatArray {
     val y = kotlin.math.sqrt((1f - c * c).coerceAtLeast(0f))
@@ -37,6 +41,10 @@ fun main() {
     taggingTests()
     recallTests()
     assemblyTests()
+    strengthTests()
+    depthTests()
+    penaltyTests()
+    strengthAssemblyTests()
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -88,10 +96,129 @@ private fun recallTests() {
     // 6. 低于 0.68 不注入
     eq("recall: 0.60 不注入", null, Recall.select(origin, listOf(tag("b", vec(0.60f))), { null }, { listOf("x") }))
     eq("recall: 0.67 不注入", null, Recall.select(origin, listOf(tag("c", vec(0.67f))), { null }, { listOf("x") }))
-    eq("recall: 0.68 命中", true, Recall.select(origin, listOf(tag("d", vec(0.69f))), { null }, { listOf("x") })?.score?.let { it >= Recall.MIN })
+    check(
+        "recall: 0.69 命中",
+        Recall.select(origin, listOf(tag("d", vec(0.69f))), { null }, { listOf("x") }) != null
+    )
 
     // 无标签不注入
     eq("recall: 无标签", null, Recall.select(origin, emptyList(), { null }, { emptyList() }))
+}
+
+// ---------- 强度 ----------
+
+private const val DAY = 86_400_000L
+
+private fun strengthTests() {
+    val now = 1_700_000_000_000L
+    val fresh = TagRecord("a", "标签", vector = origin, lastDecayAt = now)
+
+    // 1. 新建：1.0
+    eq("strength: 新建 1.0", 1.0f, TagStrength.current(fresh, now))
+    eq("strength: 新建 depth=summary", "summary", TagStrength.depthOf(1.0f))
+
+    // 2/3. 召回一次 / 三次
+    val once = TagStrength.boosted(fresh, now)
+    eq("strength: 召回一次 1.3", 1.3f, once.strength)
+    eq("strength: readCount=1", 1, once.readCount)
+
+    var thrice = fresh
+    repeat(3) { thrice = TagStrength.boosted(thrice, now) }
+    near("strength: 召回三次 1.9", 1.9f, thrice.strength)
+    eq("strength: readCount=3", 3, thrice.readCount)
+
+    // 4. 封顶
+    var many = fresh
+    repeat(10) { many = TagStrength.boosted(many, now) }
+    eq("strength: 封顶 3.0", TagStrength.MAX, many.strength)
+
+    // 5. 30 天不读：0.02 * 30 = 0.6
+    val stale = fresh.copy(strength = 2.0f, lastDecayAt = now - 30 * DAY)
+    check(
+        "strength: 30 天衰减到 1.4",
+        kotlin.math.abs(TagStrength.current(stale, now) - 1.4f) < 0.01f,
+        TagStrength.current(stale, now).toString()
+    )
+
+    // 6. readCount 高衰减更慢
+    val cold = fresh.copy(strength = 2.0f, readCount = 0, lastDecayAt = now - 30 * DAY)
+    val warm = fresh.copy(strength = 2.0f, readCount = 10, lastDecayAt = now - 30 * DAY)
+    check(
+        "strength: readCount=10 衰减更慢",
+        TagStrength.current(warm, now) > TagStrength.current(cold, now),
+        "warm=${TagStrength.current(warm, now)} cold=${TagStrength.current(cold, now)}"
+    )
+}
+
+private fun depthTests() {
+    eq("depth: 2.0 → full", "full", TagStrength.depthOf(2.0f))
+    eq("depth: 1.0 → summary", "summary", TagStrength.depthOf(1.0f))
+    eq("depth: 0.3 → name_only", "name_only", TagStrength.depthOf(0.3f))
+    eq("depth: 0.05 → archived", "archived", TagStrength.depthOf(0.05f))
+
+    // 10/13. 归档不参与召回
+    val archived = TagRecord("a", "旧话题", vector = origin, strength = 0.05f, lastDecayAt = 0)
+    eq(
+        "depth: 归档不召回",
+        null,
+        Recall.select(origin, listOf(archived), { "摘要" }, { listOf("x") })
+    )
+
+    // 11. name_only 只给标签名
+    val weak = TagRecord("a", "MyChat 开发", vector = origin, strength = 0.3f, lastDecayAt = 0)
+    val weakHit = Recall.select(origin, listOf(weak), { "不该出现的摘要" }, { listOf("原文") })
+    val weakBlock = weakHit?.let { Recall.formatBlock(it) } ?: ""
+    check("depth: name_only 含标签名", weakBlock.contains("MyChat 开发"), weakBlock)
+    check("depth: name_only 不含摘要", !weakBlock.contains("不该出现的摘要"), weakBlock)
+
+    // 12. summary 含摘要
+    val summaryTag = TagRecord("a", "MyChat 开发", vector = origin, strength = 1.0f, lastDecayAt = 0)
+    val summaryHit = Recall.select(origin, listOf(summaryTag), { "这是摘要" }, { listOf("原文") })
+    check("depth: summary 含摘要", summaryHit?.text?.contains("这是摘要") == true, summaryHit?.text)
+
+    // full 带「可展开原文」
+    val fullTag = TagRecord("a", "MyChat 开发", vector = origin, strength = 2.0f, lastDecayAt = 0)
+    val fullHit = Recall.select(origin, listOf(fullTag), { null }, { listOf("原文一") })
+    check("depth: full 可展开", fullHit?.text?.contains("可展开原文") == true, fullHit?.text)
+}
+
+private fun penaltyTests() {
+    val now = 1_700_000_000_000L
+    val good = TagRecord("a", "话题", vector = origin, strength = 1.8f, lastDecayAt = now)
+
+    val userNegative = TagStrength.penalized(good, now, TagStrength.PENALTY_USER_NEGATIVE)
+    eq("penalty: 用户否定 -0.5", 1.3f, userNegative.strength)
+
+    val judge = TagStrength.penalized(good, now, TagStrength.PENALTY_JUDGE)
+    near("penalty: judge -0.2", 1.6f, judge.strength)
+
+    val floor = TagStrength.penalized(good.copy(strength = 0.2f), now, 0.5f)
+    eq("penalty: 不低于 0", 0f, floor.strength)
+}
+
+/** 强度 × 召回 × 归档的组装。 */
+private fun strengthAssemblyTests() {
+    val now = 1_700_000_000_000L
+    var tag = TagRecord("a", "MyChat 开发", vector = origin, lastDecayAt = now)
+
+    repeat(3) { tag = TagStrength.boosted(tag, now) }
+    near("asm: 三次召回 1.9", 1.9f, tag.strength)
+    eq("asm: depth=full", "full", TagStrength.depthOf(tag.strength))
+
+    // 200 天不读 → archived（readCount=3 时每天只衰减 0.0125）
+    val later = now + 200 * DAY
+    val decayed = TagStrength.current(tag, later)
+    check("asm: 200 天后归档", TagStrength.depthOf(decayed) == "archived", decayed.toString())
+    eq(
+        "asm: 归档不注入",
+        null,
+        Recall.select(origin, listOf(tag), { "摘要" }, { listOf("x") }, now = later)
+    )
+
+    // 恢复
+    val restored = TagStrength.restored(tag, later)
+    eq("asm: 恢复 1.0", 1.0f, restored.strength)
+    eq("asm: 恢复后 summary", "summary", TagStrength.depthOf(restored.strength))
 }
 
 /**

@@ -7,6 +7,7 @@ import mychat.framework.memory.Recall
 import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
 import mychat.framework.memory.TagRecord
+import mychat.framework.memory.TagStrength
 import mychat.framework.memory.Tagger
 import java.nio.ByteBuffer
 import java.util.UUID
@@ -41,6 +42,9 @@ class TagMemoryService(
         private val text: String,
     ) {
 
+        /** 本轮命中的标签；负反馈只惩罚它。 */
+        private var lastHitTagId: String? = null
+
         /** 检索：只在快照里找，且必须够像才注入。 */
         suspend fun recallBlock(): String? = runCatching {
             if (snapshot.isEmpty()) {
@@ -62,10 +66,51 @@ class TagMemoryService(
                 return null
             }
             log("recall:hit tag=" + best.id + " score=" + fmt(score) + " len=" + body.length)
-            Recall.formatBlock(RecallHit(best.id, best.name, score, body))
+            /*
+             * 加权命中的分数和裸余弦不是一回事：先按强度加权排序，
+             * 再用裸余弦判断"够不够像"（阈值只对语义相似有意义）。
+             */
+            val cosine = cosineOf(query, best.vector)
+            if (cosine < Recall.MIN) {
+                log("recall:miss best=" + fmt(cosine) + " threshold=" + fmt(Recall.MIN))
+                return null
+            }
+            val hit = Recall.select(
+                query = query,
+                tags = snapshot,
+                summaryOf = { null },
+                recentOf = { tagId -> tags.recentContents(tagId, MAX_RECALL_MESSAGES) },
+            ) ?: return null
+
+            val now = System.currentTimeMillis()
+            val boosted = TagStrength.boosted(best, now)
+            val depth = TagStrength.depthOf(boosted.strength)
+            persist(boosted, boosted.strength, depth, now)
+            log(
+                "mem:boost tag=" + best.id.take(8) + " from=" + fmt(best.strength) +
+                    " to=" + fmt(boosted.strength) + " reason=recall"
+            )
+            if (depth == "archived") log("mem:archive tag=" + best.id.take(8) + " strength=" + fmt(boosted.strength))
+            lastHitTagId = hit.tagId
+            Recall.formatBlock(hit)
         }.getOrElse { error ->
             log("recall:error " + error.javaClass.simpleName)
             null
+        }
+
+        /** 负反馈：用户说"不对"，或 judge 报了空话/复述。没命中过就什么都不做。 */
+        suspend fun penalize(amount: Float, reason: String) {
+            val last = lastHitTagId ?: return
+            runCatching {
+                val now = System.currentTimeMillis()
+                val record = snapshot.firstOrNull { it.id == last } ?: return
+                val penalty = TagStrength.penalized(record, now, amount)
+                persist(penalty, penalty.strength, TagStrength.depthOf(penalty.strength), now)
+                log(
+                    "mem:penalty tag=" + last.take(8) + " from=" + fmt(record.strength) +
+                        " to=" + fmt(penalty.strength) + " reason=" + reason
+                )
+            }.onFailure { error -> log("mem:error " + error.javaClass.simpleName) }
         }
 
         /** 打标：与检索用同一份快照，新建的标签本轮不参与召回。 */
@@ -109,8 +154,56 @@ class TagMemoryService(
 
     private suspend fun load(): List<TagRecord> = tags.all().mapNotNull { entity ->
         decode(entity.embedding)?.let { vector ->
-            TagRecord(entity.id, entity.name, entity.description, vector)
+            TagRecord(
+                id = entity.id,
+                name = entity.name,
+                description = entity.description,
+                vector = vector,
+                strength = entity.strength,
+                readCount = entity.readCount,
+                lastReadAt = entity.lastReadAt,
+                lastDecayAt = entity.lastDecayAt,
+            )
         }
+    }
+
+    /** 启动时打前 5 个标签的强度/深度，用来判断衰减是否在跑。 */
+    suspend fun logTopTags() {
+        if (!enabled()) return
+        runCatching {
+            val now = System.currentTimeMillis()
+            tags.top(5).forEach { entity ->
+                val record = TagRecord(
+                    entity.id, entity.name, entity.description,
+                    decode(entity.embedding) ?: return@forEach,
+                    strength = entity.strength,
+                    readCount = entity.readCount,
+                    lastReadAt = entity.lastReadAt,
+                    lastDecayAt = entity.lastDecayAt,
+                )
+                val current = TagStrength.current(record, now)
+                log(
+                    "mem:strength tag=" + entity.id.take(8) + " strength=" + fmt(current) +
+                        " depth=" + TagStrength.depthOf(current) + " read=" + entity.readCount
+                )
+                if (entity.strength - current > 0.01f) {
+                    log("mem:decay tag=" + entity.id.take(8) + " from=" + fmt(entity.strength) + " to=" + fmt(current))
+                }
+            }
+        }.onFailure { error -> log("mem:error " + error.javaClass.simpleName) }
+    }
+
+    /** 用当前强度与深度把一句标签落库。 */
+    private suspend fun persist(tag: TagRecord, strength: Float, depth: String, now: Long) {
+        tags.updateStrength(
+            id = tag.id,
+            strength = strength,
+            readCount = tag.readCount,
+            lastReadAt = tag.lastReadAt,
+            lastDecayAt = tag.lastDecayAt,
+            depth = depth,
+            now = now,
+        )
     }
 
     private fun log(line: String) {

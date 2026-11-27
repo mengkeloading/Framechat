@@ -2918,7 +2918,15 @@ class ChatViewModel(
                 conversationId == currentConversationId &&
                 stored.memoryEnabled && tagMemory != null
             ) {
-                withContext(NonCancellable) { memoryTurn?.tag(replyId) }
+                withContext(NonCancellable) {
+                    memoryTurn?.tag(replyId)
+                    if (memoryTurn != null && NEGATIVE_WORDS.any { latestQuestion.contains(it) }) {
+                        memoryTurn.penalize(
+                            mychat.framework.memory.TagStrength.PENALTY_USER_NEGATIVE,
+                            "user_negative"
+                        )
+                    }
+                }
             }
 
             /*
@@ -3543,6 +3551,9 @@ class ChatViewModel(
          * 反复强调"设定 / 情节 / 文风"三件事，是因为长篇创作里丢失它们的代价
          * 远大于丢失具体措辞 —— 措辞模型能再生成，人名地名和人物关系不能。
          */
+
+        /** 用户否定信号：命中就扣该标签的强度。 */
+        private val NEGATIVE_WORDS = listOf("不对", "错了", "不是这样")
 
         fun factory(
             chatApi: ChatApi,

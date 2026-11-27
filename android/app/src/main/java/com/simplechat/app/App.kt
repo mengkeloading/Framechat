@@ -83,6 +83,11 @@ class App : Application() {
             modules.problems.forEach { com.simplechat.app.hook.UsageLog.record("problem=" + it) }
             modules.infos.forEach { com.simplechat.app.hook.UsageLog.record("info=" + it) }
 
+            // 标签强度一览（DEBUG）：衰减是否在跑，看这几行就够
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching { tagMemory.logTopTags() }
+            }
+
             // 描述撞车提醒：需要向量，放后台算，不拖启动
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching {
