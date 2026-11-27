@@ -149,8 +149,8 @@ class ServiceApiTest {
         val file = Attachment(Attachment.Kind.TEXT, "report.pdf", data = "", fileId = "file-api-fixture")
         val openai = userContent("Summarize", listOf(file)).jsonArray
         assertEquals("file-api-fixture", openai[1].jsonObject["file_id"]!!.jsonPrimitive.content)
-        assertTrue(isSendableOutgoing(UiMessage("u", MessageRole.USER, "", listOf(file))))
-        val request = buildAnthropicRequest("deepseek-flash", "system", listOf(UiMessage("u", MessageRole.USER, "Summarize", listOf(file))),
+        assertTrue(isSendableOutgoing(UiMessage("u", MessageRole.USER, "", attachments = listOf(file))))
+        val request = buildAnthropicRequest("deepseek-flash", "system", listOf(UiMessage("u", MessageRole.USER, "Summarize", attachments = listOf(file))),
             false, true, false, null, reasoningEffort = "max")
         val block = request.messages.single().content.jsonArray.first().jsonObject
         assertEquals("document", block["type"]!!.jsonPrimitive.content)
@@ -158,7 +158,7 @@ class ServiceApiTest {
         assertEquals("max", request.outputConfig!!.effort)
         val image = file.copy(remoteImage = true)
         val imageRequest = buildAnthropicRequest("deepseek-flash", "system",
-            listOf(UiMessage("u", MessageRole.USER, "Describe", listOf(image))), false, false, false, null)
+            listOf(UiMessage("u", MessageRole.USER, "Describe", attachments = listOf(image))), false, false, false, null)
         assertEquals("image", imageRequest.messages.single().content.jsonArray.first().jsonObject["type"]!!.jsonPrimitive.content)
     }
 

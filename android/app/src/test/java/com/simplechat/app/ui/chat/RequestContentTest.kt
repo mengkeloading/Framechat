@@ -37,7 +37,7 @@ class RequestContentTest {
 
     @Test
     fun `explicit references can find a recent generated image past a text exchange`() {
-        val original = UiMessage("generated", MessageRole.ASSISTANT, "", listOf(image()), imageGeneration = true)
+        val original = UiMessage("generated", MessageRole.ASSISTANT, "", attachments = listOf(image()), imageGeneration = true)
         val question = UiMessage("question", MessageRole.USER, "这张图是什么风格？")
         val answer = UiMessage("answer", MessageRole.ASSISTANT, "写实风格")
         val edit = UiMessage("edit", MessageRole.USER, "可以把那张照片变成印象派风格的吗？")
