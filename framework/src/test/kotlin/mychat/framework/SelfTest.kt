@@ -1071,7 +1071,8 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     check(
         "consolidate: 终态日志完整",
         done != null && done.contains("scanned=") && done.contains("compressed=") &&
-            done.contains("skipped=") && done.contains("failed=") && done.contains("ms="),
+            done.contains("notDue=") && done.contains("noSource=") &&
+            done.contains("failed=") && done.contains("ms="),
         done ?: "缺日志"
     )
 }

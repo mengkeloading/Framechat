@@ -162,8 +162,8 @@ class DefaultConsolidator(
         )
         log(
             "consolidate:done scanned=${report.scanned} compressed=${report.compressed} " +
-                "skipped=${report.skipped} failed=${report.failed} " +
-                "capped=${report.capped} ms=${report.durationMs}"
+                "notDue=${report.notDue} noSource=${report.noSource} " +
+                "failed=${report.failed} capped=${report.capped} ms=${report.durationMs}"
         )
         return report
     }
