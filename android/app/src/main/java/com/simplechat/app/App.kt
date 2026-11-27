@@ -193,7 +193,7 @@ class AppContainer(private val app: Application) {
     val compressor: mychat.framework.memory.compress.Compressor by lazy {
         mychat.framework.memory.compress.DefaultCompressor(
             source = com.simplechat.app.hook.RoomCompressionSource(database),
-            summarizer = com.simplechat.app.hook.ChatApiSummarizer { prompt ->
+            summarizer = com.simplechat.app.hook.ChatApiSummarizer(stream = { prompt ->
                 val stored = settingsStore.flow.first()
                 chatApi.streamChat(
                     baseUrl = stored.baseUrl,
@@ -207,7 +207,7 @@ class AppContainer(private val app: Application) {
                     ),
                     thinkingEnabled = false,
                 )
-            },
+            }),
             log = { line ->
                 if (BuildConfig.DEBUG) com.simplechat.app.hook.UsageLog.record(line)
             },
