@@ -108,6 +108,12 @@ class App : Application() {
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching { container.tagMemory.fixMissingAnchors() }
                 runCatching { container.tagMemory.logTopTags() }
+                runCatching { container.consolidator.maybeRun() }
+                    .onFailure {
+                        com.simplechat.app.hook.UsageLog.record(
+                            "consolidate:error " + it.javaClass.simpleName
+                        )
+                    }
             }
 
             // 描述撞车提醒：需要向量，放后台算，不拖启动
@@ -177,6 +183,48 @@ class AppContainer(private val app: Application) {
     val chatApi: ChatApi by lazy { ChatApi(httpClient, sseClient, anthropicApi, json) }
 
     val settingsStore: SettingsStore by lazy { SettingsStore(app) }
+
+    /**
+     * 记忆压缩：取数走 Room，摘要走聊天通道。
+     *
+     * 摘要用**当前选中的模型**：换模型时行为会跟着变，这是有意的 ——
+     * 用便宜的模型压出来的摘要质量差，用户自己会换回来。
+     */
+    val compressor: mychat.framework.memory.compress.Compressor by lazy {
+        mychat.framework.memory.compress.DefaultCompressor(
+            source = com.simplechat.app.hook.RoomCompressionSource(database),
+            summarizer = com.simplechat.app.hook.ChatApiSummarizer { prompt ->
+                val stored = settingsStore.flow.first()
+                chatApi.streamChat(
+                    baseUrl = stored.baseUrl,
+                    apiKey = stored.apiKey,
+                    model = com.simplechat.app.net.ModelInfo(id = stored.modelId),
+                    messages = listOf(
+                        com.simplechat.app.net.OutMessageDto(
+                            role = "user",
+                            content = com.simplechat.app.net.MessageContent.text(prompt),
+                        )
+                    ),
+                    thinkingEnabled = false,
+                )
+            },
+            log = { line ->
+                if (BuildConfig.DEBUG) com.simplechat.app.hook.UsageLog.record(line)
+            },
+        )
+    }
+
+    /** 12 小时一次的批量整理；不阻塞启动，失败只记日志。 */
+    val consolidator: mychat.framework.memory.consolidate.Consolidator by lazy {
+        mychat.framework.memory.consolidate.DefaultConsolidator(
+            source = com.simplechat.app.hook.RoomConsolidationSource(database.tagDao()),
+            compressor = compressor,
+            settings = com.simplechat.app.hook.DataStoreConsolidateSettings(settingsStore),
+            log = { line ->
+                if (BuildConfig.DEBUG) com.simplechat.app.hook.UsageLog.record(line)
+            },
+        )
+    }
 
     /**
      * 模块表。assets 不是 File，走 [AssetModuleTree]。

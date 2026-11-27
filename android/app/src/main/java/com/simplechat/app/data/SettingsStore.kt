@@ -16,6 +16,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -821,6 +822,14 @@ class SettingsStore(
         preferences.edit { it[Keys.IMAGE_SKIP_NOTICE] = enabled }
     }
 
+    /** 上次批量整理时间；0 = 从没跑过。 */
+    suspend fun lastConsolidateAt(): Long =
+        preferences.data.map { it[Keys.LAST_CONSOLIDATE_AT] ?: 0L }.first()
+
+    suspend fun setLastConsolidateAt(t: Long) {
+        preferences.edit { it[Keys.LAST_CONSOLIDATE_AT] = t }
+    }
+
     suspend fun setMemoryEnabled(enabled: Boolean) {
         preferences.edit { it[Keys.MEMORY_ENABLED] = enabled }
     }
@@ -1010,6 +1019,8 @@ class SettingsStore(
         val ACTIVE_PROFILE = stringPreferencesKey("active_api_profile")
         val RETRY_SKIP_NOTICE = booleanPreferencesKey("show_retry_skip_notice")
         val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
+        /** 上次批量整理记忆的时间；0 = 从没跑过。 */
+        val LAST_CONSOLIDATE_AT = longPreferencesKey("last_consolidate_at")
         val IMAGE_SKIP_NOTICE = booleanPreferencesKey("show_image_skip_notice")
         val LOADING_WORDS = stringPreferencesKey("loading_words")
         val LOADING_WORDS_USE_THEME_COLOR = booleanPreferencesKey("loading_words_use_theme_color")

@@ -46,6 +46,8 @@ else
   JAVA="$TOOLS/$(cat "$TOOLS/jdk.path")/bin/java"
 fi
 STDLIB="$LIB/kotlin-stdlib-2.1.20.jar"
+# 只给测试用（runBlocking 驱动 suspend 用例）；主代码不依赖
+COROUTINES="$LIB/kotlinx-coroutines-core-jvm-1.8.0.jar"
 RHINO="$LIB/rhino-1.7.15.jar"
 COMPILER_CP=$(ls "$LIB"/*.jar | tr '\n' ':')
 
@@ -56,12 +58,12 @@ mkdir -p "$OUT"
 echo "== 编译"
 "$JAVA" -cp "$COMPILER_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
   -no-stdlib -nowarn -jvm-target 17 \
-  -classpath "$STDLIB:$RHINO" \
+  -classpath "$STDLIB:$RHINO:$COROUTINES" \
   -d "$OUT" \
   $(find "$ROOT/src" -name '*.kt')
 
 echo "== 自测：核心契约"
-"$JAVA" -cp "$OUT:$STDLIB" mychat.framework.SelfTestKt
+"$JAVA" -cp "$OUT:$STDLIB:$COROUTINES" mychat.framework.SelfTestKt
 
 echo "== 自测：Rhino 沙箱"
 "$JAVA" -cp "$OUT:$STDLIB:$RHINO" mychat.framework.sandbox.RhinoSelfTestKt

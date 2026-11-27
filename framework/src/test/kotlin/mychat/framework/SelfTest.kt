@@ -12,6 +12,11 @@ import mychat.framework.core.TurnResult
 import mychat.framework.hook.Attachment
 import mychat.framework.butler.PromptByIntent
 import mychat.framework.log.AppendLog
+import mychat.framework.memory.compress.Compressor
+import mychat.framework.memory.consolidate.CompressibleTag
+import mychat.framework.memory.consolidate.ConsolidateSettings
+import mychat.framework.memory.consolidate.ConsolidationSource
+import mychat.framework.memory.consolidate.DefaultConsolidator
 import mychat.framework.memory.compress.Decay
 import mychat.framework.memory.compress.LevelPolicy
 import mychat.framework.hook.AuditLog
@@ -79,6 +84,7 @@ fun main() {
     outputJudgeTests()
     appendLogTests()
     compressTests()
+    consolidateTests()
     manifestAuditTests()
     formatCheckTests()
     builderTests()
@@ -900,6 +906,89 @@ private fun compressTests() {
     eq("level: 0.499 → L3", 3, LevelPolicy.displayLevel(0.499f))
     eq("level: 0.2 → L3", 3, LevelPolicy.displayLevel(0.2f))
     eq("level: 0.199 → L4", 4, LevelPolicy.displayLevel(0.199f))
+}
+
+// ---------- 批量整理 ----------
+
+private class FakeTags(private val tags: List<CompressibleTag>) : ConsolidationSource {
+    override suspend fun compressible(): List<CompressibleTag> = tags
+}
+
+private class FakeSettings(var at: Long) : ConsolidateSettings {
+    override suspend fun lastConsolidateAt(): Long = at
+    override suspend fun setLastConsolidateAt(t: Long) { at = t }
+}
+
+private class FakeCompressor(
+    private val result: (String) -> Boolean = { true },
+) : Compressor {
+    val calls = mutableListOf<String>()
+    override suspend fun compress(tagId: String, toLevel: Int): Boolean {
+        calls += tagId
+        return result(tagId)
+    }
+}
+
+private fun consolidateTests() = kotlinx.coroutines.runBlocking {
+    val hour = 3_600_000L
+    val day = 86_400_000L
+    val now = 1_700_000_000_000L
+
+    // 一个"该压"的标签（已到 L1、超过 7 天没压）和两个"不该压"的（刚建 / 刚压过）
+    val compressible = CompressibleTag(
+        id = "t1", strength = 1.0f, readCount = 0, lastDecayAt = now,
+        currentLevel = 1, createdAt = now - 100 * day, lastCompressedAt = now - 8 * day,
+    )
+    val fresh = compressible.copy(id = "t2", createdAt = now - hour, lastCompressedAt = 0)
+    val justDone = compressible.copy(id = "t3", lastCompressedAt = now - hour)
+
+    val logs = mutableListOf<String>()
+    var settings = FakeSettings(now - hour)
+    var compressor = FakeCompressor()
+    fun consolidator(tags: List<CompressibleTag>) = DefaultConsolidator(
+        source = FakeTags(tags),
+        compressor = compressor,
+        settings = settings,
+        clock = { now },
+        log = { logs += it },
+    )
+
+    // 3. 12 小时内不跑
+    val notDue = consolidator(listOf(compressible)).maybeRun()
+    eq("consolidate: 未到期不扫描", 0, notDue.scanned)
+    eq("consolidate: 未到期不调 compressor", 0, compressor.calls.size)
+
+    // 4. 超过 12 小时执行，并更新 lastConsolidateAt
+    settings = FakeSettings(now - 13 * hour)
+    logs.clear()
+    val due = consolidator(listOf(compressible)).maybeRun()
+    eq("consolidate: 到期后扫描", 1, due.scanned)
+    eq("consolidate: 到期后更新时间", now, settings.at)
+
+    // 5. 三个标签：一个该压，两个不该压
+    settings = FakeSettings(0)
+    logs.clear()
+    compressor = FakeCompressor()
+    val report = consolidator(listOf(compressible, fresh, justDone)).runNow()
+    eq("consolidate: 扫描 3 个", 3, report.scanned)
+    eq("consolidate: 只压 1 个", 1, report.compressed)
+    eq("consolidate: 跳过 2 个", 2, report.skipped)
+
+    // 6/7. 一个失败不影响其他
+    compressor = FakeCompressor { it == "t2" }
+    val mixed = listOf(compressible, compressible.copy(id = "t2"))
+    val partial = consolidator(mixed).runNow()
+    eq("consolidate: 失败计数", 1, partial.failed)
+    eq("consolidate: 成功计数", 1, partial.compressed)
+
+    // 8. 终态日志字段完整
+    val done = logs.lastOrNull { it.contains("consolidate:done") }
+    check(
+        "consolidate: 终态日志完整",
+        done != null && done.contains("scanned=") && done.contains("compressed=") &&
+            done.contains("skipped=") && done.contains("failed=") && done.contains("ms="),
+        done ?: "缺日志"
+    )
 }
 
 // ---------- 日志：一次安装、多次追加 ----------
