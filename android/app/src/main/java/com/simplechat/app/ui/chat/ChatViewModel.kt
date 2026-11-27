@@ -1720,6 +1720,13 @@ class ChatViewModel(
      * 是关于"上一轮答错了"，两件事不能互相取消。
      */
     private fun penalizeIfNegative(userText: String) {
+        if (BuildConfig.DEBUG) {
+            val lastAssistant = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+            com.simplechat.app.hook.UsageLog.record(
+                "neg:input size=" + messages.size +
+                    " lastAsst=" + (lastAssistant?.let { it.id + ":" + it.tagId } ?: "null")
+            )
+        }
         val prevTagId = mychat.framework.memory.MemoryFeedback.penaltyTargetOf(
             userText,
             messages.map {
@@ -2985,6 +2992,19 @@ class ChatViewModel(
                 if (tagId != null) {
                     patch(replyId) { it.copy(tagId = tagId) }
                     userMessageId?.let { uid -> patch(uid) { it.copy(tagId = tagId) } }
+                }
+                if (BuildConfig.DEBUG) {
+                    com.simplechat.app.hook.UsageLog.record(
+                        "tag:sync replyId=" + replyId +
+                            " inList=" + messages.any { it.id == replyId } +
+                            " tagId=" + messages.firstOrNull { it.id == replyId }?.tagId
+                    )
+                    com.simplechat.app.hook.UsageLog.record(
+                        "tag:sync userMessageId=" + userMessageId +
+                            " inList=" + (userMessageId != null &&
+                            messages.any { it.id == userMessageId }) +
+                            " tagId=" + messages.firstOrNull { it.id == userMessageId }?.tagId
+                    )
                 }
             }
 
