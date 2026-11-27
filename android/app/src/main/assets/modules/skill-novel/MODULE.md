@@ -5,6 +5,12 @@ description: 小说写作。用户说"帮我写个故事""写一段描写""续�
 version: 1.0.0
 hooks: []
 inject: none
+sample_queries:
+  - "帮我写个故事"
+  - "续写这段对话"
+  - "写一段场景描写"
+  - "这个人物怎么塑造"
+  - "再来一段对白"
 capabilities:
   resource.read: 3
 prefix: 小说

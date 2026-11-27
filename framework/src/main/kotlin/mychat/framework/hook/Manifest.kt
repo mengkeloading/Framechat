@@ -92,6 +92,13 @@ data class ModuleManifest(
     val tools: List<JsonValue> = emptyList(),
     /** 可选：输入以「prefix：」开头时强制使用本模块，跳过路由。 */
     val prefix: String? = null,
+    /**
+     * 可选：用户真实会说的话（示例查询）。
+     *
+     * 有它就用它建向量 —— 示例比描述更接近查询分布：描述是写给自己看的，
+     * 示例是用户嘴里说出来的。
+     */
+    val sampleQueries: List<String> = emptyList(),
     /** 可选：启用本模块时需要的前置处理，如 normalize。 */
     val needs: List<String> = emptyList(),
     /** 可选：输出必须含的格式标记（至少一个）。留空 = 不检查。 */
@@ -131,6 +138,8 @@ data class ModuleManifest(
                 tools = parseInlineTools(fm.scalars["tools"]),
                 prefix = fm.scalars["prefix"]?.takeIf { it.isNotBlank() },
                 needs = fm.lists["needs"] ?: parseInlineList(fm.scalars["needs"]),
+                sampleQueries = fm.lists["sample_queries"]
+                    ?: parseInlineList(fm.scalars["sample_queries"]),
                 formatMarks = fm.lists["format_marks"]
                     ?: parseInlineList(fm.scalars["format_marks"]),
                 formatRequired = fm.lists["format_required"]

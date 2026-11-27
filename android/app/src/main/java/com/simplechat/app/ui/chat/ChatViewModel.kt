@@ -1735,18 +1735,35 @@ class ChatViewModel(
             return
         }
         viewModelScope.launch {
-            val report = runCatching { c.runNowIgnoringWindow() }.getOrElse {
-                banner = "整理失败：" + it.javaClass.simpleName
-                return@launch
-            }
-            val text = "压缩完成：扫描 " + report.scanned + "，压缩 " + report.compressed +
-                "，跳过 " + report.skipped + "，失败 " + report.failed +
-                (if (report.capped) "（已达单次上限）" else "")
+            val parentId = messages.lastOrNull()?.id ?: "root"
             val replyId = repository.beginAssistantMessage(
                 conversationId = conversationId,
-                parentId = messages.lastOrNull()?.id ?: "root",
+                parentId = parentId,
                 model = settings.model.id,
             )
+            messages += UiMessage(
+                id = replyId,
+                role = MessageRole.ASSISTANT,
+                content = "正在压缩…",
+                status = MessageStatus.STREAMING,
+                parentId = parentId,
+            )
+
+            val report = runCatching {
+                c.runNowIgnoringWindow { done, total ->
+                    patch(replyId) { it.copy(content = "正在压缩 " + done + "/" + total + " …") }
+                }
+            }.getOrElse {
+                patch(replyId) { it.copy(content = "整理失败：" + it.javaClass.simpleName) }
+                repository.finishMessage(replyId, "整理失败", null, MessageStatus.ERROR)
+                return@launch
+            }
+
+            val text = "压缩完成：扫描 " + report.scanned + "，压缩 " + report.compressed +
+                "，未到期 " + report.notDue + "，无原文 " + report.noSource +
+                "，失败 " + report.failed +
+                (if (report.capped) "（已达单次上限）" else "")
+            patch(replyId) { it.copy(content = text, status = MessageStatus.DONE) }
             repository.finishMessage(
                 id = replyId,
                 content = text,

@@ -47,6 +47,7 @@ class ButlerManager(
         name = pkg.manifest.name,
         description = pkg.manifest.description,
         prefix = pkg.manifest.prefix,
-        embeddingText = ModuleDocuments.textOf(pkg)
+        embeddingText = ModuleDocuments.textOf(pkg),
+        sampleQueries = pkg.manifest.sampleQueries
     )
 }

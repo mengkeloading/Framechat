@@ -1,6 +1,7 @@
 package mychat.framework
 
 import mychat.framework.butler.ButlerManager
+import mychat.framework.butler.ModuleMeta
 import mychat.framework.butler.SemanticButler
 import mychat.framework.embedding.Candidate
 import mychat.framework.embedding.ModuleDocuments
@@ -90,6 +91,7 @@ fun main() {
     metaCases(registry)
     metaConsistencyCases(registry)
     whenToUseCases(registry)
+    sampleQueryCase()
     cacheKeyCase(registry)
     embedderMethodCase(registry)
     parityCase(registry)
@@ -109,7 +111,10 @@ private fun textOf(pkg: ModulePackage): String = ModuleDocuments.textOf(pkg)
 private fun embedderFor(registry: ModuleRegistry, query: String, queryVector: FloatArray, hitId: String): ScriptedEmbedder {
     val passage = LinkedHashMap<String, FloatArray>()
     for (pkg in registry.all()) {
-        passage[textOf(pkg)] = if (pkg.id == hitId) floatArrayOf(1f, 0f, 0f) else floatArrayOf(0f, 1f, 0f)
+        val vector = if (pkg.id == hitId) floatArrayOf(1f, 0f, 0f) else floatArrayOf(0f, 1f, 0f)
+        passage[textOf(pkg)] = vector
+        // 有 sample_queries 的模块按示例建向量
+        for (sample in pkg.manifest.sampleQueries) passage[sample] = vector
     }
     return ScriptedEmbedder(mapOf(query to queryVector), passage)
 }
@@ -245,6 +250,69 @@ private fun whenToUseCases(registry: ModuleRegistry) {
     }
 }
 
+// ---------- J. 示例查询参与路由 ----------
+
+private class SampleEmbedder(
+    private val passages: Map<String, FloatArray>,
+    private val queryVectors: Map<String, FloatArray> = emptyMap(),
+) : mychat.framework.embedding.TextEmbedder {
+    var passageCalls = 0
+    override fun embed(text: String): FloatArray? = embedPassage(text)
+    override fun embedQuery(text: String): FloatArray =
+        queryVectors[text] ?: passages[text] ?: floatArrayOf(0f, 0f, 1f)
+
+    override fun embedPassage(text: String): FloatArray? {
+        passageCalls++
+        return passages[text]
+    }
+}
+
+private fun sampleQueryCase() {
+    val q = "帮我看看这段代码"
+    val embedder = SampleEmbedder(
+        passages = mapOf(
+            "示例A" to floatArrayOf(1f, 0f, 0f),
+            "描述文本" to floatArrayOf(0f, 1f, 0f),
+        ),
+        queryVectors = mapOf(q to floatArrayOf(1f, 0f, 0f)),
+    )
+    val butler = SemanticButler(embedder)
+
+    // 1. 有 sample_queries → 用示例算分（接近 1.0，远高于描述那条）
+    val withSamples = ModuleMeta(
+        id = "m1", name = "代码审查", description = "描述文本",
+        embeddingText = "描述文本", sampleQueries = listOf("示例A"),
+    )
+    val scored = butler.route(q, listOf(withSamples))
+    check("J: 示例参与打分", (scored.scores["m1"] ?: 0f) > 0.9f, scored.scores.toString())
+
+    // 2. 没有 → 回退 description 的向量
+    val without = withSamples.copy(sampleQueries = emptyList())
+    val fallback = butler.route(q, listOf(without))
+    check("J: 无示例回退描述", (fallback.scores["m1"] ?: 0f) < 0.3f, fallback.scores.toString())
+
+    // 3. 路由阈值逻辑不变：分数相同时两个都收（SECOND_WINDOW 内）
+    val twin = withSamples.copy(id = "m2", sampleQueries = listOf("示例A"))
+    val tie = butler.route(q, listOf(withSamples, twin))
+    check(
+        "J: 分数接近都收",
+        tie.reason == "hit" && tie.modules.size == 2,
+        tie.reason + " " + tie.modules
+    )
+
+    // 4. 示例分数低时仍然 below_min：示例不绕过阈值
+    val far = ModuleMeta(
+        id = "m3", name = "无关模块", description = "x",
+        embeddingText = "x", sampleQueries = listOf("示例B"),
+    )
+    val lowEmbedder = SampleEmbedder(
+        passages = mapOf("示例B" to floatArrayOf(0f, 1f, 0f)),
+        queryVectors = mapOf(q to floatArrayOf(1f, 0f, 0f)),
+    )
+    val low = SemanticButler(lowEmbedder).route(q, listOf(far))
+    eq("J: 分数低仍 below_min", "below_min", low.reason)
+}
+
 // ---------- I. 缓存 key 带文本 hash ----------
 
 private fun cacheKeyCase(registry: ModuleRegistry) {
@@ -259,11 +327,16 @@ private fun cacheKeyCase(registry: ModuleRegistry) {
     butler.route("帮我写个故事", metas)
     eq("I: 同文本重用缓存", first, embedder.passageCalls)
 
+    // skill_novel 有 sample_queries，向量按示例建；加一条示例应当只重算这一条
     val changed = metas.map { meta ->
-        if (meta.id == "skill_novel") meta.copy(embeddingText = meta.embeddingText + "追加") else meta
+        if (meta.id == "skill_novel") {
+            meta.copy(sampleQueries = meta.sampleQueries + "再来一段追加")
+        } else {
+            meta
+        }
     }
     butler.route("帮我写个故事", changed)
-    eq("I: 文本变了只重算那一个", first + 1, embedder.passageCalls)
+    eq("I: 示例变了只重算那一条", first + 1, embedder.passageCalls)
 }
 
 // ---------- F. 查询必须走 embedQuery ----------

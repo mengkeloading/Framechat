@@ -18,6 +18,8 @@ import mychat.framework.memory.consolidate.ConsolidateSettings
 import mychat.framework.memory.consolidate.ConsolidationSource
 import mychat.framework.memory.consolidate.DefaultConsolidator
 import mychat.framework.debug.DebugCommands
+import mychat.framework.memory.TagNaming
+import mychat.framework.memory.compress.DefaultCompressor
 import mychat.framework.memory.compress.Decay
 import mychat.framework.memory.compress.LevelPolicy
 import mychat.framework.hook.AuditLog
@@ -87,6 +89,8 @@ fun main() {
     compressTests()
     consolidateTests()
     debugCommandTests()
+    tagNamingTests()
+    promptTests()
     manifestAuditTests()
     formatCheckTests()
     builderTests()
@@ -1002,6 +1006,7 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     eq("consolidate: 扫描 3 个", 3, report.scanned)
     eq("consolidate: 只压 1 个", 1, report.compressed)
     eq("consolidate: 跳过 2 个", 2, report.skipped)
+    eq("consolidate: 跳过全是 notDue", 2, report.notDue)
 
     // 6/7. 一个失败不影响其他
     compressor = FakeCompressor { it == "t2" }
@@ -1086,6 +1091,45 @@ private fun debugCommandTests() {
     check(
         "debug: 别的文本不是命令",
         !DebugCommands.isCompressCommand("压缩一下记忆", true)
+    )
+}
+
+// ---------- 标签命名 ----------
+
+private fun tagNamingTests() {
+    eq("naming: 去「我在」", "做 MyChat 这个", TagNaming.nameOf("我在做 MyChat 这个 App"))
+    eq("naming: 去「帮我」", "写个故事", TagNaming.nameOf("帮我写个故事"))
+    eq("naming: 12 字以内不动", "今天天气怎么样", TagNaming.nameOf("今天天气怎么样"))
+    eq("naming: 全空给兜底", "未命名话题", TagNaming.nameOf("   "))
+    eq("naming: 去结尾语气词", "这个东西怎么用", TagNaming.nameOf("这个东西怎么用呢"))
+    check(
+        "naming: 不超过 12 字",
+        TagNaming.nameOf("我想问一下记忆系统的强度到底是怎么算的").length <= 12,
+        TagNaming.nameOf("我想问一下记忆系统的强度到底是怎么算的")
+    )
+}
+
+// ---------- 压缩 prompt ----------
+
+private fun promptTests() {
+    val prompt = DefaultCompressor.buildPrompt(
+        input = "[user] 我决定用 Kotlin\n[assistant] 好的",
+        maxLen = 200,
+        level = 1,
+    )
+    check(
+        "prompt: 含四要素",
+        prompt.contains("决定") && prompt.contains("待办") &&
+            prompt.contains("未决") && prompt.contains("事实"),
+        prompt.take(200)
+    )
+    check("prompt: 要求丢弃寒暄", prompt.contains("寒暄"), prompt)
+    check("prompt: 不用列表符号", prompt.contains("不要用列表符号"), prompt)
+    check("prompt: 字数限制在里面", prompt.contains("200 字以内"), prompt)
+    check(
+        "prompt: L3 更短",
+        DefaultCompressor.buildPrompt("x", 40, 3).contains("不超过 40 字"),
+        DefaultCompressor.buildPrompt("x", 40, 3)
     )
 }
 

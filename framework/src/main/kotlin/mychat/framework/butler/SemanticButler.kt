@@ -30,9 +30,7 @@ class SemanticButler(
         if (!embedder.ready) return RouteResult(emptyList(), "not_ready")
         val queryVector = embedder.embedQuery(query)
             ?: return RouteResult(emptyList(), "no_vector")
-        val candidates = modules.mapNotNull { meta ->
-            vectorOf(meta)?.let { Candidate(meta.id, it) }
-        }
+        val candidates = modules.mapNotNull { meta -> candidateOf(queryVector, meta) }
         if (candidates.isEmpty()) return RouteResult(emptyList(), "no_vector")
 
         val decision = ModuleRouter.decide(queryVector, candidates)
@@ -84,6 +82,33 @@ class SemanticButler(
         val va = embedder.embedPassage(a) ?: return 0f
         val vb = embedder.embedPassage(b) ?: return 0f
         return mychat.framework.embedding.Vectors.cosine(va, vb)
+    }
+
+    /**
+     * 一个模块的候选向量。
+     *
+     * 有 sampleQueries 时对每条示例各建向量，取与查询**余弦最高**的那条：
+     * 后面的 margin 判断仍然只看这一个分数，判定逻辑不变。
+     */
+    private fun candidateOf(queryVector: FloatArray, meta: ModuleMeta): Candidate? {
+        if (meta.sampleQueries.isEmpty()) {
+            return vectorOf(meta)?.let { Candidate(meta.id, it) }
+        }
+        val vectors = meta.sampleQueries.mapNotNull { sample -> sampleVector(meta.id, sample) }
+        if (vectors.isEmpty()) return vectorOf(meta)?.let { Candidate(meta.id, it) }
+        val best = vectors.maxByOrNull {
+            mychat.framework.embedding.Vectors.cosine(queryVector, it)
+        } ?: return null
+        return Candidate(meta.id, best)
+    }
+
+    /** 示例向量按 (模块 id, 示例文本) 缓存，示例改了就重算。 */
+    private fun sampleVector(id: String, sample: String): FloatArray? {
+        val key = id + "#" + sample
+        cache[key]?.let { if (it.text == sample) return it.vector }
+        val vector = embedder.embedPassage(sample) ?: return null
+        cache[key] = Cached(sample, vector)
+        return vector
     }
 
     /** 向量按 (id, 文本) 缓存：改过描述的模块自动重算。 */

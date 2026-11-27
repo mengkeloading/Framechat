@@ -40,7 +40,9 @@ data class ModuleMeta(
     val name: String,
     val description: String,
     val prefix: String? = null,
-    val embeddingText: String = ""
+    val embeddingText: String = "",
+    /** 用户真实说法；非空时优先用它们建向量，取与查询最像的那条。 */
+    val sampleQueries: List<String> = emptyList(),
 )
 
 data class RouteResult(

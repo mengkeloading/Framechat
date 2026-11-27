@@ -17,8 +17,14 @@ interface Consolidator {
     /** 无条件执行一次（手动触发 / 测试） */
     suspend fun runNow(): ConsolidateReport
 
-    /** 忽略 12 小时窗口与 48 小时巩固窗口与压缩间隔，把到期的一次压完 */
-    suspend fun runNowIgnoringWindow(): ConsolidateReport
+    /**
+     * 忽略 12 小时窗口、巩固窗口与压缩间隔，把到期的一次压完。
+     *
+     * [onProgress] 在每次压缩前调一次：(已完成, 总数)。
+     */
+    suspend fun runNowIgnoringWindow(
+        onProgress: (suspend (done: Int, total: Int) -> Unit)? = null,
+    ): ConsolidateReport
 }
 
 data class ConsolidateReport(
@@ -29,6 +35,10 @@ data class ConsolidateReport(
     val durationMs: Long,
     /** true = 触到单次上限，还有没处理的标签 */
     val capped: Boolean = false,
+    /** 强度/间隔没到，本轮不该压 */
+    val notDue: Int = 0,
+    /** 标签下没有可用的对话原文 */
+    val noSource: Int = 0,
 )
 
 /** 整理需要知道的标签快照（强度是**落库值**，衰减在这里算）。 */
@@ -77,9 +87,14 @@ class DefaultConsolidator(
 
     override suspend fun runNow(): ConsolidateReport = execute(force = false)
 
-    override suspend fun runNowIgnoringWindow(): ConsolidateReport = execute(force = true)
+    override suspend fun runNowIgnoringWindow(
+        onProgress: (suspend (done: Int, total: Int) -> Unit)?,
+    ): ConsolidateReport = execute(force = true, onProgress = onProgress)
 
-    private suspend fun execute(force: Boolean): ConsolidateReport {
+    private suspend fun execute(
+        force: Boolean,
+        onProgress: (suspend (done: Int, total: Int) -> Unit)? = null,
+    ): ConsolidateReport {
         val start = clock()
         var scanned = 0
         var compressed = 0
@@ -92,6 +107,10 @@ class DefaultConsolidator(
         }
 
         var capped = false
+        // 进度分母：上限与实际候选数取小，避免显示 "0/5" 而实际只有 2 个
+        val allowed = minOf(maxPerRun, tags.size)
+        var notDue = 0
+        var noSource = 0
         for (tag in tags) {
             scanned++
             val strength = Decay.strengthAt(
@@ -111,6 +130,7 @@ class DefaultConsolidator(
             )
             if (goal == null) {
                 skipped++
+                notDue++
                 continue
             }
             // 配额只数"真的要压的"：前几个都不该压，不该用掉配额
@@ -118,9 +138,16 @@ class DefaultConsolidator(
                 capped = true
                 break
             }
+            onProgress?.invoke(compressed + failed, allowed)
             // 单个失败不影响其他标签
             val ok = runCatching { compressor.compress(tag.id, goal) }.getOrElse { false }
-            if (ok) compressed++ else failed++
+            if (ok) {
+                compressed++
+            } else {
+                failed++
+                // 失败里最常见的是"没有原文"：区分开，否则 skipped 看不出含义
+                if (tag.currentLevel == 0) noSource++
+            }
         }
 
         val report = ConsolidateReport(
@@ -130,6 +157,8 @@ class DefaultConsolidator(
             failed = failed,
             durationMs = clock() - start,
             capped = capped,
+            notDue = notDue,
+            noSource = noSource,
         )
         log(
             "consolidate:done scanned=${report.scanned} compressed=${report.compressed} " +

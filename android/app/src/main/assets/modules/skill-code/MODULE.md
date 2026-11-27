@@ -5,6 +5,12 @@ description: 代码审查。用户贴出代码、问"这样写对不对""有问�
 version: 1.0.0
 hooks: []
 inject: none
+sample_queries:
+  - "这段代码有问题吗"
+  - "帮我看看这个函数"
+  - "这样写对不对"
+  - "能优化一下吗"
+  - "这里为什么报错"
 capabilities: {}
 entry: script/main.js
 format_marks:
