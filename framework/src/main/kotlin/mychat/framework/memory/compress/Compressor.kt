@@ -143,6 +143,8 @@ class DefaultCompressor(
 
         /** sourceRefs 的 JSON 形态：`["msg:a","msg:b"]`。 */
         fun sourcesToJson(sources: List<String>): String =
-            sources.joinToString(prefix = "[", postfix = "]") { "\"" + it.replace("\"", "\\\"") + "\"" }
+            sources.joinToString(separator = ",", prefix = "[", postfix = "]") {
+                "\"" + it.replace("\"", "\\\"") + "\""
+            }
     }
 }
