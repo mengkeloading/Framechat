@@ -20,6 +20,8 @@ mychat.py 选 1 打包
 - dist/ 产物
 - legacy/ 旧工程归档
 
+记忆系统设计：[MEMORY.md](docs/MEMORY.md)
+
 ## 规矩
 
 1 改完 js 或 modules 要重新打包
