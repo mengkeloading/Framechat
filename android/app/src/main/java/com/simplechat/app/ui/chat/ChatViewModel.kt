@@ -2918,7 +2918,7 @@ class ChatViewModel(
                 conversationId == currentConversationId &&
                 stored.memoryEnabled && tagMemory != null
             ) {
-                withContext(NonCancellable) { tagMemory.tag(text, replyId) }
+                withContext(NonCancellable) { tagMemory.tag(latestQuestion, replyId) }
             }
 
             /*

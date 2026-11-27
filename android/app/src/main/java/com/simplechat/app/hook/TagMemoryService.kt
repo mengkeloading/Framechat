@@ -30,19 +30,26 @@ class TagMemoryService(
                 log("recall:miss best=0")
                 return null
             }
-            val hit = Recall.select(
-                query = query,
-                tags = records,
-                summaryOf = { null },
-                recentOf = { tagId -> tags.recentContents(tagId, MAX_RECALL_MESSAGES) },
-            )
-            if (hit == null) {
-                val best = records.maxOfOrNull { cosineOf(query, it.vector) } ?: 0f
-                log("recall:miss best=" + fmt(best))
+            /*
+             * 选标签与取原文分成两步：Recall.select 的回调里不能 suspend，
+             * 而取最近原文必须走 DAO。
+             */
+            val best = records.maxByOrNull { cosineOf(query, it.vector) } ?: return null
+            val score = cosineOf(query, best.vector)
+            if (score < Recall.MIN) {
+                log("recall:miss best=" + fmt(score))
                 return null
             }
-            log("recall:hit tag=" + hit.tagId + " len=" + hit.text.length)
-            Recall.formatBlock(hit)
+            val text2 = tags.recentContents(best.id, MAX_RECALL_MESSAGES)
+                .take(MAX_RECALL_MESSAGES)
+                .map { it.take(EXCERPT) }
+                .joinToString("\n---\n")
+            if (text2.isBlank()) {
+                log("recall:miss best=" + fmt(score))
+                return null
+            }
+            log("recall:hit tag=" + best.id + " len=" + text2.length)
+            Recall.formatBlock(mychat.framework.memory.RecallHit(best.id, best.name, score, text2))
         }.getOrElse { error ->
             log("recall:error " + error.javaClass.simpleName)
             null
@@ -122,5 +129,6 @@ class TagMemoryService(
 
     private companion object {
         const val MAX_RECALL_MESSAGES = 2
+        const val EXCERPT = 200
     }
 }
