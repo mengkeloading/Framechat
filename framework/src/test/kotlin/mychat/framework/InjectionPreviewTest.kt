@@ -82,7 +82,7 @@ private fun preview(
         }
         val forbids = sectionLines("【禁止】")
         val requires = sectionLines("【要求】")
-        check("skill_code: 禁止 4 条", forbids.size == 4, forbids.toString())
+        check("skill_code: 禁止 5 条", forbids.size == 5, forbids.toString())
         check("skill_code: 要求 3 条", requires.size == 3, requires.toString())
     }
     if (id == "skill_code") {

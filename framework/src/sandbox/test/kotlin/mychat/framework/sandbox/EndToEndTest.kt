@@ -81,6 +81,7 @@ fun main() {
     partialMissingScenario(registry)
     cleanScenario(registry)
     intentScenarioTests(registry)
+    judgeScenario(registry)
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -235,6 +236,15 @@ private fun scenarioD(registry: ModuleRegistry) {
     eq("D: 回答原样透传", "你好呀", answer)
     // 闲聊现在只注入类型片段（不再是"什么都不注入"）
     check("D: 只注入了类型片段", h.log.contains("inject:len"), h.log.lines.toString())
+}
+
+// ---------- 输出质检 ----------
+
+private fun judgeScenario(registry: ModuleRegistry) {
+    val h = harness(registry, "作为AI，我不能判断这段代码")
+    h.turn(listOf("skill_code"), setOf("skill_code"), "这段代码有问题吗")
+
+    check("judge: 日志出现 boilerplate", h.log.contains("judge:boilerplate"), h.log.lines.toString())
 }
 
 // ---------- 按类型注入 ----------

@@ -20,6 +20,7 @@ constraints:
   - each_item_three_parts
   - minimal_patch
   - no_hallucination
+  - no_vague
 ---
 
 纯知识包：不挂钩子，SKILL.md 由框架在 selected 命中时直接注入。

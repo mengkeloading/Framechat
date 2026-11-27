@@ -32,6 +32,8 @@ import mychat.framework.hook.Message
 import mychat.framework.hook.ModuleDispatcher
 import mychat.framework.hook.ModuleManifest
 import mychat.framework.hook.NeedResolver
+import mychat.framework.hook.JudgeWarning
+import mychat.framework.hook.OutputJudge
 import mychat.framework.hook.TokenBudget
 import mychat.framework.hook.ModulePackage
 import mychat.framework.hook.ModuleRegistry
@@ -71,6 +73,7 @@ fun main() {
     formatCheckMissingTests()
     constraintTests()
     intentInjectionTests()
+    outputJudgeTests()
     manifestAuditTests()
     formatCheckTests()
     builderTests()
@@ -824,6 +827,35 @@ private fun guardTests() {
         emptyList<String>(),
         DescriptionCollision.check(listOf(plain, plain)) { _, _ -> 1f }
     )
+}
+
+// ---------- 输出质检 ----------
+
+private fun outputJudgeTests() {
+    val input = "请帮我看看这段代码有没有并发问题，我要重构一下"
+    val window = input.substring(0, OutputJudge.WINDOW)
+
+    val repeated = OutputJudge.judge("先复述一下：" + window + "。然后……", input, emptyList())
+    check("judge: 连续 15 字 → repeat", repeated.any { it.rule == "repeat" }, repeated.toString())
+
+    val short = OutputJudge.judge("只重复：" + input.take(10), input, emptyList())
+    check("judge: 10 字不报", short.none { it.rule == "repeat" }, short.toString())
+
+    val vagueWith = OutputJudge.judge("这里建议优化一下", input, listOf("no_vague"))
+    check("judge: 有 no_vague 时报 vague", vagueWith.any { it.rule == "vague" }, vagueWith.toString())
+
+    val vagueWithout = OutputJudge.judge("这里建议优化一下", input, emptyList())
+    check("judge: 无 no_vague 不报", vagueWithout.none { it.rule == "vague" }, vagueWithout.toString())
+
+    val boiler = OutputJudge.judge("作为AI，我不能回答", input, emptyList())
+    check("judge: 作为AI → boilerplate", boiler.any { it.rule == "boilerplate" }, boiler.toString())
+
+    eq("judge: 干净输出为空", emptyList<JudgeWarning>(), OutputJudge.judge("这段代码没问题", input, listOf("no_vague")))
+
+    val multi = OutputJudge.judge("作为AI，这里建议优化，" + window, input, listOf("no_vague"))
+    check("judge: 多规则同时命中", multi.map { it.rule }.toSet().size >= 3, multi.toString())
+
+    eq("judge: 空输入不崩", emptyList<JudgeWarning>(), OutputJudge.judge("", "", emptyList()))
 }
 
 // ---------- 类型片段注入 ----------

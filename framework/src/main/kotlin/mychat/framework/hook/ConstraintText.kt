@@ -22,6 +22,10 @@ object ConstraintText {
         Entry("no_followup_question", Kind.FORBID, "不要问\"还需要什么\""),
         Entry("no_heading", Kind.FORBID, "不要用 Markdown 标题组织内容"),
         Entry("no_emoji", Kind.FORBID, "不要用 emoji"),
+        Entry(
+            "no_vague", Kind.FORBID,
+            "不许出现\"建议优化\"\"可以更好\"这类空话，每条必须能直接落地"
+        ),
         Entry("no_full_rewrite", Kind.FORBID, "不要整份重写"),
 
         Entry("each_item_three_parts", Kind.REQUIRE, "每条必须写全：在哪、为什么、改成什么"),

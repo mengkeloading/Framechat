@@ -194,6 +194,7 @@ class ModuleDispatcher(
     ): HookBResult {
         val result = computeOutput(session, rawText, input, history, attachments)
         checkFormats(selected, result.text)
+        judgeOutput(selected, result.text, input.orEmpty())
         return result
     }
 
@@ -201,6 +202,18 @@ class ModuleDispatcher(
      * 格式检查：只记录、不补救。
      * 先搞清楚「格式不遵守」的频率，再决定要不要让模型重来。
      */
+    /** 输出质检：只记日志，不拦截、不重试。 */
+    private fun judgeOutput(selected: Set<String>, text: String, userInput: String) {
+        if (selected.isEmpty()) return
+        val constraints = selected.flatMap { id ->
+            source.getPackage(id)?.manifest?.constraints.orEmpty()
+        }
+        val warnings = OutputJudge.judge(text, userInput, constraints.distinct())
+        for (warning in warnings) {
+            onDebug?.invoke("judge:" + warning.rule + " " + warning.logArg)
+        }
+    }
+
     /** 返回每个「声明了 format_marks」的模块的检查结果；没声明的模块不出现。 */
     fun checkFormats(selected: Set<String>, text: String): List<FormatCheckResult> {
         if (selected.isEmpty()) return emptyList()
