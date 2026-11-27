@@ -62,9 +62,19 @@ interface TagDao {
         now: Long,
     )
 
-    /** 扣强度：SQL 里 MAX(0, …) 保证不会变负。 */
-    @Query("UPDATE tags SET strength = MAX(0, strength - :amount) WHERE id = :id")
-    suspend fun penalizeTag(id: String, amount: Float)
+    @Query("SELECT * FROM tags WHERE id = :id")
+    suspend fun byId(id: String): TagEntity?
+
+    /**
+     * 只写入算好的值。**规则不在 SQL 里** —— 状态转移的唯一实现是
+     * TagStrength，两边各写一套迟早会分叉。
+     */
+    @Query("UPDATE tags SET strength = :value, lastDecayAt = :now WHERE id = :id")
+    suspend fun setStrength(id: String, value: Float, now: Long)
+
+    /** 一批消息各自属于哪些标签（去重后的非空 tagId）。 */
+    @Query("SELECT DISTINCT tagId FROM messages WHERE id IN (:ids) AND tagId IS NOT NULL")
+    suspend fun tagIdsOf(ids: List<String>): List<String>
 
     @Query("SELECT * FROM tags ORDER BY strength DESC LIMIT :limit")
     suspend fun top(limit: Int): List<TagEntity>

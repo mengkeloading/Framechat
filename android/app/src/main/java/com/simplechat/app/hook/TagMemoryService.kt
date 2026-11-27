@@ -203,8 +203,36 @@ class TagMemoryService(
     suspend fun penalize(tagId: String?, amount: Float, reason: String) {
         if (tagId == null) return
         runCatching {
-            tags.penalizeTag(tagId, amount)
-            log("mem:penalty tag=" + tagId.take(8) + " amount=" + fmt(amount) + " reason=" + reason)
+            val entity = tags.byId(tagId) ?: return
+            val now = System.currentTimeMillis()
+            val record = decode(entity.embedding)?.let { vector ->
+                TagRecord(
+                    id = entity.id,
+                    name = entity.name,
+                    description = entity.description,
+                    vector = vector,
+                    strength = entity.strength,
+                    readCount = entity.readCount,
+                    lastReadAt = entity.lastReadAt,
+                    lastDecayAt = entity.lastDecayAt,
+                )
+            } ?: return
+            // 规则只在 Kotlin 里算一次，SQL 只负责写入
+            val next = TagStrength.penalized(record, now, amount)
+            tags.setStrength(entity.id, next.strength, next.lastDecayAt)
+            log(
+                "mem:penalty tag=" + tagId.take(8) + " from=" + fmt(record.strength) +
+                    " to=" + fmt(next.strength) + " amount=" + fmt(amount) + " reason=" + reason
+            )
+        }.onFailure { error -> log("mem:error " + error.javaClass.simpleName) }
+    }
+
+    /** 批量删除：按 id 查出涉及的标签（去重），每个扣一次。 */
+    suspend fun penalizeMessages(messageIds: Collection<String>, amount: Float, reason: String) {
+        if (messageIds.isEmpty()) return
+        runCatching {
+            val tagIds = tags.tagIdsOf(messageIds.toList())
+            for (tagId in tagIds) penalize(tagId, amount, reason)
         }.onFailure { error -> log("mem:error " + error.javaClass.simpleName) }
     }
 

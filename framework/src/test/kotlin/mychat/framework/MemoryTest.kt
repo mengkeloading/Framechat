@@ -205,6 +205,27 @@ private fun penaltyTests() {
         good.copy(strength = 0.2f, lastDecayAt = now), now, TagStrength.PENALTY_DELETE
     )
     eq("penalty: 0.2 删除后是 0 不是负数", 0f, small.strength)
+
+    // 状态转移只有一份实现：写库的值必须等于这里算出来的
+    val written = TagStrength.penalized(
+        good.copy(strength = 2.0f, lastDecayAt = now), now, TagStrength.PENALTY_USER_NEGATIVE
+    )
+    near("penalty: 写入值 = Kotlin 计算值", 1.5f, written.strength)
+    eq("penalty: 惩罚后 lastDecayAt=now", now, written.lastDecayAt)
+
+    /*
+     * 起点被重置：惩罚后 30 天掉 0.6；若没重置会掉 1.2。
+     */
+    val later30 = now + 30 * DAY
+    val decayed30 = TagStrength.current(written, later30)
+    near("penalty: 30 天后只掉 0.6", 0.9f, decayed30)
+
+    val notReset = TagStrength.current(written.copy(lastDecayAt = now - 30 * DAY), later30)
+    check(
+        "penalty: 重置起点后衰减更慢",
+        decayed30 > notReset,
+        "reset=$decayed30 notReset=$notReset"
+    )
 }
 
 /** 强度 × 召回 × 归档的组装。 */

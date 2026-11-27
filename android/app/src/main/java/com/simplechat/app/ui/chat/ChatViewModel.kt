@@ -1731,6 +1731,12 @@ class ChatViewModel(
             repository.deleteMessageVersions(conversationId, ids)
             null
         }
+        // 批量删除同样让相关标签变淡；tagIds 在删除前查（messageIds 仍能对上 tagId）
+        if (ids.isNotEmpty() && tagMemory != null) {
+            viewModelScope.launch {
+                tagMemory.penalizeMessages(ids, DELETE_PENALTY, "message_deleted")
+            }
+        }
     }
 
     private fun mutateMessageHistory(
