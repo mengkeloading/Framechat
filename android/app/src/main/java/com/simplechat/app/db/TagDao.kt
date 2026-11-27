@@ -86,6 +86,15 @@ interface TagDao {
     @Query("UPDATE tags SET summary = :summary, currentLevel = :level, lastCompressedAt = :now WHERE id = :id")
     suspend fun setCompressed(id: String, summary: String, level: Int, now: Long)
 
+    /**
+     * 把"从没衰减过"的老标签的锚点刷成 now。
+     *
+     * lastDecayAt = 0 在指数公式里等于"永不衰减"，老数据会永远停在初始强度。
+     * 幂等：刷完就不再有 0。
+     */
+    @Query("UPDATE tags SET lastDecayAt = :now WHERE lastDecayAt = 0")
+    suspend fun fixMissingDecayAnchor(now: Long): Int
+
     @Query("SELECT * FROM tags WHERE currentLevel < 4")
     suspend fun allCompressible(): List<TagEntity>
 

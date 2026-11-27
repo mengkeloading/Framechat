@@ -19,7 +19,7 @@ object TagStrength {
     const val PENALTY_DELETE = 0.3f
 
     /** 低于它就归档，不再参与召回。 */
-    const val ARCHIVE_BELOW = 0.1f
+    const val ARCHIVE_BELOW = 0.08f
 
     /** 召回加权时的参考强度：1.5 以上不再加分。 */
     private const val FULL_WEIGHT_AT = 1.5f

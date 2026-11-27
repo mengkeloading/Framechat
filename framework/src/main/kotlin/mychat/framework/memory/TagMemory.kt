@@ -128,6 +128,13 @@ object Recall {
     const val MIN = 0.68f
 
     /**
+     * 强度闸门：低于它不主动召回（但标签仍可见）。
+     *
+     * 与归档阈值分开：归档是"再也不提"，闸门是"这次先不提" —— 强度还能靠召回涨回来。
+     */
+    const val MIN_STRENGTH = 0.22f
+
+    /**
      * @param summaryOf 标签摘要；现在没有生成器，恒为 null
      * @param recentOf  该标签下最近的原文（已按时间倒序）
      */
@@ -148,6 +155,7 @@ object Recall {
             val strength = TagStrength.current(tag, now)
             val depth = TagStrength.depthOf(strength)
             if (depth == DEPTH_ARCHIVED) return@mapNotNull null
+            if (strength < MIN_STRENGTH) return@mapNotNull null
             val cosine = cosine(query, tag.vector)
             Scored(tag, cosine * TagStrength.weight(strength), cosine, depth)
         }

@@ -356,9 +356,9 @@ private fun strengthTests() {
     repeat(10) { many = TagStrength.boosted(many, now) }
     eq("strength: 封顶 3.0", TagStrength.MAX, many.strength)
 
-    // 5. 30 天不读：指数衰减，τ = 7 + 10*2.0 = 27 → 2.0 * e^(-30/27) ≈ 0.659
+    // 5. 30 天不读：指数衰减，τ = 25 + 40*2.0 = 105 → 2.0 * e^(-30/105) ≈ 1.50
     val stale = fresh.copy(strength = 2.0f, lastDecayAt = now - 30 * DAY)
-    near("strength: 30 天按指数衰减", 0.659f, TagStrength.current(stale, now))
+    near("strength: 30 天按指数衰减", 1.503f, TagStrength.current(stale, now))
 
     // 6. readCount 高衰减更慢
     val cold = fresh.copy(strength = 2.0f, readCount = 0, lastDecayAt = now - 30 * DAY)
@@ -434,12 +434,12 @@ private fun penaltyTests() {
     eq("penalty: 惩罚后 lastDecayAt=now", now, written.lastDecayAt)
 
     /*
-     * 起点被重置：惩罚后 30 天按 τ=22 衰减到 1.5 * e^(-30/22) ≈ 0.384；
-     * 若没重置（起点早 30 天）会掉到 1.5 * e^(-60/22) ≈ 0.098。
+     * 起点被重置：惩罚后 30 天按 τ=85 衰减到 1.5 * e^(-30/85) ≈ 1.05；
+     * 若没重置（起点早 30 天）会掉到 1.5 * e^(-60/85) ≈ 0.74。
      */
     val later30 = now + 30 * DAY
     val decayed30 = TagStrength.current(written, later30)
-    near("penalty: 30 天后按 τ=22 衰减", 0.384f, decayed30)
+    near("penalty: 30 天后按 τ=85 衰减", 1.054f, decayed30)
 
     val notReset = TagStrength.current(written.copy(lastDecayAt = now - 30 * DAY), later30)
     check(
@@ -458,10 +458,10 @@ private fun strengthAssemblyTests() {
     near("asm: 三次召回 1.9", 1.9f, tag.strength)
     eq("asm: depth=full", "full", TagStrength.depthOf(tag.strength))
 
-    // 200 天不读 → archived（readCount=3 时每天只衰减 0.0125）
-    val later = now + 200 * DAY
+    // 600 天不读 → archived（τ=131 时，1.9 * e^(-600/131) ≈ 0.019）
+    val later = now + 600 * DAY
     val decayed = TagStrength.current(tag, later)
-    check("asm: 200 天后归档", TagStrength.depthOf(decayed) == "archived", decayed.toString())
+    check("asm: 600 天后归档", TagStrength.depthOf(decayed) == "archived", decayed.toString())
     eq(
         "asm: 归档不注入",
         null,

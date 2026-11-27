@@ -105,6 +105,24 @@ class TagMemoryFlowTest {
     }
 
     @Test
+    fun legacyZeroAnchorIsFlushed() = runTest {
+        // 老标签：从没衰减过
+        db.tagDao().insert(
+            TagEntity(
+                id = "old", name = "老标签", embedding = ByteArray(8),
+                createdAt = 1000L, updatedAt = 1000L, lastDecayAt = 0L,
+            )
+        )
+
+        val fixed = service.fixMissingAnchors(now = 9999L)
+
+        assertEquals(1, fixed)
+        assertEquals(9999L, db.tagDao().byId("old")!!.lastDecayAt)
+        // 幂等：再跑一次没有可修的
+        assertEquals(0, service.fixMissingAnchors(now = 12000L))
+    }
+
+    @Test
     fun reloadKeepsTagId() = runTest {
         seedMessages("u1", "a1")
         val tagId = service.begin("我在做 MyChat 这个 App")!!.tag("a1", "u1")

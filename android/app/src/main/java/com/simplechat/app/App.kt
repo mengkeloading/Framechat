@@ -106,6 +106,7 @@ class App : Application() {
 
             // 标签强度一览（DEBUG）：衰减是否在跑，看这几行就够
             CoroutineScope(Dispatchers.IO).launch {
+                runCatching { container.tagMemory.fixMissingAnchors() }
                 runCatching { container.tagMemory.logTopTags() }
             }
 

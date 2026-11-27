@@ -7,7 +7,7 @@ import kotlin.math.exp
  *
  * ```
  * strength(t) = strength * e^(-days / τ)
- * τ = 7 + 10 * strength + 3 * readCount        （天）
+ * τ = 25 + 40 * strength + 10 * readCount      （天）
  * ```
  *
  * 为什么用指数而不是线性：线性每天掉固定量，某天会突然归零；指数先快后慢、
@@ -27,7 +27,7 @@ object Decay {
         val days = ((now - lastDecayAt) / DAY_MS).toFloat()
         // 时钟回拨或同一毫秒内重复读：不动
         if (days <= 0f) return strength
-        val tau = 7f + strength * 10f + readCount * 3f
+        val tau = 25f + strength * 40f + readCount * 10f
         return strength * exp(-days / tau)
     }
 }

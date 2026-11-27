@@ -844,16 +844,27 @@ private fun compressTests() {
     eq("decay: 0 天不变", 1.0f, Decay.strengthAt(1.0f, t0, t0, 0))
     eq("decay: 时钟回拨不变", 1.0f, Decay.strengthAt(1.0f, t0 + day, t0, 0))
 
-    // 2. strength=1.0, readCount=0, 30 天 → e^(-30/17) ≈ 0.171
+    // 2. strength=1.0, readCount=0, 30 天 → e^(-30/65) ≈ 0.630
     val thirty = Decay.strengthAt(1.0f, t0, t0 + 30 * day, 0)
-    check("decay: 30 天剩约 0.171", kotlin.math.abs(thirty - 0.171f) < 0.02f, thirty.toString())
+    check("decay: 30 天剩约 0.630", kotlin.math.abs(thirty - 0.630f) < 0.02f, thirty.toString())
 
-    // 3. 同样 30 天，强标签（τ=37）比弱标签（τ=17）掉得慢
+    // 2b. 90 天正好落到 0.25 附近：τ=65 → e^(-90/65) ≈ 0.250
+    val ninety = Decay.strengthAt(1.0f, t0, t0 + 90 * day, 0)
+    check("decay: 90 天剩约 0.25", kotlin.math.abs(ninety - 0.25f) < 0.02f, ninety.toString())
+
+    // 2c. 常用且强（s=3, r=10 → τ=245）：90 天后仍然很牢
+    val sticky = Decay.strengthAt(3.0f, t0, t0 + 90 * day, 10)
+    check("decay: 常用强标签 90 天后 > 0.6", sticky > 0.6f, sticky.toString())
+
+    // 2d. 老标签（lastDecayAt=0）：锚点取 now，读出来强度不变
+    check("decay: 锚点为 0 时不衰减", Decay.strengthAt(1.0f, t0, t0, 0) == 1.0f)
+
+    // 3. 同样 30 天，强标签（τ=145）比弱标签（τ=65）掉得慢
     val strong = Decay.strengthAt(3.0f, t0, t0 + 30 * day, 0)
     val weak = Decay.strengthAt(1.0f, t0, t0 + 30 * day, 0)
     check("decay: 强度高的掉得慢", strong / 3.0f > weak / 1.0f, "strong=$strong weak=$weak")
 
-    // 4. 同样 30 天、strength=1.0：readCount=10（τ=47）比 0（τ=17）掉得慢
+    // 4. 同样 30 天、strength=1.0：readCount=10（τ=165）比 0（τ=65）掉得慢
     val used = Decay.strengthAt(1.0f, t0, t0 + 30 * day, 10)
     check("decay: 常用的掉得慢", used > weak, "used=$used weak=$weak")
 
@@ -877,6 +888,10 @@ private fun compressTests() {
         2,
         LevelPolicy.goalLevel(1.0f, 1, t0 - 100 * day, t0, t0 + 8 * day)
     )
+
+    // 8b. 归档阈值 0.08
+    eq("archive: 0.09 不归档", "name_only", mychat.framework.memory.TagStrength.depthOf(0.09f))
+    eq("archive: 0.07 归档", "archived", mychat.framework.memory.TagStrength.depthOf(0.07f))
 
     // 8. displayLevel 的边界
     eq("level: 1.5 → L1", 1, LevelPolicy.displayLevel(1.5f))

@@ -190,6 +190,16 @@ class TagMemoryService(
         }.onFailure { error -> log("mem:error " + error.javaClass.simpleName) }
     }
 
+    /** 老标签的衰减锚点补一次；返回修了几条（0 = 不用修）。 */
+    suspend fun fixMissingAnchors(now: Long = System.currentTimeMillis()): Int {
+        val count = runCatching { tags.fixMissingDecayAnchor(now) }.getOrElse {
+            log("mem:error " + it.javaClass.simpleName)
+            return 0
+        }
+        if (count > 0) log("decay:anchor_fix count=" + count)
+        return count
+    }
+
     /**
      * 按 id 直接扣分：删除消息这类场景没有 Turn（不在某一次发送里）。
      * 失败只记日志 —— 记忆坏了不该让删除失败。
