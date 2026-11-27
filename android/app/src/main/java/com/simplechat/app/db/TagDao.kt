@@ -83,10 +83,14 @@ interface TagDao {
     @Query("UPDATE messages SET tagId = :tagId WHERE id = :id")
     suspend fun setMessageTag(id: String, tagId: String?)
 
-    /** 某个标签下最近的回复原文（按时间倒序）。 */
+    /**
+     * 某个标签下最近的**用户原话**（按时间倒序）。
+     *
+     * 不取模型回答：回答是当时的解释，换个说法就过时；要的正是"用户当时怎么问的"。
+     */
     @Query(
-        "SELECT content FROM messages WHERE tagId = :tagId AND role = 'assistant' " +
+        "SELECT content FROM messages WHERE tagId = :tagId AND role = 'user' " +
             "AND isDeletedNode = 0 ORDER BY createdAt DESC LIMIT :limit"
     )
-    suspend fun recentContents(tagId: String, limit: Int): List<String>
+    suspend fun recentUserContents(tagId: String, limit: Int): List<String>
 }

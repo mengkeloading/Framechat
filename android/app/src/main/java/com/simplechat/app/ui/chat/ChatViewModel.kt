@@ -1664,6 +1664,18 @@ class ChatViewModel(
             onPersisted()
 
             // 回复挂在**新的**这条下面
+            val prevTagId = messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.tagId
+            val prevNegative = NEGATIVE_WORDS.any { text.contains(it) }
+            // 用户否定的是**上一条回答**，所以扣的是那条消息所属的标签
+            if (prevNegative && prevTagId != null && tagMemory != null) {
+                viewModelScope.launch {
+                    tagMemory.penalize(
+                        prevTagId,
+                        mychat.framework.memory.TagStrength.PENALTY_USER_NEGATIVE,
+                        "user_negative"
+                    )
+                }
+            }
             val replyId = repository.beginAssistantMessage(
                 conversationId = conversationId,
                 parentId = fresh.id,
@@ -2939,15 +2951,7 @@ class ChatViewModel(
                 conversationId == currentConversationId &&
                 stored.memoryEnabled && tagMemory != null
             ) {
-                withContext(NonCancellable) {
-                    memoryTurn?.tag(replyId)
-                    if (memoryTurn != null && NEGATIVE_WORDS.any { latestQuestion.contains(it) }) {
-                        memoryTurn.penalize(
-                            mychat.framework.memory.TagStrength.PENALTY_USER_NEGATIVE,
-                            "user_negative"
-                        )
-                    }
-                }
+                withContext(NonCancellable) { memoryTurn?.tag(replyId) }
             }
 
             if (BuildConfig.DEBUG) {
@@ -3583,7 +3587,7 @@ class ChatViewModel(
          */
 
         /** 用户否定信号：命中就扣该标签的强度。 */
-        private val NEGATIVE_WORDS = listOf("不对", "错了", "不是这样")
+        private val NEGATIVE_WORDS = listOf("不对", "错了", "不是这个", "不是这样", "说错了")
 
         /** 删除一条属于某标签的消息 → 那个话题的记忆变淡。 */
         private const val DELETE_PENALTY = 0.3f

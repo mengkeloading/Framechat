@@ -98,6 +98,14 @@ object Tagger {
     }
 }
 
+/**
+ * 回忆素材：只取用户说过的话。
+ *
+ * 为什么不取模型回答：回答是"当时的解释"，换个说法就过时；用户的提问才是
+ * 这个话题的稳定事实。而且回答里带结论，注入回去容易让模型照抄旧结论。
+ */
+data class MemoryItem(val role: String, val text: String)
+
 /** 命中的回忆。 */
 data class RecallHit(
     val tagId: String,
@@ -127,7 +135,7 @@ object Recall {
         query: FloatArray,
         tags: List<TagRecord>,
         summaryOf: (String) -> String?,
-        recentOf: (String) -> List<String>,
+        recentOf: (String) -> List<MemoryItem>,
         min: Float = MIN,
         maxMessages: Int = 2,
         excerpt: Int = 200,
@@ -146,21 +154,23 @@ object Recall {
         val best = scored.maxByOrNull { it.finalScore } ?: return null
         if (best.cosine < min) return null
 
+        val userLines = recentOf(best.tag.id).filter { it.role == "user" }
         val text = when (best.depth) {
             DEPTH_NAME_ONLY -> ""
             DEPTH_FULL -> {
-                val body = summaryOf(best.tag.id) ?: recentOf(best.tag.id)
-                    .take(FULL_MESSAGES).map { it.take(excerpt) }.joinToString("\n---\n")
-                body.takeIf { it.isNotBlank() }?.plus("\n（可展开原文）").orEmpty()
+                val body = summaryOf(best.tag.id) ?: userLines
+                    .take(FULL_MESSAGES).map { it.text.take(excerpt) }.joinToString("\n---\n")
+                if (body.isBlank()) NO_DETAIL else body + "\n（可展开原文）"
             }
             else -> {
                 val summary = summaryOf(best.tag.id)
                 if (!summary.isNullOrBlank()) {
                     summary
                 } else {
-                    recentOf(best.tag.id).take(maxMessages)
-                        .map { it.take(excerpt) }
+                    val body = userLines.take(maxMessages)
+                        .map { it.text.take(excerpt) }
                         .joinToString("\n---\n")
+                    if (body.isBlank()) NO_DETAIL else body
                 }
             }
         }
@@ -193,6 +203,9 @@ object Recall {
     private const val DEPTH_NAME_ONLY = "name_only"
     private const val DEPTH_FULL = "full"
     private const val FULL_MESSAGES = 4
+
+    /** 标签下没有用户原话时的兜底：总比空着强。 */
+    const val NO_DETAIL = "（暂无更多细节）"
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {
         var dot = 0f

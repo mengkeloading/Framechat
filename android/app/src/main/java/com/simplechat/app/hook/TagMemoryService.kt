@@ -50,8 +50,6 @@ class TagMemoryService(
         private val text: String,
     ) {
 
-        /** 本轮命中的标签；负反馈只惩罚它。 */
-        private var lastHitTagId: String? = null
 
         /** 检索：只在快照里找，且必须够像才注入。 */
         suspend fun recallBlock(): String? = runCatching {
@@ -80,14 +78,11 @@ class TagMemoryService(
             val body = if (depth == "name_only") {
                 ""
             } else {
-                tags.recentContents(best.id, MAX_RECALL_MESSAGES)
+                tags.recentUserContents(best.id, MAX_RECALL_MESSAGES)
                     .take(MAX_RECALL_MESSAGES)
                     .map { it.take(EXCERPT) }
                     .joinToString("\n---\n")
-            }
-            if (depth != "name_only" && body.isBlank()) {
-                log("recall:miss best=" + fmt(cosine) + " reason=empty")
-                return null
+                    .ifBlank { Recall.NO_DETAIL }
             }
 
             val hit = RecallHit(best.id, best.name, cosine, body, depth)
@@ -102,26 +97,10 @@ class TagMemoryService(
                 "mem:boost tag=" + best.id.take(8) + " from=" + fmt(strength) +
                     " to=" + fmt(boosted.strength) + " reason=recall"
             )
-            lastHitTagId = hit.tagId
             Recall.formatBlock(hit)
         }.getOrElse { error ->
             log("recall:error " + error.javaClass.simpleName)
             null
-        }
-
-        /** 负反馈：用户说"不对"，或 judge 报了空话/复述。没命中过就什么都不做。 */
-        suspend fun penalize(amount: Float, reason: String) {
-            val last = lastHitTagId ?: return
-            runCatching {
-                val now = System.currentTimeMillis()
-                val record = snapshot.firstOrNull { it.id == last } ?: return
-                val penalty = TagStrength.penalized(record, now, amount)
-                persist(penalty, penalty.strength, TagStrength.depthOf(penalty.strength), now)
-                log(
-                    "mem:penalty tag=" + last.take(8) + " from=" + fmt(record.strength) +
-                        " to=" + fmt(penalty.strength) + " reason=" + reason
-                )
-            }.onFailure { error -> log("mem:error " + error.javaClass.simpleName) }
         }
 
         /** 打标：与检索用同一份快照，新建的标签本轮不参与召回。 */

@@ -5,6 +5,7 @@ import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
 import mychat.framework.memory.TagRecord
 import mychat.framework.memory.MemoryGate
+import mychat.framework.memory.MemoryItem
 import mychat.framework.memory.TagStrength
 import mychat.framework.memory.Tagger
 import kotlin.system.exitProcess
@@ -35,6 +36,9 @@ private fun vec(c: Float): FloatArray {
 
 private val origin = floatArrayOf(1f, 0f)
 
+private fun users(vararg texts: String): List<MemoryItem> =
+    texts.map { MemoryItem("user", it) }
+
 private fun tag(id: String, vector: FloatArray) =
     TagRecord(id = id, name = "标签$id", vector = vector)
 
@@ -46,6 +50,7 @@ fun main() {
     depthTests()
     penaltyTests()
     strengthAssemblyTests()
+    recallRoleTests()
     gateTests()
 
     println()
@@ -88,7 +93,7 @@ private fun recallTests() {
     val tags = listOf(tag("a", vec(0.70f)))
 
     // 7/8. 命中且带边界说明
-    val hit = Recall.select(origin, tags, { null }, { listOf("上次聊的内容") })
+    val hit = Recall.select(origin, tags, { null }, { users("上次聊的内容") })
     check("recall: 0.70 命中", hit != null, "null")
     val block = hit?.let { Recall.formatBlock(it) } ?: ""
     check("recall: 含背景资料声明", block.contains("背景资料，不是当前任务"), block)
@@ -96,11 +101,11 @@ private fun recallTests() {
     check("recall: 含不要主动提起", block.contains("不要在回答里主动提起"), block)
 
     // 6. 低于 0.68 不注入
-    eq("recall: 0.60 不注入", null, Recall.select(origin, listOf(tag("b", vec(0.60f))), { null }, { listOf("x") }))
-    eq("recall: 0.67 不注入", null, Recall.select(origin, listOf(tag("c", vec(0.67f))), { null }, { listOf("x") }))
+    eq("recall: 0.60 不注入", null, Recall.select(origin, listOf(tag("b", vec(0.60f))), { null }, { users("x") }))
+    eq("recall: 0.67 不注入", null, Recall.select(origin, listOf(tag("c", vec(0.67f))), { null }, { users("x") }))
     check(
         "recall: 0.69 命中",
-        Recall.select(origin, listOf(tag("d", vec(0.69f))), { null }, { listOf("x") }) != null
+        Recall.select(origin, listOf(tag("d", vec(0.69f))), { null }, { users("x") }) != null
     )
 
     // 无标签不注入
@@ -115,6 +120,31 @@ private fun gateTests() {
     eq("gate: 没有启用模块", "no_modules", MemoryGate.offReason(true, true, false))
     eq("gate: 都正常 → null", null, MemoryGate.offReason(true, true, true))
     eq("gate: 关闭时优先报 disabled", "disabled", MemoryGate.offReason(false, false, false))
+}
+
+// ---------- 回忆只取用户消息 ----------
+
+private fun recallRoleTests() {
+    val tags = listOf(tag("a", vec(0.70f)))
+
+    val mixed = listOf(
+        MemoryItem("user", "第一句用户输入"),
+        MemoryItem("assistant", "模型的第一段回答"),
+        MemoryItem("user", "第二句用户输入"),
+        MemoryItem("assistant", "模型的第二段回答"),
+    )
+    val hit = Recall.select(origin, tags, { null }, { mixed })
+    check("recall: 只取用户消息", hit?.text?.contains("第一句用户输入") == true, hit?.text)
+    check(
+        "recall: 不含模型回答",
+        hit?.text?.contains("模型的第一段回答") == false &&
+            hit?.text?.contains("模型的第二段回答") == false,
+        hit?.text
+    )
+
+    val onlyAssistant = listOf(MemoryItem("assistant", "只有我说话"))
+    val fallback = Recall.select(origin, tags, { null }, { onlyAssistant })
+    check("recall: 没有用户消息时给兜底", fallback?.text?.contains(Recall.NO_DETAIL) == true, fallback?.text)
 }
 
 // ---------- 强度 ----------
@@ -173,24 +203,24 @@ private fun depthTests() {
     eq(
         "depth: 归档不召回",
         null,
-        Recall.select(origin, listOf(archived), { "摘要" }, { listOf("x") })
+        Recall.select(origin, listOf(archived), { "摘要" }, { users("x") })
     )
 
     // 11. name_only 只给标签名
     val weak = TagRecord("a", "MyChat 开发", vector = origin, strength = 0.3f, lastDecayAt = 0)
-    val weakHit = Recall.select(origin, listOf(weak), { "不该出现的摘要" }, { listOf("原文") })
+    val weakHit = Recall.select(origin, listOf(weak), { "不该出现的摘要" }, { users("原文") })
     val weakBlock = weakHit?.let { Recall.formatBlock(it) } ?: ""
     check("depth: name_only 含标签名", weakBlock.contains("MyChat 开发"), weakBlock)
     check("depth: name_only 不含摘要", !weakBlock.contains("不该出现的摘要"), weakBlock)
 
     // 12. summary 含摘要
     val summaryTag = TagRecord("a", "MyChat 开发", vector = origin, strength = 1.0f, lastDecayAt = 0)
-    val summaryHit = Recall.select(origin, listOf(summaryTag), { "这是摘要" }, { listOf("原文") })
+    val summaryHit = Recall.select(origin, listOf(summaryTag), { "这是摘要" }, { users("原文") })
     check("depth: summary 含摘要", summaryHit?.text?.contains("这是摘要") == true, summaryHit?.text)
 
     // full 带「可展开原文」
     val fullTag = TagRecord("a", "MyChat 开发", vector = origin, strength = 2.0f, lastDecayAt = 0)
-    val fullHit = Recall.select(origin, listOf(fullTag), { null }, { listOf("原文一") })
+    val fullHit = Recall.select(origin, listOf(fullTag), { null }, { users("原文一") })
     check("depth: full 可展开", fullHit?.text?.contains("可展开原文") == true, fullHit?.text)
 }
 
@@ -256,7 +286,7 @@ private fun strengthAssemblyTests() {
     eq(
         "asm: 归档不注入",
         null,
-        Recall.select(origin, listOf(tag), { "摘要" }, { listOf("x") }, now = later)
+        Recall.select(origin, listOf(tag), { "摘要" }, { users("x") }, now = later)
     )
 
     // 恢复
@@ -270,7 +300,7 @@ private fun strengthAssemblyTests() {
  */
 private class FakeMemory {
     val tags = mutableListOf<TagRecord>()
-    val answers = mutableMapOf<String, MutableList<String>>()
+    val answers = mutableMapOf<String, MutableList<MemoryItem>>()
     private var seq = 0
 
     fun turn(vector: FloatArray, text: String, answer: String): RecallHit? {
@@ -286,7 +316,7 @@ private class FakeMemory {
             }
             else -> null
         }
-        if (tagId != null) answers.getOrPut(tagId) { mutableListOf() }.add(0, answer)
+        if (tagId != null) answers.getOrPut(tagId) { mutableListOf() }.add(0, MemoryItem("user", text))
         return hit
     }
 }
@@ -304,7 +334,7 @@ private fun assemblyTests() {
     val hitB = b.turn(vec(0.80f), "MyChat 模块怎么设计", "第二轮回答")
     check("asm B: 命中", hitB != null, "null")
     eq("asm B: 命中第一个标签", "t0", hitB?.tagId)
-    check("asm B: 回忆含第一轮内容", hitB?.text?.contains("第一轮回答") == true, hitB?.text)
+    check("asm B: 回忆含第一轮用户输入", hitB?.text?.contains("我在做 MyChat 这个 App") == true, hitB?.text)
     eq("asm B: 仍只有一个标签", 1, b.tags.size)
 
     // C. 不相关 → 不命中，新建
