@@ -926,6 +926,10 @@ class ChatViewModel(
                     }
                     // 前缀强制优先（HookRunner 内部会覆盖）；否则按向量路由，空则兜底 hasSkill
                     if (BuildConfig.DEBUG) {
+                        val turnStamp = java.text.SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss", java.util.Locale.US
+                        ).format(java.util.Date())
+                        com.simplechat.app.hook.UsageLog.banner("轮次开始 " + turnStamp)
                         val inputLine = "routeInput=\"" + text + "\" len=" + text.length
                         android.util.Log.d("MyChat/Sel", inputLine)
                         com.simplechat.app.hook.UsageLog.record(inputLine)
@@ -2940,6 +2944,10 @@ class ChatViewModel(
                         )
                     }
                 }
+            }
+
+            if (BuildConfig.DEBUG) {
+                com.simplechat.app.hook.UsageLog.banner("轮次结束")
             }
 
             /*

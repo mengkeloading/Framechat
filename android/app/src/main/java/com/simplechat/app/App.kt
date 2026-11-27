@@ -70,6 +70,18 @@ class App : Application() {
                 android.widget.Toast.LENGTH_LONG,
             ).show()
 
+            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                .format(java.util.Date())
+            com.simplechat.app.hook.UsageLog.banner("App 启动 " + stamp)
+            com.simplechat.app.hook.UsageLog.record(
+                "version=" + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")"
+            )
+            com.simplechat.app.hook.UsageLog.record(
+                "model=" + container.settingsStore.settings.value.model.id +
+                    " modules=" + modules.registry.all().size +
+                    " problems=" + modules.problems.size
+            )
+
             // 启动时把各模块声明的格式标记写进日志：没有 marks= 行就是没解析到
             modules.registry.all()
                 .filter { it.manifest.formatMarks.isNotEmpty() }
@@ -120,6 +132,9 @@ class App : Application() {
                 runCatching { com.simplechat.app.hook.EmbedProbe.run(this@App) }
                     .onFailure { android.util.Log.w("MyChat/Embed", "probe failed", it) }
             }
+        }
+        if (BuildConfig.DEBUG) {
+            com.simplechat.app.hook.UsageLog.banner("启动完成")
         }
         // 「后台继续生成」的前台服务需要 application context（见 BackgroundGeneration）
         com.simplechat.app.data.BackgroundGeneration.install(this)

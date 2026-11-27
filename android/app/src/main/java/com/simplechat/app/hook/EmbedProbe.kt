@@ -56,7 +56,9 @@ object EmbedProbe {
             embedder.close()
         }
 
-        val path = EmbedLog.append(context, lines)
+        val name = "embed-" + EmbedLog.stamp() + ".log"
+        runCatching { EmbedLog.prune(context, "embed-") }
+        val path = EmbedLog.append(context, lines, name)
         Log.d(TAG, "written -> $path")
         lines.forEach { Log.d(TAG, it) }
     }
