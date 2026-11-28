@@ -332,8 +332,9 @@ fun ChatScreen(
         voice.cancel()
         voiceCancelling = false
         voiceTapMode = false
-        // ① 把上一份存回它自己的会话
-        composerOwner?.let { previous ->
+        // ① 把上一份存回它自己的会话。空 key = 还没落库的新会话，不存：
+        // 存了会在下次"新建会话"时被 ② 原样读回来，看起来就是没清空。
+        composerOwner?.takeIf { it.isNotEmpty() }?.let { previous ->
             val draft = draftToPersist()
             pendingByConversation[previous] = pending
             imagePromptByConversation[previous] = imageFieldState.text.toString()
@@ -346,12 +347,27 @@ fun ChatScreen(
             vm.saveDraft(previous, draft)
         }
         // ② 普通草稿走库，修改中的文字和它的目标一起留在内存。
+        // 新会话（key 为空）一律从空白开始：不继承任何草稿与附件。
         val edit = editingByConversation[composerKey]
-        replaceInput(edit?.text ?: vm.loadDraft(composerKey).orEmpty())
-        pending = pendingByConversation[composerKey].orEmpty()
-        imageFieldState.setTextAndPlaceCursorAtEnd(imagePromptByConversation[composerKey].orEmpty())
-        editingMessage = edit?.target
-        inputBeforeEdit = edit?.previousDraft.orEmpty()
+        replaceInput(
+            ComposerDrafts.draftFor(
+                conversationId = vm.currentConversationId,
+                editing = edit?.text,
+                stored = if (composerKey.isEmpty()) null else vm.loadDraft(composerKey),
+            )
+        )
+        if (composerKey.isEmpty()) {
+            pending = emptyList()
+            imageFieldState.setTextAndPlaceCursorAtEnd("")
+            editingByConversation.remove("")
+            editingMessage = null
+            inputBeforeEdit = ""
+        } else {
+            pending = pendingByConversation[composerKey].orEmpty()
+            imageFieldState.setTextAndPlaceCursorAtEnd(imagePromptByConversation[composerKey].orEmpty())
+            editingMessage = edit?.target
+            inputBeforeEdit = edit?.previousDraft.orEmpty()
+        }
         composerOwner = composerKey
 
         // ③ 这些是"指向某条消息"的瞬时状态 —— 跨会话留着是危险的，一律清掉
@@ -382,6 +398,8 @@ fun ChatScreen(
         snapshotFlow { draftToPersist() }
             .collectLatest {
                 if (composerOwner != composerKey) return@collectLatest
+                // 新会话还没有 key：不落库，否则关掉再新建会被读回来
+                if (!ComposerDrafts.shouldPersist(composerKey)) return@collectLatest
                 delay(DraftSaveDelayMs)
                 // 延迟期间可能又打了字，落库取**当下**这一份
                 vm.saveDraft(composerKey, draftToPersist())
