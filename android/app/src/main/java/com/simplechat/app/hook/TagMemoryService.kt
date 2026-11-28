@@ -147,7 +147,7 @@ class TagMemoryService(
                         tags.setMessageTag(messageId, decision.tagId)
                         userMessageId?.let { tags.setMessageTag(it, decision.tagId) }
                         log("tag:assign id=" + decision.tagId + " score=" + fmt(decision.score))
-                        moveCentroid(decision.tagId)
+                        moveCentroid(decision.tagId, query)
                         decision.tagId
                     }
                     is TagDecision.Create -> {
@@ -209,11 +209,12 @@ class TagMemoryService(
      * 标签刚建时向量就是第一条消息，太窄；挪几次才接近话题中心。
      * 超过 10 条就停 —— 再挪会把宽泛标签变成「什么都像」，召回开始乱给。
      */
-    private suspend fun moveCentroid(tagId: String) {
+    private suspend fun moveCentroid(tagId: String, msgVector: FloatArray) {
         val tag = tags.byId(tagId) ?: return
         val current = decode(tag.embedding) ?: return
         val count = tag.msgCount
-        val next = mychat.framework.memory.TagCentroid.updated(current, count, query) ?: return
+        val next = mychat.framework.memory.TagCentroid.updated(current, count, msgVector)
+            ?: return
         tags.setEmbedding(tagId, encode(next), count + 1)
         log("tag:centroid id=" + tagId.take(8) + " count=" + (count + 1))
     }
