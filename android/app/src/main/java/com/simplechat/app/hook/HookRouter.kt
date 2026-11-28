@@ -78,7 +78,7 @@ class HookRouter(
             )
         }
         return withContext(Dispatchers.Default) {
-            val route = butlers.route(butlerId, query, modules)
+            val route = butlers.route(butlerId, query, modules, intent)
             val selected = ModuleSelector.select(modules, route)
             Log.d(
                 TAG,

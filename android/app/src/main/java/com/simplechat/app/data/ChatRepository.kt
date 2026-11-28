@@ -502,6 +502,7 @@ class ChatRepository(private val db: AppDatabase, private val context: Context) 
         imageGeneration: Boolean = false,
         imageRequest: ImageRequest? = null,
         versionGroup: String? = null,
+        receipt: Boolean = false,
     ): MessageEntity {
         val id = UUID.randomUUID().toString()
         val entity = newMessageEntity(
@@ -517,6 +518,7 @@ class ChatRepository(private val db: AppDatabase, private val context: Context) 
             model = model,
             imageGeneration = imageGeneration,
             imageRequest = imageRequest,
+            receipt = receipt,
         ).copy(versionGroup = versionGroup).withOffloadedImages()
         messages.upsert(entity)
         messages.activate(id, conversationId, parentId)
@@ -578,6 +580,7 @@ class ChatRepository(private val db: AppDatabase, private val context: Context) 
         model: String? = null,
         imageGeneration: Boolean = false,
         imageRequest: ImageRequest? = null,
+        receipt: Boolean = false,
     ): String =
         addSibling(
             conversationId = conversationId,
@@ -589,6 +592,7 @@ class ChatRepository(private val db: AppDatabase, private val context: Context) 
             model = model,
             imageGeneration = imageGeneration,
             imageRequest = imageRequest,
+            receipt = receipt,
         ).id
 
     /** 流式 checkpoint。调用频率由 ViewModel 控制在 ~1.5s（§4.4）。 */

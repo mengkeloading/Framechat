@@ -31,7 +31,7 @@ data class RouteDecision(
 object ModuleRouter {
 
     /** 下限：防止"什么都不像也硬选一个"。 */
-    const val MIN_SCORE = 0.30f
+    const val MIN_SCORE = 0.45f
 
     /** 领先优势：两个分数接近时不再区分谁"更像"，直接都收。 */
     const val MIN_MARGIN = 0.05f

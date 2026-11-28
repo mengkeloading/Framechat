@@ -93,6 +93,13 @@ data class ModuleManifest(
     /** 可选：输入以「prefix：」开头时强制使用本模块，跳过路由。 */
     val prefix: String? = null,
     /**
+     * 该模块只服务哪种输入类型（chat/code/writing/calc/question）。
+     *
+     * 声明了就必须匹配，否则这一轮完全不参与路由 —— 「写个故事」不该选中代码审查模块，
+     * 哪怕向量分数只差一点。null = 不限类型。
+     */
+    val intent: String? = null,
+    /**
      * 可选：用户真实会说的话（示例查询）。
      *
      * 有它就用它建向量 —— 示例比描述更接近查询分布：描述是写给自己看的，
@@ -138,6 +145,7 @@ data class ModuleManifest(
                 tools = parseInlineTools(fm.scalars["tools"]),
                 prefix = fm.scalars["prefix"]?.takeIf { it.isNotBlank() },
                 needs = fm.lists["needs"] ?: parseInlineList(fm.scalars["needs"]),
+                intent = fm.scalars["intent"]?.takeIf { it.isNotBlank() },
                 sampleQueries = fm.lists["sample_queries"]
                     ?: parseInlineList(fm.scalars["sample_queries"]),
                 formatMarks = fm.lists["format_marks"]

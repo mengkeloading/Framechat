@@ -95,17 +95,35 @@ private fun taggingTests() {
     eq("tag: 0.50 原因", "ambiguous_new", (ambiguous as? TagDecision.Create)?.reason)
     near("tag: 0.50 分数", 0.50f, (ambiguous as TagDecision.Create).score)
 
-    // 3. 0.60 归到已有
-    val assign = Tagger.decide(origin, listOf(tag("a", vec(0.60f))), "x")
-    check("tag: 0.60 归到已有", assign is TagDecision.Assign, assign.toString())
-    eq("tag: 0.60 的 id", "a", (assign as? TagDecision.Assign)?.tagId)
+    // 3. 0.68 归到已有（阈值 0.65）
+    val assign = Tagger.decide(origin, listOf(tag("a", vec(0.68f))), "帮我写个函数")
+    check("tag: 0.68 归到已有", assign is TagDecision.Assign, assign.toString())
+    eq("tag: 0.68 的 id", "a", (assign as? TagDecision.Assign)?.tagId)
+
+    // 3b. 0.60 在阈值下，不再归入
+    check(
+        "tag: 0.60 不归入",
+        Tagger.decide(origin, listOf(tag("a", vec(0.60f))), "帮我写个函数") !is TagDecision.Assign
+    )
 
     // 4. 0.30 新建
-    check("tag: 0.30 新建", Tagger.decide(origin, listOf(tag("a", vec(0.30f))), "x") is TagDecision.Create)
+    check(
+        "tag: 0.30 新建",
+        Tagger.decide(origin, listOf(tag("a", vec(0.30f))), "帮我写个函数") is TagDecision.Create
+    )
 
     // 5. 上限
     val full = (0 until Tagger.MAX_TAGS).map { tag("t$it", vec(0.1f)) }
-    check("tag: 200 条后不新建", Tagger.decide(origin, full, "y") is TagDecision.LimitReached)
+    check(
+        "tag: 200 条后不新建",
+        Tagger.decide(origin, full, "帮我写个函数") is TagDecision.LimitReached
+    )
+
+    // 6. 寒暄与超短句不建标签
+    fun noInfo(text: String) = Tagger.decide(origin, listOf(tag("a", vec(0.10f))), text)
+    eq("tag: 你好 → no_info", "no_info", (noInfo("你好") as? TagDecision.Skip)?.reason)
+    eq("tag: 谢谢 → no_info", "no_info", (noInfo("谢谢") as? TagDecision.Skip)?.reason)
+    eq("tag: 两字输入 → no_info", "no_info", (noInfo("嗯嗯") as? TagDecision.Skip)?.reason)
 
     // 9. 名字截断
     val long = Tagger.decide(origin, emptyList(), "一二三四五六七八九十一二三四五六七八九十多余的")

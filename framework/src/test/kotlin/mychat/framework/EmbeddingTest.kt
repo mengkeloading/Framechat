@@ -300,7 +300,7 @@ private fun routingDecisionTests() {
     eq("router: 候选里带 skill_hub 也会被过滤", listOf("real"), hubDecision.modules)
 
     // 10. 常量是对外契约
-    eq("router: MIN_SCORE", 0.30f, ModuleRouter.MIN_SCORE)
+    eq("router: MIN_SCORE", 0.45f, ModuleRouter.MIN_SCORE)
     eq("router: MIN_MARGIN", 0.05f, ModuleRouter.MIN_MARGIN)
     eq("router: SECOND_WINDOW", 0.15f, ModuleRouter.SECOND_WINDOW)
     eq("router: MAX_MODULES", 2, ModuleRouter.MAX_MODULES)

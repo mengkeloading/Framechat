@@ -1,6 +1,7 @@
 package mychat.framework.butler
 
 import mychat.framework.embedding.ModuleDocuments
+import mychat.framework.hook.ModuleIntentFilter
 import mychat.framework.hook.ModulePackage
 
 /**
@@ -34,10 +35,14 @@ class ButlerManager(
     fun route(
         butlerId: String?,
         query: String,
-        modules: List<ModulePackage>
+        modules: List<ModulePackage>,
+        intent: String? = null,
     ): RouteResult {
         if (modules.isEmpty()) return RouteResult(emptyList(), "empty")
-        val metas = modules.map { toMeta(it) }
+        // 先按声明的类型筛掉：类型不对的模块连候选都不算，分数再高也不该出现在结果里
+        val eligible = ModuleIntentFilter.filter(modules, intent)
+        if (eligible.isEmpty()) return RouteResult(emptyList(), "intent_filtered")
+        val metas = eligible.map { toMeta(it) }
         return runCatching { current(butlerId).route(query, metas) }
             .getOrElse { RouteResult(emptyList(), "error") }
     }
@@ -48,6 +53,7 @@ class ButlerManager(
         description = pkg.manifest.description,
         prefix = pkg.manifest.prefix,
         embeddingText = ModuleDocuments.textOf(pkg),
-        sampleQueries = pkg.manifest.sampleQueries
+        sampleQueries = pkg.manifest.sampleQueries,
+        intent = pkg.manifest.intent,
     )
 }

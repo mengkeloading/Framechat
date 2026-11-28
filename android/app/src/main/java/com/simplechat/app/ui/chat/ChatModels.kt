@@ -224,6 +224,8 @@ data class UiMessage(
     val originalContent: String? = null,
     /** 话题标签 id；null = 没打上。 */
     val tagId: String? = null,
+    /** debug 命令的回执：不参与「上一轮产物」。 */
+    val receipt: Boolean = false,
     /** 附件（图片 / 纯文本文件）。见 [com.simplechat.app.data.Attachment]。 */
     val attachments: List<com.simplechat.app.data.Attachment> = emptyList(),
     val reasoning: String? = null,

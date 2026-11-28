@@ -30,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // v9：附件可被多个会话引用（分叉后删除原会话不能丢图）
     // v10：消息记录 prompt 缓存命中量（用量与余额页按命中/未命中分别计价）
     // v22：新增 tag_links（标签共现，用于「相关内容」）
-    version = 22,
+    version = 23,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -209,6 +209,15 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /** v22：标签共现表。故意不加外键——删标签时由调用方清这里。 */
+        /** 命令回执标记：老数据一律 0（都不是回执）。 */
+        internal val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE messages ADD COLUMN receipt INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         internal val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -337,6 +346,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_19_20,
                     MIGRATION_20_21,
                     MIGRATION_21_22,
+                    MIGRATION_22_23,
                 )
                 .build()
     }

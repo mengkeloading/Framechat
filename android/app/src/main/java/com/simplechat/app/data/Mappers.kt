@@ -46,6 +46,7 @@ fun MessageEntity.toUi(): UiMessage = UiMessage(
     content = content,
     originalContent = originalContent,
     tagId = tagId,
+    receipt = receipt,
     attachments = Attachments.decode(attachments),
     reasoning = reasoning,
     reasoningSeconds = thinkingMs?.let { it / 1000 },
@@ -86,6 +87,7 @@ fun newMessageEntity(
     model: String? = null,
     imageGeneration: Boolean = false,
     imageRequest: ImageRequest? = null,
+    receipt: Boolean = false,
     now: Long = System.currentTimeMillis(),
 ): MessageEntity = MessageEntity(
     id = id,

@@ -157,6 +157,13 @@ data class MessageEntity(
     val originalContent: String? = null,
     /** 话题标签 id（见 [TagEntity]）；null = 没打上。 */
     val tagId: String? = null,
+    /**
+     * 是否是 debug 命令的回执（`debug:memory` 之类）。
+     *
+     * 回执也是 assistant 消息，会被当成上下文；把「上一轮的产物」指成
+     * 「角色卡已更新」毫无意义 —— 靠这个标记把它们排除在外面。
+     */
+    val receipt: Boolean = false,
     /** DONE | STREAMING | STOPPED | ERROR */
     val status: String = "DONE",
     val errorMessage: String? = null,

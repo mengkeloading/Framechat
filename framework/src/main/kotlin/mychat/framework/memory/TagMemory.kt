@@ -49,10 +49,11 @@ object Tagger {
     /**
      * 归入已有标签的门槛。
      *
-     * 比 [Recall.MIN]（0.68）低是刻意的：归类错了用户看不见，只是这条消息
+     * 和 [Recall.MIN]（0.68）只差 0.03：归入的相近消息，召回时基本也够得着。
+     * 归类错了用户看不见，只是这条消息
      * 挂在别的标签下面；召回门槛高才能保证塞进上下文的东西确实相关。
      */
-    const val ASSIGN_MIN = 0.55f
+    const val ASSIGN_MIN = 0.65f
 
     /** 低于它才新建；中间是"说不准"。 */
     const val NEW_MAX = 0.40f
@@ -66,6 +67,12 @@ object Tagger {
     /** 超过这个长度的"否定"更可能是在讲别的事，按正常话题处理。 */
     const val NEGATIVE_MAX_LENGTH = 15
 
+    /** 没有信息量的寒暄：给它们建标签只会把目录塞满。 */
+    val NO_INFO_WORDS = listOf("你好", "在吗", "谢谢", "好的", "嗯", "哦", "哈", "再见")
+
+    /** 比这还短的输入不可能是一个话题。 */
+    const val NO_INFO_MAX_LENGTH = 2
+
     fun decide(
         query: FloatArray,
         tags: List<TagRecord>,
@@ -78,6 +85,12 @@ object Tagger {
         // 否则每纠正一次就多一个叫"不对"的标签。
         if (text.trim().length <= NEGATIVE_MAX_LENGTH && MemoryFeedback.isNegative(text)) {
             return TagDecision.Skip(0f, "negative_statement")
+        }
+
+        // 寒暄与超短句：没有话题可言，建出来就是噪音
+        val trimmed = text.trim()
+        if (trimmed.length <= NO_INFO_MAX_LENGTH || NO_INFO_WORDS.any { trimmed == it }) {
+            return TagDecision.Skip(0f, "no_info")
         }
 
         // 一个标签都没有：第一轮直接建。不比较、不判模糊 —— 没有可比的东西。

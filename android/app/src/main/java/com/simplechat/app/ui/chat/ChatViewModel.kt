@@ -1009,8 +1009,10 @@ class ChatViewModel(
                     // 模块优先：命中模块就不翻译，让模块规范说了算
                     val translateCtx = mychat.framework.butler.TranslateContext(
                         intent = prepared.intent.orEmpty(),
-                        lastArtifact = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
-                            ?.content,
+                        // 命令回执不是「产物」：指过去只会让模型去改写「角色卡已更新」
+                        lastArtifact = messages.lastOrNull {
+                            it.role == MessageRole.ASSISTANT && !it.receipt
+                        }?.content,
                         lastUserText = messages.dropLast(1)
                             .lastOrNull { it.role == MessageRole.USER }?.content,
                     )
@@ -1915,6 +1917,7 @@ class ChatViewModel(
             conversationId = conversationId,
             parentId = messages.lastOrNull()?.id ?: "root",
             model = settings.model.id,
+            receipt = true,
         )
         repository.finishMessage(
             id = replyId,

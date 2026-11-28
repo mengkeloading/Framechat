@@ -43,6 +43,8 @@ data class ModuleMeta(
     val embeddingText: String = "",
     /** 用户真实说法；非空时优先用它们建向量，取与查询最像的那条。 */
     val sampleQueries: List<String> = emptyList(),
+    /** 该模块只服务这种输入类型；null = 不限。 */
+    val intent: String? = null,
 )
 
 data class RouteResult(

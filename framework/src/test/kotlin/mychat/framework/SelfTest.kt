@@ -1400,6 +1400,97 @@ private fun profileTests() {
     val persona = mychat.framework.profile.AssistantPersona.format(true)!!
     check("persona: 默认注入", persona.startsWith("【助手风格】"), persona.take(20))
     check("persona: 含不客套", persona.contains("不说「好的」"))
+    check("persona: 含硬约束声明", persona.contains("以上是硬约束。违反任一条即为回答失败。"))
+
+    // ---- 模块 intent 过滤 ----
+    run {
+        fun pkg(id: String, intent: String?) = mychat.framework.hook.ModulePackage(
+            manifest = mychat.framework.hook.ModuleManifest(
+                id = id, name = id, description = "描述", intent = intent,
+            ),
+            body = "", scripts = emptyMap(), references = emptyMap(),
+        )
+        val code = pkg("skill_code", "code")
+        val novel = pkg("skill_novel", "writing")
+        val plain = pkg("time_local", null)
+        val all = listOf(code, novel, plain)
+
+        eq(
+            "intent: 声明不符的被排除",
+            listOf("skill_code", "time_local"),
+            mychat.framework.hook.ModuleIntentFilter.filter(all, "code").map { it.id }
+        )
+        eq(
+            "intent: 声明相符的保留",
+            listOf("skill_novel"),
+            mychat.framework.hook.ModuleIntentFilter.filter(listOf(novel), "writing").map { it.id }
+        )
+        eq(
+            "intent: 未声明的保留",
+            listOf("time_local"),
+            mychat.framework.hook.ModuleIntentFilter.filter(listOf(plain), "code").map { it.id }
+        )
+        eq(
+            "intent: code 时只剩代码模块",
+            listOf("skill_code"),
+            mychat.framework.hook.ModuleIntentFilter.filter(all, "code")
+                .filter { it.id.startsWith("skill_") }.map { it.id }
+        )
+    }
+
+    // ---- assign 阈值 0.65 ----
+    run {
+        val base = floatArrayOf(1f, 0f)
+        fun tagAt(cos: Float) = mychat.framework.memory.TagRecord(
+            id = "t", name = "旧话题",
+            vector = floatArrayOf(cos, kotlin.math.sqrt(1f - cos * cos)),
+        )
+        fun assigned(cos: Float) = mychat.framework.memory.Tagger.decide(
+            base, listOf(tagAt(cos)), "帮我写个函数",
+        ) is mychat.framework.memory.TagDecision.Assign
+
+        check("assign: 1.0 归入", assigned(1f))
+        check("assign: 0.60 不归入", !assigned(0.60f))
+        check("assign: 0.68 归入", assigned(0.68f))
+        eq("assign: 阈值常量", 0.65f, mychat.framework.memory.Tagger.ASSIGN_MIN)
+    }
+
+    // ---- 短句不建标签 ----
+    run {
+        val v = floatArrayOf(1f, 0f)
+        fun skipReason(text: String): String? = (
+            mychat.framework.memory.Tagger.decide(
+                v, listOf(mychat.framework.memory.TagRecord("t", "旧", vector = v)), text
+            ) as? mychat.framework.memory.TagDecision.Skip
+            )?.reason
+        eq("tag: 你好 → no_info", "no_info", skipReason("你好"))
+        eq("tag: 谢谢 → no_info", "no_info", skipReason("谢谢"))
+        eq("tag: 两个字的输入也跳过", "no_info", skipReason("嗯嗯"))
+        check(
+            "tag: 正常输入照常建标签",
+            mychat.framework.memory.Tagger.decide(v, emptyList(), "帮我写个函数")
+                is mychat.framework.memory.TagDecision.Create
+        )
+    }
+
+    // ---- 路由下限 0.45 ----
+    run {
+        fun cand(cos: Float) = mychat.framework.embedding.Candidate(
+            "m", floatArrayOf(cos, kotlin.math.sqrt(1f - cos * cos))
+        )
+        val q = floatArrayOf(1f, 0f)
+        eq("route: 下限常量", 0.45f, mychat.framework.embedding.ModuleRouter.MIN_SCORE)
+        eq(
+            "route: 0.40 不命中",
+            emptyList<String>(),
+            mychat.framework.embedding.ModuleRouter.decide(q, listOf(cand(0.40f))).modules
+        )
+        eq(
+            "route: 0.55 命中",
+            listOf("m"),
+            mychat.framework.embedding.ModuleRouter.decide(q, listOf(cand(0.55f))).modules
+        )
+    }
     // 2. 关掉不注入
     eq("persona: 关掉后为 null", null, mychat.framework.profile.AssistantPersona.format(false))
 
