@@ -123,7 +123,8 @@ class TagCompressorTest {
             "user" to "我在做 MyChat，" + "用 Kotlin 写。".repeat(25),
             "user" to "记忆系统也要做。".repeat(10),
         )
-        llm.answer = "技术栈 Kotlin"
+        // L1 要比 L2 的目标长度（100 字）长，否则会命中 already_short
+        llm.answer = "技术栈 Kotlin，团队熟悉。" + "背景信息".repeat(30)
         assertTrue(compressor().compress("t1", 1))
         val l1 = db.tagSummaryDao().at("t1", 1)!!
 
