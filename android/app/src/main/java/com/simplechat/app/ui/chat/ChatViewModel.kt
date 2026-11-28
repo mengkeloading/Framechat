@@ -1874,7 +1874,18 @@ class ChatViewModel(
                 reasoning = null,
                 status = MessageStatus.DONE,
             )
+            // 先落库、再读活跃路径：反过来的话读到的还是插入前的树
             reloadPath(conversationId)
+            val shown = messages.any { it.id == replyId }
+            if (BuildConfig.DEBUG) {
+                com.simplechat.app.hook.UsageLog.record(
+                    "profile:reply id=" + replyId.take(8) + " shown=" + shown +
+                        " size=" + messages.size
+                )
+            }
+            // 空会话里第一条就是回执时，它可能不在活跃路径上，界面什么都看不到 ——
+            // 用横幅兜底，至少命令有反馈
+            if (!shown) banner = text
         }
     }
 

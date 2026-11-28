@@ -129,6 +129,31 @@ private fun intentTests() {
     eq("intent: 什么是协程", "question", keyword.classify("什么是协程"))
     eq("intent: 今天天气怎么样", "chat", keyword.classify("今天天气怎么样"))
 
+    // 技术词优先：同时含「写」和 Java 时判 CODE
+    eq(
+        "intent: Java 示例判 CODE",
+        "code",
+        keyword.classify("帮我写个 Java 的 hello world")
+    )
+    eq("intent: 写一段代码判 CODE", "code", keyword.classify("写一段代码"))
+
+    // skill_novel 的示例不能和代码类共享前缀
+    run {
+        val file = java.io.File(
+            "../android/app/src/main/assets/modules/skill-novel/MODULE.md"
+        )
+        check("novel: 模块文件存在", file.exists(), file.absolutePath)
+        if (file.exists()) {
+            val text = file.readText()
+            check(
+                "novel: 示例不以「帮我写个」开头",
+                !text.contains("\"帮我写个"),
+                text.lines().filter { it.trimStart().startsWith("- ") }.toString()
+            )
+            check("novel: 示例含讲个故事", text.contains("给我讲个故事"))
+        }
+    }
+
     // 类型片段：五种都有，未知不给
     check("intent: 五种片段齐全", Intent.entries.all { PromptByIntent.textOf(it.id) != null })
     eq("intent: 未知类型不给片段", null, PromptByIntent.textOf("lua"))
