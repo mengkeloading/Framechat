@@ -79,7 +79,14 @@ class ExpandResolverTest {
     @Test
     fun levelZeroReturnsRawText() = runTest {
         seedTag("t0", "标签B", level = 0)
-        db.messageDao().insert(
+        db.conversationDao().upsert(
+            ConversationEntity(
+                id = "c1", title = "测试会话", mode = "CREATIVE",
+                provider = "DEEPSEEK", model = "deepseek-flash",
+                createdAt = 0L, updatedAt = 0L,
+            )
+        )
+        db.messageDao().upsert(
             MessageEntity(
                 id = "m1",
                 conversationId = "c1",
@@ -88,6 +95,7 @@ class ExpandResolverTest {
                 active = true,
                 role = "user",
                 content = "这是原文内容",
+                createdAt = 1L,
             )
         )
         db.tagDao().setMessageTag("m1", "t0")
