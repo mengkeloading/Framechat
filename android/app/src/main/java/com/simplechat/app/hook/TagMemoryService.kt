@@ -177,14 +177,14 @@ class TagMemoryService(
                         userMessageId?.let { tags.setMessageTag(it, decision.tagId) }
                         log("tag:assign id=" + decision.tagId + " score=" + fmt(decision.score))
                         moveCentroid(decision.tagId, query)
-                        rememberRecent(decision.tagId, userMessageId ?: messageId)
+                        rememberRecent(decision.tagId, userMessageId ?: messageId, text)
                         decision.tagId
                     }
                     is TagDecision.Create -> {
                         val id = UUID.randomUUID().toString()
                         val now = System.currentTimeMillis()
                         tags.insert(TagEntity(id, decision.name, null, encode(query), now, now))
-                        rememberRecent(id, userMessageId ?: messageId)
+                        rememberRecent(id, userMessageId ?: messageId, text)
                         tags.setMessageTag(messageId, id)
                         userMessageId?.let { tags.setMessageTag(it, id) }
                         val score = if (decision.reason == "first") {
@@ -242,13 +242,17 @@ class TagMemoryService(
      * 摘要天然滞后（刚聊的还在 L0，摘要停在上一版），跨会话召回时把这两条
      * 一起给出去，正好补上「摘要落后」的那一段。
      */
-    private suspend fun rememberRecent(tagId: String, messageId: String) {
+    private suspend fun rememberRecent(tagId: String, messageId: String, body: String) {
         val tag = tags.byId(tagId) ?: return
         val existing = mychat.framework.memory.RecentMemory.decode(tag.recentMessages)
         val now = System.currentTimeMillis()
         val next = mychat.framework.memory.RecentMemory.append(
             existing,
-            mychat.framework.memory.RecentItem(id = messageId, text = text.take(EXCERPT), at = now),
+            mychat.framework.memory.RecentItem(
+                id = messageId,
+                text = body.take(EXCERPT),
+                at = now,
+            ),
         )
         tags.setRecent(tagId, mychat.framework.memory.RecentMemory.encode(next), now)
     }
