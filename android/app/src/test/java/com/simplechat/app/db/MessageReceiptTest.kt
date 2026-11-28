@@ -44,7 +44,7 @@ class MessageReceiptTest {
         )
         db.messageDao().upsert(
             MessageEntity(
-                id = "u1", conversationId = "c1", parentId = "root", variantIndex = 0,
+                id = "u1", conversationId = "c1", parentId = MessageEntity.ROOT_PARENT, variantIndex = 0,
                 active = true, role = "user", content = "你好", createdAt = 1L,
             )
         )

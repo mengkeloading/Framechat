@@ -1915,7 +1915,7 @@ class ChatViewModel(
     private suspend fun insertReceipt(conversationId: String, text: String) {
         val replyId = repository.beginAssistantMessage(
             conversationId = conversationId,
-            parentId = messages.lastOrNull()?.id ?: "root",
+            parentId = messages.lastOrNull()?.id ?: com.simplechat.app.db.MessageEntity.ROOT_PARENT,
             model = settings.model.id,
             receipt = true,
         )
@@ -1958,7 +1958,7 @@ class ChatViewModel(
             }
             val replyId = repository.beginAssistantMessage(
                 conversationId = conversationId,
-                parentId = messages.lastOrNull()?.id ?: "root",
+                parentId = messages.lastOrNull()?.id ?: com.simplechat.app.db.MessageEntity.ROOT_PARENT,
                 model = settings.model.id,
             )
             repository.finishMessage(
@@ -1980,7 +1980,7 @@ class ChatViewModel(
             return
         }
         viewModelScope.launch {
-            val parentId = messages.lastOrNull()?.id ?: "root"
+            val parentId = messages.lastOrNull()?.id ?: com.simplechat.app.db.MessageEntity.ROOT_PARENT
             val replyId = repository.beginAssistantMessage(
                 conversationId = conversationId,
                 parentId = parentId,
