@@ -108,9 +108,9 @@ class TagCompressorTest {
         val rows = db.tagSummaryDao().allOf("t1")
         assertEquals(1, rows.size)
         assertEquals(1, rows.single().level)
-        // 3 条消息各一个来源，方向是 msg:
+        // 只取用户消息：m1 是 assistant，不该进来源
         val refs = rows.single().sourceRefs
-        assertEquals("refs 实际是: " + refs, """["msg:m0","msg:m1","msg:m2"]""", refs)
+        assertEquals("refs 实际是: " + refs, """["msg:m0","msg:m2"]""", refs)
         val tag = db.tagDao().byId("t1")!!
         assertEquals("summary 实际是: " + tag.summary, "技术栈 Kotlin，团队熟", tag.summary)
         assertEquals(1, tag.currentLevel)
@@ -169,7 +169,7 @@ class TagCompressorTest {
         assertEquals(0, db.tagSummaryDao().allOf("t1").size)
         assertEquals(0, db.tagDao().byId("t1")!!.currentLevel)
         assertNotNull(logs.firstOrNull { it.contains("compress:start") })
-        assertTrue(logs.any { it.contains("compress:skip") && it.contains("llm_empty") })
+        assertTrue(logs.any { it.contains("compress:fail") && it.contains("llm_empty") })
     }
 
     @Test
