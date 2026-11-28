@@ -1098,6 +1098,32 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     eq("consolidate: 失败计 failed", 1, failing.failed)
     eq("consolidate: 失败不算 noSource", 0, failing.noSource)
 
+    // 10d. 强度还高 → 不需要压（noNeed），不算窗口
+    val strong = compressible.copy(id = "strong", strength = 2.0f, messageCount = 5)
+    val strongReport = DefaultConsolidator(
+        source = FakeTags(listOf(strong)),
+        compressor = FakeCompressor(),
+        settings = FakeSettings(0),
+        clock = { now },
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: 强度高计 noNeed", 1, strongReport.notDueStrength)
+    eq("consolidate: 强度高不算窗口", 0, strongReport.notDueWindow)
+
+    // 10e. 刚建的标签 → 巩固窗口，不算 noNeed
+    val newborn = compressible.copy(
+        id = "newborn", strength = 1.0f, createdAt = now - 60_000L, messageCount = 5,
+    )
+    val freshReport = DefaultConsolidator(
+        source = FakeTags(listOf(newborn)),
+        compressor = FakeCompressor(),
+        settings = FakeSettings(0),
+        clock = { now },
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: 窗口内计 window", 1, freshReport.notDueWindow)
+    eq("consolidate: 窗口内不算 noNeed", 0, freshReport.notDueStrength)
+
     // 11. 抛异常的 compressor：failed+1，循环继续
     val throwing = object : Compressor {
         val seen = mutableListOf<String>()
@@ -1127,7 +1153,7 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     check(
         "consolidate: 终态日志完整",
         done != null && done.contains("scanned=") && done.contains("compressed=") &&
-            done.contains("notDue=") && done.contains("noSource=") &&
+            done.contains("window=") && done.contains("noNeed=") && done.contains("noSource=") &&
             done.contains("failed=") && done.contains("ms="),
         done ?: "缺日志"
     )

@@ -45,17 +45,54 @@ object LevelPolicy {
         force: Boolean = false,
         ignoreInterval: Boolean = false,
     ): Int? {
-        if (!force && now - createdAt < CONSOLIDATION_MS) return null
+        return dueResult(strength, currentLevel, createdAt, lastCompressedAt, now, force, ignoreInterval).level
+    }
+
+    /**
+     * 不只是"压不压"，还要说清**为什么**不压。
+     *
+     * 「不该压」和「已经够简」混在同一个数字里，就没法判断到底是
+     * 阈值太保守，还是时间窗口太长。
+     */
+    enum class Due {
+        /** 该压 */
+        DUE,
+
+        /** 48 小时巩固窗口内 */
+        CONSOLIDATING,
+
+        /** 强度还高（>= 1.5），不需要压 */
+        STRONG,
+
+        /** 已经在目标层或更细 */
+        AT_LEVEL,
+
+        /** 距上次压缩不足 7 / 14 / 30 天 */
+        INTERVAL,
+    }
+
+    data class DueResult(val level: Int?, val due: Due)
+
+    fun dueResult(
+        strength: Float,
+        currentLevel: Int,
+        createdAt: Long,
+        lastCompressedAt: Long,
+        now: Long,
+        force: Boolean = false,
+        ignoreInterval: Boolean = false,
+    ): DueResult {
+        if (!force && now - createdAt < CONSOLIDATION_MS) return DueResult(null, Due.CONSOLIDATING)
 
         val target = when {
             strength < 0.2f -> 4
             strength < 0.5f -> 3
             strength < 1.5f -> 2
-            else -> return null
+            else -> return DueResult(null, Due.STRONG)
         }
         // 逐层：一次只往下压一层。从 L0 直接跳到 L2 会丢掉 L1 这一环，
         // 而 L2 的 sourceRefs 指向 L1 —— 中间那层不在，回溯就断了。
-        if (target <= currentLevel) return null
+        if (target <= currentLevel) return DueResult(null, Due.AT_LEVEL)
 
         // 间隔：越往下压等得越久（压得越狠越不该频繁重压）
         val days = if (ignoreInterval) Double.MAX_VALUE else (now - lastCompressedAt) / DAY_MS
@@ -65,8 +102,8 @@ object LevelPolicy {
             2 -> 14.0
             else -> 30.0
         }
-        if (days < minDays) return null
-        return currentLevel + 1
+        if (days < minDays) return DueResult(null, Due.INTERVAL)
+        return DueResult(currentLevel + 1, Due.DUE)
     }
 
     /** 各层的字数上限。 */

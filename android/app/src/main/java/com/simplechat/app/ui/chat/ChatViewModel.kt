@@ -1860,7 +1860,8 @@ class ChatViewModel(
             }
 
             val text = "压缩完成：扫描 " + report.scanned + "，压缩 " + report.compressed +
-                "，未到期 " + report.notDue + "，无原文 " + report.noSource +
+                "，未到期 " + report.notDueWindow + "，不需要 " + report.notDueStrength +
+                "，无原文 " + report.noSource +
                 "，失败 " + report.failed +
                 (if (report.capped) "（已达单次上限）" else "")
             patch(replyId) { it.copy(content = text, status = MessageStatus.DONE) }
@@ -2221,6 +2222,14 @@ class ChatViewModel(
         if (conversationId != currentConversationId) return
         retrySkipNotice = if (omitAttachmentsAndTools && stored.showRetrySkipNotice) Res.get(R.string.retry_skipped_notice) else null
         lastUsage = null
+        if (BuildConfig.DEBUG) {
+            // 新会话本该只有刚发的那几条；数字偏大就说明历史被带进来了
+            val line = "llm:ctx conv=" + currentConversationId +
+                " msgs=" + messages.size +
+                " firstRole=" + (messages.firstOrNull()?.role?.name ?: "none")
+            android.util.Log.d("MyChat/Ctx", line)
+            com.simplechat.app.hook.UsageLog.record(line)
+        }
         /*
          * ★ **发请求之前先验 Key 的字符集。**
          *

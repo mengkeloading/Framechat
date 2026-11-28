@@ -35,11 +35,16 @@ data class ConsolidateReport(
     val durationMs: Long,
     /** true = 触到单次上限，还有没处理的标签 */
     val capped: Boolean = false,
-    /** 强度/间隔没到，本轮不该压 */
-    val notDue: Int = 0,
+    /** 48 小时巩固窗口内 / 间隔未到 */
+    val notDueWindow: Int = 0,
+    /** 强度还高（或已在目标层），不需要压 */
+    val notDueStrength: Int = 0,
     /** 标签下没有可用的对话原文 */
     val noSource: Int = 0,
-)
+) {
+    /** 两者之和：日志与界面里的「没压」总数。 */
+    val notDue: Int get() = notDueWindow + notDueStrength
+}
 
 /** 整理需要知道的标签快照（强度是**落库值**，衰减在这里算）。 */
 data class CompressibleTag(
@@ -111,7 +116,8 @@ class DefaultConsolidator(
         var capped = false
         // 进度分母：上限与实际候选数取小，避免显示 "0/5" 而实际只有 2 个
         val allowed = minOf(maxPerRun, tags.size)
-        var notDue = 0
+        var notDueWindow = 0
+        var notDueStrength = 0
         var noSource = 0
         for (tag in tags) {
             scanned++
@@ -121,7 +127,7 @@ class DefaultConsolidator(
                 now = start,
                 readCount = tag.readCount,
             )
-            val goal = LevelPolicy.goalLevel(
+            val due = LevelPolicy.dueResult(
                 strength = strength,
                 currentLevel = tag.currentLevel,
                 createdAt = tag.createdAt,
@@ -130,9 +136,13 @@ class DefaultConsolidator(
                 force = force,
                 ignoreInterval = force,
             )
+            val goal = due.level
             if (goal == null) {
                 skipped++
-                notDue++
+                when (due.due) {
+                    LevelPolicy.Due.CONSOLIDATING, LevelPolicy.Due.INTERVAL -> notDueWindow++
+                    else -> notDueStrength++
+                }
                 continue
             }
             // 没有原文就没法压：不算失败，也不算"该压没压"
@@ -159,12 +169,14 @@ class DefaultConsolidator(
             failed = failed,
             durationMs = clock() - start,
             capped = capped,
-            notDue = notDue,
+            notDueWindow = notDueWindow,
+            notDueStrength = notDueStrength,
             noSource = noSource,
         )
         log(
             "consolidate:done scanned=${report.scanned} compressed=${report.compressed} " +
-                "notDue=${report.notDue} noSource=${report.noSource} " +
+                "window=${report.notDueWindow} noNeed=${report.notDueStrength} " +
+                "noSource=${report.noSource} " +
                 "failed=${report.failed} capped=${report.capped} ms=${report.durationMs}"
         )
         return report
