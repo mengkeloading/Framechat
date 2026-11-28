@@ -215,8 +215,9 @@ class AppContainer(private val app: Application) {
     }
 
     /** 注入用的记忆目录。 */
-    val memoryDirectory: mychat.framework.memory.MemoryDirectory =
+    val memoryDirectory: mychat.framework.memory.MemoryDirectory by lazy {
         com.simplechat.app.hook.RoomMemoryDirectory(database.tagDao())
+    }
 
     /** `debug:memory` 用：把每个标签的当前状态渲染成一段文字。 */
     val memoryDump: suspend () -> String = {
