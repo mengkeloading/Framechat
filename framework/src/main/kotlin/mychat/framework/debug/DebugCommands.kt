@@ -10,6 +10,11 @@ object DebugCommands {
 
     const val COMPRESS = "debug:compress"
 
+    const val MEMORY = "debug:memory"
+
     fun isCompressCommand(text: String, debugBuild: Boolean): Boolean =
         debugBuild && text.trim() == COMPRESS
+
+    fun isMemoryCommand(text: String, debugBuild: Boolean): Boolean =
+        debugBuild && text.trim() == MEMORY
 }

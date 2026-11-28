@@ -214,6 +214,22 @@ class AppContainer(private val app: Application) {
         )
     }
 
+    /** `debug:memory` 用：把每个标签的当前状态渲染成一段文字。 */
+    val memoryDump: suspend () -> String = {
+        val now = System.currentTimeMillis()
+        val entries = database.tagDao().all().map { tag ->
+            mychat.framework.memory.MemoryDump.Entry(
+                name = tag.name,
+                level = tag.currentLevel,
+                strength = mychat.framework.memory.compress.Decay.strengthAt(
+                    tag.strength, tag.lastDecayAt, now, tag.readCount,
+                ),
+                summary = tag.summary,
+            )
+        }
+        mychat.framework.memory.MemoryDump.render(entries)
+    }
+
     /** 12 小时一次的批量整理；不阻塞启动，失败只记日志。 */
     val consolidator: mychat.framework.memory.consolidate.Consolidator by lazy {
         mychat.framework.memory.consolidate.DefaultConsolidator(

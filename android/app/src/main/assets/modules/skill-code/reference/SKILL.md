@@ -40,6 +40,10 @@ keywords: [代码, 审查, review, 重构, Kotlin, Compose, 函数, 类, 报错]
 - 不整份重写，除非用户明确要求。
 - [必须改] 不超过 3 条；代码没毛病就直接说没毛病。
 
+## 检查清单
+
+更细的条目见 reference/checklist.md。
+
 ## 示例
 
 用户：这段代码有问题吗：val x = a!!.b

@@ -908,6 +908,33 @@ private fun compressTests() {
     eq("archive: 0.09 不归档", "name_only", mychat.framework.memory.TagStrength.depthOf(0.09f))
     eq("archive: 0.07 归档", "archived", mychat.framework.memory.TagStrength.depthOf(0.07f))
 
+    // 7b. 逐层：L0 只压到 L1，不会一步跳 L2
+    eq(
+        "level: L0 先压 L1",
+        1,
+        LevelPolicy.goalLevel(1.0f, 0, t0, lastCompressedAt = t0, now = t0 + day, force = true)
+    )
+    eq(
+        "level: L1 八天后压 L2",
+        2,
+        LevelPolicy.goalLevel(1.0f, 1, t0, lastCompressedAt = t0, now = t0 + 8 * day, force = true)
+    )
+    eq(
+        "level: 已到目标层不压",
+        null,
+        LevelPolicy.goalLevel(1.0f, 2, t0, lastCompressedAt = t0, now = t0 + 99 * day, force = true)
+    )
+    eq(
+        "level: 极弱也从 L1 开始",
+        1,
+        LevelPolicy.goalLevel(0.3f, 0, t0, lastCompressedAt = t0, now = t0 + day, force = true)
+    )
+    eq(
+        "level: L1 不满七天不压",
+        null,
+        LevelPolicy.goalLevel(1.0f, 1, t0, lastCompressedAt = t0, now = t0 + 5 * day, force = true)
+    )
+
     // 8a-1. force：新建 1 小时也能压（跳过巩固窗口）
     eq(
         "level: force 跳过巩固窗口",
@@ -1118,6 +1145,25 @@ private fun debugCommandTests() {
     check(
         "debug: 别的文本不是命令",
         !DebugCommands.isCompressCommand("压缩一下记忆", true)
+    )
+    check("debug: memory 在 debug 包识别", DebugCommands.isMemoryCommand("debug:memory", true))
+    check(
+        "debug: memory 在 release 当普通消息",
+        !DebugCommands.isMemoryCommand("debug:memory", false)
+    )
+
+    val dump = mychat.framework.memory.MemoryDump.render(
+        listOf(
+            mychat.framework.memory.MemoryDump.Entry("MyChat 开发", 1, 1.234f, "用 Kotlin 做的"),
+            mychat.framework.memory.MemoryDump.Entry("旧话题", 0, 0.05f, null),
+        )
+    )
+    check(
+        "debug: memory 输出含名字/层/强度/摘要",
+        dump.contains("「MyChat 开发」") && dump.contains("L1") &&
+            dump.contains("strength=1.23") && dump.contains("用 Kotlin 做的") &&
+            dump.contains("（无）"),
+        dump
     )
 }
 

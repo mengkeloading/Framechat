@@ -12,8 +12,8 @@ object ReferenceInliner {
     /** 注入块的总预算（SKILL.md + 全部附件）。 */
     const val BUDGET = 2000
 
-    /** 不超过这个长度给全文。 */
-    const val FULL_MAX = 500
+    /** 不超过这个长度给全文。600 让 skill_code 的 checklist（526 字）能整份进来。 */
+    const val FULL_MAX = 600
 
     /** 不超过这个长度给摘要。 */
     const val SUMMARY_MAX = 1500

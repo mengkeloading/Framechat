@@ -123,6 +123,7 @@ class ChatViewModel(
     private val hookRouter: HookRouter,
     private val tagMemory: com.simplechat.app.hook.TagMemoryService? = null,
     private val consolidator: mychat.framework.memory.consolidate.Consolidator? = null,
+    private val memoryDump: (suspend () -> String)? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -874,6 +875,11 @@ class ChatViewModel(
          */
         if (mychat.framework.debug.DebugCommands.isCompressCommand(text, BuildConfig.DEBUG)) {
             runDebugCompress()
+            return
+        }
+
+        if (mychat.framework.debug.DebugCommands.isMemoryCommand(text, BuildConfig.DEBUG)) {
+            runDebugMemory()
             return
         }
 
@@ -1729,6 +1735,33 @@ class ChatViewModel(
     suspend fun clearDraft(key: String) = repository.clearDraft(key)
 
     /** Delete the selected message version, optionally including its sibling versions. */
+    /** DEBUG 命令：把当前所有标签的层、强度、摘要贴出来。 */
+    private fun runDebugMemory() {
+        val dump = memoryDump
+        val conversationId = currentConversationId
+        if (dump == null || conversationId == null) {
+            banner = "没有可用的记忆视图"
+            return
+        }
+        viewModelScope.launch {
+            val text = runCatching { dump() }.getOrElse {
+                "读取记忆失败：" + it.javaClass.simpleName
+            }
+            val replyId = repository.beginAssistantMessage(
+                conversationId = conversationId,
+                parentId = messages.lastOrNull()?.id ?: "root",
+                model = settings.model.id,
+            )
+            repository.finishMessage(
+                id = replyId,
+                content = text,
+                reasoning = null,
+                status = MessageStatus.DONE,
+            )
+            reloadPath(conversationId)
+        }
+    }
+
     /** DEBUG 命令：立刻强制整理一次记忆，把结果当一条回复贴出来。 */
     private fun runDebugCompress() {
         val c = consolidator
@@ -3718,12 +3751,13 @@ class ChatViewModel(
             hookRouter: HookRouter,
             tagMemory: com.simplechat.app.hook.TagMemoryService? = null,
             consolidator: mychat.framework.memory.consolidate.Consolidator? = null,
+            memoryDump: (suspend () -> String)? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
                 ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
-                    hookRunner, hookRouter, tagMemory, consolidator, state
+                    hookRunner, hookRouter, tagMemory, consolidator, memoryDump, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

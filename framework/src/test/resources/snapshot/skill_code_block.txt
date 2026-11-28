@@ -43,6 +43,10 @@ name: 代码审查
 - 不整份重写，除非用户明确要求。
 - [必须改] 不超过 3 条；代码没毛病就直接说没毛病。
 
+## 检查清单
+
+更细的条目见 reference/checklist.md。
+
 ## 示例
 
 用户：这段代码有问题吗：val x = a!!.b
@@ -52,6 +56,34 @@ name: 代码审查
 - 在哪：第 1 行 `a!!`
 - 为什么：a 可空或来自 Java 平台类型时，!! 会抛 NPE
 - 改成什么：`a?.b`
+
+【附件：checklist.md】
+# 代码审查清单
+
+## 正确性
+- `!!` / `lateinit` 能否换成 `?.` / `?:` / `requireNotNull`
+- `catch (e: Exception) {}` 是否静默吞异常
+- 集合遍历中是否有并发修改
+- 协程作用域：`GlobalScope` 一律标记为必须改
+- 挂起函数是否在 `withContext` 里做了阻塞 IO
+
+## 可读性
+- 函数是否超过 30 行（超过则建议拆）
+- 参数是否超过 4 个（超过则建议用 data class）
+- 布尔参数是否在调用处看不出含义
+- 命名是否表达意图（`data`、`tmp`、`flag` 不合格）
+
+## Compose 专项
+- `mutableStateOf` 是否在 `remember {}` 里
+- `LaunchedEffect` 的 key 是否齐全
+- `Modifier` 顺序是否把 `padding` 放在 `background` 之前
+- 是否在重组中做了重活（应移到 `remember` 或副作用）
+
+## 性能
+- 循环内是否重复创建对象
+- 大列表是否缺 `key`
+- 是否在频繁路径上用了反射或正则编译
+
 
 【禁止】
 - 不要开场白（如"好的"、"我来看看"）

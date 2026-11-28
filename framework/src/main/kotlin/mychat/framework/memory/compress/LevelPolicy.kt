@@ -47,13 +47,26 @@ object LevelPolicy {
     ): Int? {
         if (!force && now - createdAt < CONSOLIDATION_MS) return null
 
-        val days = if (ignoreInterval) Double.MAX_VALUE else (now - lastCompressedAt) / DAY_MS
-        return when {
-            strength < 0.2f && currentLevel < 4 && days > 30 -> 4
-            strength < 0.5f && currentLevel < 3 && days > 14 -> 3
-            strength < 1.5f && currentLevel < 2 && days > 7 -> 2
-            else -> null
+        val target = when {
+            strength < 0.2f -> 4
+            strength < 0.5f -> 3
+            strength < 1.5f -> 2
+            else -> return null
         }
+        // 逐层：一次只往下压一层。从 L0 直接跳到 L2 会丢掉 L1 这一环，
+        // 而 L2 的 sourceRefs 指向 L1 —— 中间那层不在，回溯就断了。
+        if (target <= currentLevel) return null
+
+        // 间隔：越往下压等得越久（压得越狠越不该频繁重压）
+        val days = if (ignoreInterval) Double.MAX_VALUE else (now - lastCompressedAt) / DAY_MS
+        val minDays = when (currentLevel) {
+            0 -> 0.0    // 原文压成 L1 不需要等
+            1 -> 7.0
+            2 -> 14.0
+            else -> 30.0
+        }
+        if (days < minDays) return null
+        return currentLevel + 1
     }
 
     /** 各层的字数上限。 */
