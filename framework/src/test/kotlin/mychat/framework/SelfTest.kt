@@ -20,6 +20,7 @@ import mychat.framework.memory.consolidate.DefaultConsolidator
 import mychat.framework.debug.DebugCommands
 import mychat.framework.hook.ReferenceInliner
 import mychat.framework.butler.TranslatePolicy
+import mychat.framework.profile.ProfileCommand
 import mychat.framework.profile.ProfileFormatter
 import mychat.framework.profile.UserProfile
 import mychat.framework.memory.TagNaming
@@ -1305,7 +1306,7 @@ private fun profileTests() {
             tech = listOf("Kotlin", "Android", "Ktor", "PostgreSQL"),
             style = "详细",
             avoid = listOf("空话", "过度设计", "啰嗦", "没有示例"),
-            current = "在重写记忆系统的第二阶段",
+            explain = true,
         )
     )!!
     val body = long.lines().drop(1).joinToString("\n")
@@ -1314,6 +1315,51 @@ private fun profileTests() {
         body.length <= ProfileFormatter.MAX_LENGTH,
         body.length.toString()
     )
+
+    // ---- debug:profile 命令 ----
+
+    // 1. 无参数 → 显示当前值（解析成空 map）
+    val bare = ProfileCommand.parse("debug:profile", debugBuild = true)
+    eq("cmd: 裸命令解析为空参数", 0, bare?.size)
+    check(
+        "cmd: 裸命令显示当前值",
+        ProfileCommand.describe(UserProfile(role = "独立开发者")).contains("独立开发者"),
+        ProfileCommand.describe(UserProfile(role = "独立开发者"))
+    )
+
+    // 2. 带参数 → 只改给出的字段
+    val args = ProfileCommand.parse(
+        "debug:profile role=独立开发者 style=极简", debugBuild = true
+    )!!
+    val merged = ProfileCommand.apply(
+        UserProfile(role = "旧的", style = "平衡", avoid = listOf("空话"), explain = true),
+        args
+    )
+    eq("cmd: 覆盖身份", "独立开发者", merged.role)
+    eq("cmd: 覆盖风格", "极简", merged.style)
+    eq("cmd: 保留讨厌项", listOf("空话"), merged.avoid)
+    check("cmd: 保留解释开关", merged.explain)
+
+    // 3/4. 逗号分隔解析
+    val csv = ProfileCommand.parse(
+        "debug:profile tech=Kotlin,Android avoid=空话,过度设计", debugBuild = true
+    )!!
+    val csvProfile = ProfileCommand.apply(UserProfile(role = "x"), csv)
+    eq("cmd: tech 解析成列表", listOf("Kotlin", "Android"), csvProfile.tech)
+    eq("cmd: avoid 解析成列表", listOf("空话", "过度设计"), csvProfile.avoid)
+    eq("cmd: 中文逗号也行", listOf("A", "B"), ProfileCommand.splitList("A，B"))
+
+    // 5. release 下当普通消息
+    eq("cmd: release 不识别", null, ProfileCommand.parse("debug:profile", debugBuild = false))
+    eq("cmd: 普通文本不识别", null, ProfileCommand.parse("你好", debugBuild = true))
+
+    // 回执格式
+    val receipt = ProfileCommand.updated(
+        UserProfile(role = "独立开发者", style = "极简", avoid = listOf("空话", "过度设计"))
+    )
+    check("cmd: 回执含身份", receipt.contains("身份：独立开发者"), receipt)
+    check("cmd: 回执含风格", receipt.contains("风格：极简"), receipt)
+    check("cmd: 回执含讨厌", receipt.contains("讨厌：空话、过度设计"), receipt)
 
     // 平衡是默认值，不写出来
     check(

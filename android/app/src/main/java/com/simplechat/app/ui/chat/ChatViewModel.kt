@@ -126,8 +126,8 @@ class ChatViewModel(
     private val memoryDump: (suspend () -> String)? = null,
     private val memoryDirectory: mychat.framework.memory.MemoryDirectory? = null,
     private val expandResolver: com.simplechat.app.hook.ExpandResolver? = null,
-    private val userProfile: mychat.framework.profile.UserProfile =
-        mychat.framework.profile.UserProfile(),
+    private val userProfile: (suspend () -> mychat.framework.profile.UserProfile)? = null,
+    private val saveUserProfile: (suspend (mychat.framework.profile.UserProfile) -> Unit)? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -206,6 +206,9 @@ class ChatViewModel(
 
     /** 模型上一轮点名要展开的标签名；下一轮注入后清空。 */
     private var pendingExpands: List<String> = emptyList()
+
+    /** 本进程里刚设置过的角色卡；null = 还没动过，读存储。 */
+    private var currentProfile: mychat.framework.profile.UserProfile? = null
     private var pendingMemoryEnabled by mutableStateOf(true)
     private var openedMemoryEnabled by mutableStateOf(true)
     val showConversationMemorySetting: Boolean get() = stored.crossChatMemory
@@ -899,6 +902,12 @@ class ChatViewModel(
             return
         }
 
+        mychat.framework.profile.ProfileCommand.parse(text, BuildConfig.DEBUG)?.let { args ->
+            onPersisted()
+            runProfileCommand(args)
+            return
+        }
+
         if (mychat.framework.debug.DebugCommands.isMemoryCommand(text, BuildConfig.DEBUG)) {
             onPersisted()
             runDebugMemory()
@@ -1046,7 +1055,9 @@ class ChatViewModel(
                         selected = selected,
                         intentText = prepared.intentText,
                         memoryText = memoryBlock,
-                        profileText = mychat.framework.profile.ProfileFormatter.format(userProfile),
+                        profileText = (currentProfile ?: userProfile?.invoke())?.let {
+                            mychat.framework.profile.ProfileFormatter.format(it)
+                        },
                     )) {
                         is HookAResult.Local -> localReply = hookA.text
                         is HookAResult.Context -> {
@@ -1797,6 +1808,46 @@ class ChatViewModel(
     suspend fun clearDraft(key: String) = repository.clearDraft(key)
 
     /** Delete the selected message version, optionally including its sibling versions. */
+    /** DEBUG 命令：查看或修改角色卡。 */
+    private fun runProfileCommand(args: Map<String, String>) {
+        val read = userProfile
+        val write = saveUserProfile
+        val conversationId = currentConversationId
+        if (read == null || conversationId == null) {
+            banner = "没有可用的角色卡"
+            return
+        }
+        viewModelScope.launch {
+            val current = currentProfile ?: runCatching { read() }
+                .getOrNull() ?: mychat.framework.profile.UserProfile()
+            val text = if (args.isEmpty()) {
+                mychat.framework.profile.ProfileCommand.describe(current)
+            } else {
+                val next = mychat.framework.profile.ProfileCommand.apply(current, args)
+                runCatching { write?.invoke(next) }
+                currentProfile = next
+                if (BuildConfig.DEBUG) {
+                    com.simplechat.app.hook.UsageLog.record(
+                        "profile:update style=" + next.style + " avoid=" + next.avoid.size
+                    )
+                }
+                mychat.framework.profile.ProfileCommand.updated(next)
+            }
+            val replyId = repository.beginAssistantMessage(
+                conversationId = conversationId,
+                parentId = messages.lastOrNull()?.id ?: "root",
+                model = settings.model.id,
+            )
+            repository.finishMessage(
+                id = replyId,
+                content = text,
+                reasoning = null,
+                status = MessageStatus.DONE,
+            )
+            reloadPath(conversationId)
+        }
+    }
+
     /** DEBUG 命令：把当前所有标签的层、强度、摘要贴出来。 */
     private fun runDebugMemory() {
         val dump = memoryDump
@@ -3836,15 +3887,15 @@ class ChatViewModel(
             memoryDump: (suspend () -> String)? = null,
             memoryDirectory: mychat.framework.memory.MemoryDirectory? = null,
             expandResolver: com.simplechat.app.hook.ExpandResolver? = null,
-            userProfile: mychat.framework.profile.UserProfile =
-                mychat.framework.profile.UserProfile(),
+            userProfile: (suspend () -> mychat.framework.profile.UserProfile)? = null,
+            saveUserProfile: (suspend (mychat.framework.profile.UserProfile) -> Unit)? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
                 ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
                     hookRunner, hookRouter, tagMemory, consolidator, memoryDump,
-                    memoryDirectory, expandResolver, userProfile, state
+                    memoryDirectory, expandResolver, userProfile, saveUserProfile, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

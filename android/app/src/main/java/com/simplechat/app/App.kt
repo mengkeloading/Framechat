@@ -223,9 +223,6 @@ class AppContainer(private val app: Application) {
         )
     }
 
-    /** 角色卡。默认全空 = 不注入，等有了写入入口再填。 */
-    var userProfile: mychat.framework.profile.UserProfile = mychat.framework.profile.UserProfile()
-
     /** 注入用的记忆目录。 */
     val memoryDirectory: mychat.framework.memory.MemoryDirectory by lazy {
         com.simplechat.app.hook.RoomMemoryDirectory(database.tagDao())

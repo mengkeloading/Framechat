@@ -17,8 +17,6 @@ data class UserProfile(
     val explain: Boolean = false,
     /** 讨厌的做法，如「空话」「过度设计」 */
     val avoid: List<String> = emptyList(),
-    /** 当前在做什么 */
-    val current: String = "",
 )
 
 /**
@@ -54,8 +52,6 @@ object ProfileFormatter {
         // 正反都给：写「不解释过程」比不写更明确，模型不会自己脑补要不要讲步骤
         parts += if (profile.explain) "要解释过程" else "不解释过程"
 
-        val current = profile.current.trim()
-        if (current.isNotEmpty()) parts += "正在做" + current
 
         val body = trimTo(parts.joinToString("；"), MAX_LENGTH)
         return "【关于你】\n" + body

@@ -830,6 +830,32 @@ class SettingsStore(
         preferences.edit { it[Keys.LAST_CONSOLIDATE_AT] = t }
     }
 
+    /** 角色卡：手写，不推断。全空 = 不注入。 */
+    suspend fun userProfile(): mychat.framework.profile.UserProfile {
+        val prefs = preferences.data.first()
+        return mychat.framework.profile.UserProfile(
+            role = prefs[Keys.PROFILE_ROLE].orEmpty(),
+            tech = mychat.framework.profile.ProfileCommand.splitList(
+                prefs[Keys.PROFILE_TECH].orEmpty()
+            ),
+            style = prefs[Keys.PROFILE_STYLE]?.takeIf { it.isNotBlank() } ?: "平衡",
+            explain = prefs[Keys.PROFILE_EXPLAIN] ?: false,
+            avoid = mychat.framework.profile.ProfileCommand.splitList(
+                prefs[Keys.PROFILE_AVOID].orEmpty()
+            ),
+        )
+    }
+
+    suspend fun saveUserProfile(profile: mychat.framework.profile.UserProfile) {
+        preferences.edit {
+            it[Keys.PROFILE_ROLE] = profile.role
+            it[Keys.PROFILE_TECH] = mychat.framework.profile.ProfileCommand.joinList(profile.tech)
+            it[Keys.PROFILE_STYLE] = profile.style
+            it[Keys.PROFILE_EXPLAIN] = profile.explain
+            it[Keys.PROFILE_AVOID] = mychat.framework.profile.ProfileCommand.joinList(profile.avoid)
+        }
+    }
+
     suspend fun setMemoryEnabled(enabled: Boolean) {
         preferences.edit { it[Keys.MEMORY_ENABLED] = enabled }
     }
@@ -1021,6 +1047,11 @@ class SettingsStore(
         val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
         /** 上次批量整理记忆的时间；0 = 从没跑过。 */
         val LAST_CONSOLIDATE_AT = longPreferencesKey("last_consolidate_at")
+        val PROFILE_ROLE = stringPreferencesKey("profile.role")
+        val PROFILE_TECH = stringPreferencesKey("profile.tech")
+        val PROFILE_STYLE = stringPreferencesKey("profile.style")
+        val PROFILE_EXPLAIN = booleanPreferencesKey("profile.explain")
+        val PROFILE_AVOID = stringPreferencesKey("profile.avoid")
         val IMAGE_SKIP_NOTICE = booleanPreferencesKey("show_image_skip_notice")
         val LOADING_WORDS = stringPreferencesKey("loading_words")
         val LOADING_WORDS_USE_THEME_COLOR = booleanPreferencesKey("loading_words_use_theme_color")
