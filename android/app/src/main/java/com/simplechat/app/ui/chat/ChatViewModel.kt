@@ -1828,12 +1828,24 @@ class ChatViewModel(
     private fun runProfileCommand(args: Map<String, String>) {
         val read = userProfile
         val write = saveUserProfile
-        val conversationId = currentConversationId
-        if (read == null || conversationId == null) {
+        if (BuildConfig.DEBUG) {
+            com.simplechat.app.hook.UsageLog.record(
+                "profile:cmd args=" + args.size +
+                    " profileNull=" + (read == null) +
+                    " convNull=" + (currentConversationId == null)
+            )
+        }
+        if (read == null) {
             banner = "没有可用的角色卡"
             return
         }
         viewModelScope.launch {
+            // 新会话里第一条就是命令：先建会话，否则命令看起来没反应
+            val conversationId = currentConversationId ?: ensureConversation(switchGeneration)
+            if (conversationId == null) {
+                banner = "无法创建会话"
+                return@launch
+            }
             val current = currentProfile ?: runCatching { read() }
                 .getOrNull() ?: mychat.framework.profile.UserProfile()
             val text = if (args.isEmpty()) {

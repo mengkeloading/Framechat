@@ -1395,6 +1395,15 @@ private fun profileTests() {
     val bare = ProfileCommand.parse("debug:profile", debugBuild = true)
     eq("cmd: 裸命令解析为空参数", 0, bare?.size)
     check(
+        "cmd: 空角色卡显示为空",
+        ProfileCommand.describe(UserProfile()).contains("角色卡为空"),
+        ProfileCommand.describe(UserProfile())
+    )
+    check(
+        "cmd: 空角色卡不提「没有可用的角色卡」",
+        !ProfileCommand.describe(UserProfile()).contains("没有可用的角色卡")
+    )
+    check(
         "cmd: 裸命令显示当前值",
         ProfileCommand.describe(UserProfile(role = "独立开发者")).contains("独立开发者"),
         ProfileCommand.describe(UserProfile(role = "独立开发者"))

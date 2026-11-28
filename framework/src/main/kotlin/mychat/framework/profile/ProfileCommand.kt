@@ -1,5 +1,7 @@
 package mychat.framework.profile
 
+import mychat.framework.butler.isEmpty
+
 /**
  * `debug:profile key=value …`：在没有设置页的情况下改角色卡。
  *
@@ -84,7 +86,8 @@ object ProfileCommand {
 
     /** 裸命令的回执。 */
     fun describe(profile: UserProfile): String {
-        val body = ProfileFormatter.format(profile) ?: return "角色卡：（空）"
+        if (profile.isEmpty()) return "角色卡为空（用 debug:profile role=… 设置）"
+        val body = ProfileFormatter.format(profile) ?: return "角色卡为空"
         return "当前角色卡：\n" + body.removePrefix("【关于你】\n")
     }
 }
