@@ -4,7 +4,6 @@ import com.simplechat.app.db.TagDao
 import com.simplechat.app.db.TagEntity
 import mychat.framework.embedding.TextEmbedder
 import mychat.framework.memory.LayeredRecall
-import mychat.framework.memory.MemoryItem
 import mychat.framework.memory.Recall
 import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
@@ -67,9 +66,6 @@ class TagMemoryService(
                 query = query,
                 tags = snapshot,
                 summaryOf = { id -> snapshot.firstOrNull { it.id == id }?.summary },
-                recentOf = { id ->
-                    tags.recentUserContents(id, MAX_RECALL_MESSAGES).map { MemoryItem("user", it) }
-                },
                 log = { line -> log(line) },
                 now = now,
             )
@@ -83,7 +79,20 @@ class TagMemoryService(
                 }
             }
 
-            val hit = result.first ?: return null
+            var hit = result.first ?: return null
+            /*
+             * 原话要查库（suspend），而检索本身是纯函数 —— 摘要缺失时在这里补一次，
+             * 只补命中的那一个标签，不扫全表。
+             */
+            if (hit.summary == null && hit.text == Recall.NO_DETAIL) {
+                val lines = tags.recentUserContents(hit.tagId, MAX_RECALL_MESSAGES)
+                    .take(MAX_RECALL_MESSAGES)
+                    .map { it.take(EXCERPT) }
+                if (lines.isNotEmpty()) {
+                    val joined = lines.joinToString("\n---\n")
+                    hit = hit.copy(text = joined, fallbackText = joined)
+                }
+            }
             if (result.reason == LayeredRecall.FUZZY && hit.depth != "name_only") {
                 // 只有模糊命中才加强度：用户自己说出名字不该被算作「又想起来一次」
                 val tag = snapshot.firstOrNull { it.id == hit.tagId }
