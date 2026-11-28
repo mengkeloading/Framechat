@@ -19,6 +19,7 @@ import mychat.framework.memory.consolidate.ConsolidationSource
 import mychat.framework.memory.consolidate.DefaultConsolidator
 import mychat.framework.debug.DebugCommands
 import mychat.framework.hook.ReferenceInliner
+import mychat.framework.butler.TranslatePolicy
 import mychat.framework.memory.TagNaming
 import mychat.framework.memory.compress.DefaultCompressor
 import mychat.framework.memory.compress.Decay
@@ -93,6 +94,7 @@ fun main() {
     routeLogTests()
     referenceTests()
     directoryTests()
+    translateTests()
     tagNamingTests()
     promptTests()
     manifestAuditTests()
@@ -1233,6 +1235,32 @@ private fun promptTests() {
         "prompt: L3 更短",
         DefaultCompressor.buildPrompt("x", 40, 3).contains("不超过 40 字"),
         DefaultCompressor.buildPrompt("x", 40, 3)
+    )
+}
+
+// ---------- 翻译策略：模块优先 ----------
+
+private fun translateTests() {
+    // 命中模块：不翻译
+    val hit = TranslatePolicy.decide(listOf("skill_code"))
+    check("translate: 命中模块不翻译", !hit.run, hit.toString())
+    eq("translate: 原因是 module_hit", "module_hit", hit.reason)
+
+    // 没命中：可以翻译
+    val none = TranslatePolicy.decide(emptyList())
+    check("translate: 没命中才翻译", none.run, none.toString())
+    eq("translate: 原因是 no_module", "no_module", none.reason)
+
+    // 日志格式
+    eq(
+        "translate: skip 日志格式",
+        "translate:skip reason=module_hit route=[skill_code, math_guard]",
+        TranslatePolicy.skipLog("module_hit", listOf("skill_code", "math_guard"))
+    )
+    eq(
+        "translate: run 日志格式",
+        "translate:run profile=true ctx=true len=48→120",
+        TranslatePolicy.runLog(profile = true, ctx = true, from = 48, to = 120)
     )
 }
 

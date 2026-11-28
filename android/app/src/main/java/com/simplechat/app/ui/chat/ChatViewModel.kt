@@ -980,15 +980,29 @@ class ChatViewModel(
                         android.util.Log.d("MyChat/Sel", intentLine)
                         com.simplechat.app.hook.UsageLog.record(intentLine)
                     }
-                    val hookText = if (prepared.normalize) {
-                        hookRouter.normalize(text, stored.butlerId)?.also {
-                            if (BuildConfig.DEBUG) android.util.Log.d("MyChat/Butler", "normalize ok")
-                        } ?: run {
-                            if (BuildConfig.DEBUG) android.util.Log.d("MyChat/Butler", "normalize skipped")
-                            text
-                        }
+                    // 模块优先：命中模块就不翻译，让模块规范说了算
+                    val translate = mychat.framework.butler.TranslatePolicy.decide(prepared.routeModules)
+                    val translated = if (translate.run) {
+                        hookRouter.normalize(text, stored.butlerId)
                     } else {
-                        text
+                        null
+                    }
+                    val hookText = translated?.takeIf { it.isNotBlank() } ?: text
+                    if (BuildConfig.DEBUG) {
+                        val line = if (translate.run) {
+                            mychat.framework.butler.TranslatePolicy.runLog(
+                                profile = false,
+                                ctx = prepared.intentText != null,
+                                from = text.length,
+                                to = hookText.length,
+                            )
+                        } else {
+                            mychat.framework.butler.TranslatePolicy.skipLog(
+                                translate.reason, prepared.routeModules,
+                            )
+                        }
+                        android.util.Log.d("MyChat/Butler", line)
+                        com.simplechat.app.hook.UsageLog.record(line)
                     }
                     // 本轮的记忆快照：检索与打标共用，本轮新建的标签不参与本轮召回
                     memoryTurn = if (stored.memoryEnabled) tagMemory?.begin(text) else null
