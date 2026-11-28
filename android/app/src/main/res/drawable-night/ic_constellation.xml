@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  深色版：蓝和橙各提亮一档，否则在近黑底上发闷。
+  结构和浅色版完全一致，只改三个颜色值。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:pathData="M5,7 L11,5 L16,9 L13,15 L7,16 L5,7"
+        android:strokeColor="#FFB340"
+        android:strokeWidth="1.1"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+
+    <path android:pathData="M5,7 m-1.6,0 a1.6,1.6 0,1 1,3.2 0 a1.6,1.6 0,1 1,-3.2 0" android:fillColor="#4CA6FF" />
+    <path android:pathData="M11,5 m-1.6,0 a1.6,1.6 0,1 1,3.2 0 a1.6,1.6 0,1 1,-3.2 0" android:fillColor="#4CA6FF" />
+    <path android:pathData="M16,9 m-1.6,0 a1.6,1.6 0,1 1,3.2 0 a1.6,1.6 0,1 1,-3.2 0" android:fillColor="#4CA6FF" />
+    <path android:pathData="M13,15 m-1.6,0 a1.6,1.6 0,1 1,3.2 0 a1.6,1.6 0,1 1,-3.2 0" android:fillColor="#4CA6FF" />
+    <path android:pathData="M7,16 m-1.6,0 a1.6,1.6 0,1 1,3.2 0 a1.6,1.6 0,1 1,-3.2 0" android:fillColor="#4CA6FF" />
+
+    <path android:pathData="M19,5.5 m-1.3,0 a1.3,1.3 0,1 1,2.6 0 a1.3,1.3 0,1 1,-2.6 0" android:fillColor="#A0A0A6" />
+</vector>

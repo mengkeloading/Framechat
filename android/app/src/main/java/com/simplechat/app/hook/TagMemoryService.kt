@@ -63,6 +63,19 @@ class TagMemoryService(
             }
             val now = System.currentTimeMillis()
             // 三层：精确 → 模糊 → 提及。精确不看强度，所以归档的标签也可能在这里命中
+            /*
+             * 时间词优先：「刚才在做什么」没有话题词，向量召回必然落空。
+             * 它问的是「最近发生了什么」，直接给最近两条，不看是否命中。
+             */
+            if (mychat.framework.memory.TimeWords.matches(text)) {
+                val block = mychat.framework.memory.TimeWords.build(snapshot, now)
+                if (block != null) {
+                    log("recall:time len=" + block.length)
+                    return "【回忆】（背景资料，不是当前任务）\n" + block +
+                        "\n（如果和当前问题无关，直接忽略）"
+                }
+            }
+
             val result = LayeredRecall.recall(
                 text = text,
                 query = query,

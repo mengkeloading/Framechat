@@ -10,6 +10,35 @@ data class RecentItem(val id: String, val text: String, val at: Long)
  * - 同一个会话里召回：只给摘要（用户自己刚说过的话不用复述）
  * - **跨会话**召回：摘要 + 最近两条原文（带时间），补上摘要落后那一段
  */
+/**
+ * 「刚才 / 最近 / 上次」这类时间指代。
+ *
+ * 这类话根本没有话题词，向量相似度必然很低 —— 指望召回命中是错的。
+ * 它要的是「最近发生了什么」，直接给最近两条原文，比任何相似度都准。
+ */
+object TimeWords {
+
+    private val PATTERN = Regex("刚才|刚刚|最近|上次|之前|前面|上一次")
+
+    fun matches(text: String): Boolean = PATTERN.containsMatchIn(text)
+
+    /**
+     * 取最近出现过（lastSeenAt 最新）的两个标签，拼成「最近」块。
+     * 没有原文可给时返回 null —— 宁可不提，也不要给一句空话。
+     */
+    fun build(tags: List<TagRecord>, now: Long, limit: Int = 2): String? {
+        val recent = tags
+            .filter { it.recent.isNotEmpty() }
+            .sortedByDescending { it.lastSeenAt }
+            .take(limit)
+        if (recent.isEmpty()) return null
+        val lines = recent.flatMap { tag ->
+            tag.recent.map { "[" + RecentMemory.stamp(it.at, now) + "] " + it.text }
+        }
+        return "最近：\n" + lines.joinToString("\n")
+    }
+}
+
 object RecentMemory {
 
     const val MAX = 2

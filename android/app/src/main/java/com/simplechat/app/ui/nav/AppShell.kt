@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -46,6 +49,12 @@ import com.simplechat.app.ui.nav.IconVariant
  */
 enum class HomeTab { CHAT, MEMORY, SETTINGS }
 
+/**
+ * 聊天页不显示底栏：输入框、发送按钮都在底部，再加一条会抢空间。
+ * 抽成函数是为了能直接断言（Compose 层在 JVM 里跑不起来）。
+ */
+fun showBottomBar(tab: HomeTab): Boolean = tab != HomeTab.CHAT
+
 @Composable
 fun AppShell() {
     val context = LocalContext.current
@@ -56,16 +65,22 @@ fun AppShell() {
     Column(Modifier.fillMaxSize().background(NavPalette.background())) {
         Box(Modifier.weight(1f)) {
             when (tab) {
-                HomeTab.CHAT -> RootScreen()
+                HomeTab.CHAT -> Box(Modifier.fillMaxSize()) {
+                    RootScreen()
+                    // 聊天页不占底栏：输入框本来就在底部，再多一条会和它抢空间
+                    ChatTabHandle(onOpen = { tab = it })
+                }
                 HomeTab.MEMORY -> MemoryHomeScreen(IconVariant.of(settings?.iconVariant))
                 HomeTab.SETTINGS -> SettingsHomeScreen()
             }
         }
-        BottomBar(
-            current = tab,
-            variant = IconVariant.of(settings?.iconVariant),
-            onSelect = { tab = it },
-        )
+        if (showBottomBar(tab)) {
+            BottomBar(
+                current = tab,
+                variant = IconVariant.of(settings?.iconVariant),
+                onSelect = { tab = it },
+            )
+        }
     }
 }
 
@@ -133,6 +148,37 @@ private fun NavItem(
             color = NavPalette.tint(selected),
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
         )
+    }
+}
+
+/**
+ * 聊天页里的入口：左下角一个小胶囊，点开选记忆 / 设置。
+ *
+ * 放左下不放右上：右上角是聊天页自己的菜单区，压上去会挡到重新生成。
+ */
+@Composable
+private fun ChatTabHandle(onOpen: (HomeTab) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize().padding(start = 12.dp, bottom = 96.dp), Alignment.BottomStart) {
+        Text(
+            text = "≡",
+            fontSize = 18.sp,
+            color = NavPalette.secondaryText(),
+            modifier = Modifier
+                .background(NavPalette.secondary(), RoundedCornerShape(12.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("记忆", fontSize = NavType.detail) },
+                onClick = { expanded = false; onOpen(HomeTab.MEMORY) },
+            )
+            DropdownMenuItem(
+                text = { Text("设置", fontSize = NavType.detail) },
+                onClick = { expanded = false; onOpen(HomeTab.SETTINGS) },
+            )
+        }
     }
 }
 

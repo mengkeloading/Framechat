@@ -87,12 +87,16 @@ class DefaultCompressor(
         val input: String
         val sources: List<String>
         if (tag.currentLevel == 0) {
-            // 只用用户说的话：模型的回答里有一半是推测，压进摘要就等于把它的猜测
-            // 变成了"过去的事实"，下一轮再召回出来当依据。
+            /*
+             * user + assistant 一起压。
+             *
+             * 只用 user 会丢掉真正有价值的那半：结论、代码、定下来的方案都在助手的回答里，
+             * 只压用户原话会让摘要变成一串没有结果的诉求（「想要一个协程版本」）。
+             * 代价是要靠提示词把「推测」挡在外面 —— 比丢掉结论便宜。
+             */
             val msgs = source.messagesOf(tagId)
-                .filter { it.role.equals("user", ignoreCase = true) }
             if (msgs.isEmpty()) return skip(tagId, toLevel, "no_source")
-            input = msgs.joinToString("\n") { "[user] ${it.content}" }
+            input = msgs.joinToString("\n") { "[${it.role}] ${it.content}" }
             sources = msgs.map { "msg:${it.id}" }
         } else {
             val prev = source.summaryOf(tagId, tag.currentLevel)
@@ -183,6 +187,9 @@ class DefaultCompressor(
                 - 待办：还没做的事
                 - 未决：还在讨论的问题
                 - 事实：客观信息（技术栈、项目名、时间等）
+
+                只记录用户明确说过的事、你给出的代码和方案。
+                不要记录你的推测（比如"这个 App 可能是…"）、寒暄、反问。
 
                 必须丢弃：
                 - 寒暄、客套话

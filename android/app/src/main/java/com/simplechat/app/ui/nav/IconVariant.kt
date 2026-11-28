@@ -58,11 +58,12 @@ fun VariantIcon(
     if (material != null) {
         Icon(imageVector = material, contentDescription = null, modifier = modifier, tint = tint)
     } else {
+        // 自绘的是三色图标：统一着色会把它压成单色
         Icon(
             painter = painterResource(R.drawable.ic_constellation),
             contentDescription = null,
             modifier = modifier,
-            tint = tint,
+            tint = Color.Unspecified,
         )
     }
 }

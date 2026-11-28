@@ -1026,11 +1026,22 @@ private fun compressInputTests() = kotlinx.coroutines.runBlocking {
 
     val prompt = captured.firstOrNull().orEmpty()
     check("compress: 提示词含用户原话", prompt.contains("决定用 Kotlin 重写"), prompt)
-    check("compress: 不含模型猜测", !prompt.contains("我猜你可能还想换掉数据库"), prompt)
+    // assistant 重新进入输入：结论与代码都在它那边
+    check(
+        "compress: 提示词含助手回答",
+        prompt.contains("[assistant] 我猜你可能还想换掉数据库"),
+        prompt.take(400)
+    )
+    // 但 prompt 明确禁止把它当事实记下来
+    check(
+        "compress: 提示词禁止推测",
+        prompt.contains("不要记录你的推测"),
+        prompt.take(400)
+    )
 
     val write = writes.firstOrNull()
     check("compress: 有落库", write != null)
-    eq("compress: 来源全是 user 消息", listOf("msg:m1", "msg:m3"), write?.sources)
+    eq("compress: 来源含 user 与 assistant", listOf("msg:m1", "msg:m2", "msg:m3"), write?.sources)
     check(
         "compress: 来源格式统一",
         write != null && write.sources.all { it.startsWith("msg:") },
@@ -1481,6 +1492,26 @@ private fun profileTests() {
     check("persona: 含不客套", persona.contains("不说「好的」"))
     check("persona: 含硬约束声明", persona.contains("以上是硬约束。违反任一条即为回答失败。"))
 
+    // ---- 图标资源：三色、无着色、有深色版 ----
+    run {
+        val root = System.getProperty("mychat.repoRoot").orEmpty()
+        if (root.isNotBlank()) {
+            val light = java.io.File(root, "android/app/src/main/res/drawable/ic_constellation.xml")
+            val night = java.io.File(
+                root, "android/app/src/main/res/drawable-night/ic_constellation.xml",
+            )
+            check("icon: 浅色资源存在", light.exists(), light.path)
+            check("icon: 深色资源存在", night.exists(), night.path)
+            if (light.exists()) {
+                val text = light.readText()
+                check("icon: 不含着色属性", !text.contains("tint"), text.take(200))
+                check("icon: 蓝点", text.contains("0A84FF"))
+                check("icon: 橙线", text.contains("FF9500"))
+                check("icon: 灰点", text.contains("8E8E93"))
+            }
+        }
+    }
+
     // ---- 模块 intent 过滤 ----
     run {
         fun pkg(id: String, intent: String?) = mychat.framework.hook.ModulePackage(
@@ -1550,6 +1581,30 @@ private fun profileTests() {
             mychat.framework.memory.Tagger.decide(v, emptyList(), "帮我写个函数")
                 is mychat.framework.memory.TagDecision.Create
         )
+    }
+
+    // ---- 时间词 ----
+    run {
+        val tnow = 1_700_000_000_000L
+        check("time: 刚才命中", mychat.framework.memory.TimeWords.matches("我刚才在做什么"))
+        check("time: 普通请求不命中", !mychat.framework.memory.TimeWords.matches("帮我写个函数"))
+        val tags = listOf(
+            mychat.framework.memory.TagRecord(
+                id = "a", name = "甲", vector = floatArrayOf(1f, 0f),
+                strength = 1f, lastDecayAt = tnow, lastSeenAt = tnow - 1000,
+                recent = listOf(mychat.framework.memory.RecentItem("m1", "聊过甲", tnow - 5000)),
+            ),
+            mychat.framework.memory.TagRecord(
+                id = "b", name = "乙", vector = floatArrayOf(0f, 1f),
+                strength = 1f, lastDecayAt = tnow, lastSeenAt = tnow - 2000,
+                recent = listOf(mychat.framework.memory.RecentItem("m2", "聊过乙", tnow - 10000)),
+            ),
+        )
+        val block = mychat.framework.memory.TimeWords.build(tags, tnow)!!
+        check("time: 块含最近", block.startsWith("最近："), block)
+        check("time: 含原文", block.contains("聊过甲") && block.contains("聊过乙"), block)
+        check("time: 最近的在前", block.indexOf("聊过甲") < block.indexOf("聊过乙"), block)
+        eq("time: 无原文时不给块", null, mychat.framework.memory.TimeWords.build(emptyList(), tnow))
     }
 
     // ---- 路由下限 0.45 ----
