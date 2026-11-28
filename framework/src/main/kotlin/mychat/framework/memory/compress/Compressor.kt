@@ -6,14 +6,31 @@ package mychat.framework.memory.compress
  * 框架只做「决策 + 组装 + 日志」，取数与落库都通过 [CompressionSource] 端口 ——
  * 所以这里不含任何 Android 类型，纯 JVM 可测。
  */
+/**
+ * 一次压缩的结果。
+ *
+ * 为什么不是 Boolean：`already_short` 是"本来就够短，不用压"，和"模型调用失败"
+ * 混成同一个数字后，报告里满屏 already_short 和"每次模型都挂了"看起来一模一样。
+ */
+sealed interface CompressResult {
+    /** 压成功：摘要已落库，层指针已前移。 */
+    data class Done(val level: Int) : CompressResult
+
+    /** 不该压或压不了（already_short / no_source / already_at_level…）。 */
+    data class Skipped(val reason: String) : CompressResult
+
+    /** 该压但没压成（模型空、写库失败、异常）。 */
+    data class Failed(val reason: String) : CompressResult
+}
+
 interface Compressor {
     /**
      * 把 [tagId] 压到 [toLevel]。
      *
      * 成功：写摘要 + 更新 tags 的 summary/currentLevel/lastCompressedAt
-     * 失败：不改任何状态，返回 false，并留下一条 skip 或 fail 日志
+     * 没压：不改任何状态，返回带原因的 [CompressResult]
      */
-    suspend fun compress(tagId: String, toLevel: Int): Boolean
+    suspend fun compress(tagId: String, toLevel: Int): CompressResult
 }
 
 /** 压缩需要知道的最小标签信息。 */
@@ -60,7 +77,7 @@ class DefaultCompressor(
     private val log: (String) -> Unit = {},
 ) : Compressor {
 
-    override suspend fun compress(tagId: String, toLevel: Int): Boolean {
+    override suspend fun compress(tagId: String, toLevel: Int): CompressResult {
         val tag = source.tag(tagId)
             ?: return skip(tagId, toLevel, "tag_not_found")
         if (toLevel !in 1..4) return skip(tagId, toLevel, "bad_level")
@@ -70,9 +87,12 @@ class DefaultCompressor(
         val input: String
         val sources: List<String>
         if (tag.currentLevel == 0) {
+            // 只用用户说的话：模型的回答里有一半是推测，压进摘要就等于把它的猜测
+            // 变成了"过去的事实"，下一轮再召回出来当依据。
             val msgs = source.messagesOf(tagId)
+                .filter { it.role.equals("user", ignoreCase = true) }
             if (msgs.isEmpty()) return skip(tagId, toLevel, "no_source")
-            input = msgs.joinToString("\n") { "[${it.role}] ${it.content}" }
+            input = msgs.joinToString("\n") { "[user] ${it.content}" }
             sources = msgs.map { "msg:${it.id}" }
         } else {
             val prev = source.summaryOf(tagId, tag.currentLevel)
@@ -92,9 +112,9 @@ class DefaultCompressor(
         val out = runCatching { summarizer.summarize(buildPrompt(input, target, toLevel)) }
             .getOrElse { error ->
                 log("compress:fail tag=$tagId to=$toLevel err=${error.javaClass.simpleName}")
-                return false
+                return CompressResult.Failed(error.javaClass.simpleName)
             }
-        if (out.isNullOrBlank()) return skip(tagId, toLevel, "llm_empty")
+        if (out.isNullOrBlank()) return fail(tagId, toLevel, "llm_empty")
 
         // 摘要正文与 MENTIONS 分开：正文落摘要，话题名落 tags.mentions
         val parsed = mychat.framework.memory.Mentions.extract(out)
@@ -120,21 +140,24 @@ class DefaultCompressor(
             )
         }.getOrElse { error ->
             log("compress:fail tag=$tagId to=$toLevel err=${error.javaClass.simpleName}")
-            return false
+            return CompressResult.Failed(error.javaClass.simpleName)
         }
-        if (!ok) {
-            log("compress:fail tag=$tagId to=$toLevel err=write_failed")
-            return false
-        }
+        if (!ok) return fail(tagId, toLevel, "write_failed")
 
         log("compress:done tag=$tagId level=$toLevel outLen=${text.length} sumId=$summaryId")
-        return true
+        return CompressResult.Done(toLevel)
     }
 
-    /** 每次调用都必须留下一条终态日志，不许静默返回。 */
-    private fun skip(tagId: String, toLevel: Int, reason: String): Boolean {
+    /** 该压但没压成：进 failed 统计。 */
+    private fun fail(tagId: String, toLevel: Int, reason: String): CompressResult {
+        log("compress:fail tag=$tagId to=$toLevel err=$reason")
+        return CompressResult.Failed(reason)
+    }
+
+    /** 不该压：进 skipped，不算失败。每次调用都必须留下一条终态日志，不许静默返回。 */
+    private fun skip(tagId: String, toLevel: Int, reason: String): CompressResult {
         log("compress:skip tag=$tagId to=$toLevel reason=$reason")
-        return false
+        return CompressResult.Skipped(reason)
     }
 
     companion object {

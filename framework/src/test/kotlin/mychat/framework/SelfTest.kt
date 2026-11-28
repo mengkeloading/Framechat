@@ -12,6 +12,7 @@ import mychat.framework.core.TurnResult
 import mychat.framework.hook.Attachment
 import mychat.framework.butler.PromptByIntent
 import mychat.framework.log.AppendLog
+import mychat.framework.memory.compress.CompressResult
 import mychat.framework.memory.compress.Compressor
 import mychat.framework.memory.consolidate.CompressibleTag
 import mychat.framework.memory.consolidate.ConsolidateSettings
@@ -984,6 +985,59 @@ private fun compressTests() {
 
 // ---------- 批量整理 ----------
 
+// ---------- 压缩输入：只用用户原话 ----------
+
+private fun compressInputTests() = kotlinx.coroutines.runBlocking {
+    val captured = mutableListOf<String>()
+    val writes = mutableListOf<mychat.framework.memory.compress.CompressionWrite>()
+
+    val source = object : mychat.framework.memory.compress.CompressionSource {
+        override suspend fun tag(tagId: String) =
+            mychat.framework.memory.compress.CompressionTag(tagId, 0)
+
+        override suspend fun messagesOf(tagId: String) = listOf(
+            mychat.framework.memory.compress.CompressionMessage("m1", "user", "决定用 Kotlin 重写"),
+            mychat.framework.memory.compress.CompressionMessage(
+                "m2", "assistant", "我猜你可能还想换掉数据库",
+            ),
+            mychat.framework.memory.compress.CompressionMessage("m3", "user", "先不动数据库"),
+        )
+
+        override suspend fun summaryOf(tagId: String, level: Int) = null
+
+        override suspend fun write(
+            write: mychat.framework.memory.compress.CompressionWrite,
+        ): Boolean {
+            writes += write
+            return true
+        }
+    }
+
+    val summarizer = object : mychat.framework.memory.compress.Summarizer {
+        override suspend fun summarize(prompt: String): String {
+            captured += prompt
+            return prompt.substringAfter("对话：").trim()
+        }
+    }
+
+    val compressor = DefaultCompressor(source = source, summarizer = summarizer)
+    val result = compressor.compress("t1", 1)
+    check("compress: 结果 Done", result is CompressResult.Done, result.toString())
+
+    val prompt = captured.firstOrNull().orEmpty()
+    check("compress: 提示词含用户原话", prompt.contains("决定用 Kotlin 重写"), prompt)
+    check("compress: 不含模型猜测", !prompt.contains("我猜你可能还想换掉数据库"), prompt)
+
+    val write = writes.firstOrNull()
+    check("compress: 有落库", write != null)
+    eq("compress: 来源全是 user 消息", listOf("msg:m1", "msg:m3"), write?.sources)
+    check(
+        "compress: 来源格式统一",
+        write != null && write.sources.all { it.startsWith("msg:") },
+        write?.sources.toString()
+    )
+}
+
 private class FakeTags(private val tags: List<CompressibleTag>) : ConsolidationSource {
     override suspend fun compressible(): List<CompressibleTag> = tags
 }
@@ -994,10 +1048,10 @@ private class FakeSettings(var at: Long) : ConsolidateSettings {
 }
 
 private class FakeCompressor(
-    private val result: (String) -> Boolean = { true },
+    private val result: (String) -> CompressResult = { CompressResult.Done(1) },
 ) : Compressor {
     val calls = mutableListOf<String>()
-    override suspend fun compress(tagId: String, toLevel: Int): Boolean {
+    override suspend fun compress(tagId: String, toLevel: Int): CompressResult {
         calls += tagId
         return result(tagId)
     }
@@ -1050,7 +1104,9 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     eq("consolidate: 跳过全是 notDue", 2, report.notDue)
 
     // 6/7. 一个失败不影响其他
-    compressor = FakeCompressor { it == "t2" }
+    compressor = FakeCompressor {
+        if (it == "t2") CompressResult.Done(2) else CompressResult.Failed("boom")
+    }
     val mixed = listOf(compressible, compressible.copy(id = "t2"))
     val partial = consolidator(mixed).runNow()
     eq("consolidate: 失败计数", 1, partial.failed)
@@ -1098,7 +1154,7 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     // 10c. 有原文但压缩失败：failed+1，noSource 不动
     val failing = DefaultConsolidator(
         source = FakeTags(listOf(compressible.copy(id = "has", messageCount = 3))),
-        compressor = FakeCompressor { false },
+        compressor = FakeCompressor { CompressResult.Failed("llm_empty") },
         settings = FakeSettings(0),
         clock = { now },
         log = { logs += it },
@@ -1132,13 +1188,36 @@ private fun consolidateTests() = kotlinx.coroutines.runBlocking {
     eq("consolidate: 窗口内计 window", 1, freshReport.notDueWindow)
     eq("consolidate: 窗口内不算 noNeed", 0, freshReport.notDueStrength)
 
+    // 10f. already_short 这类 Skipped 不算失败
+    val skipper = DefaultConsolidator(
+        source = FakeTags(listOf(compressible.copy(id = "short", messageCount = 3))),
+        compressor = FakeCompressor { CompressResult.Skipped("already_short") },
+        settings = FakeSettings(0),
+        clock = { now },
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: skip 不算失败", 0, skipper.failed)
+    eq("consolidate: skip 单独计数", 1, skipper.compressSkipped)
+    eq("consolidate: skip 不算压缩", 0, skipper.compressed)
+
+    // 10g. 模型调用失败才算 failed
+    val failer = DefaultConsolidator(
+        source = FakeTags(listOf(compressible.copy(id = "bad", messageCount = 3))),
+        compressor = FakeCompressor { CompressResult.Failed("llm_empty") },
+        settings = FakeSettings(0),
+        clock = { now },
+        log = { logs += it },
+    ).runNow()
+    eq("consolidate: 失败计数", 1, failer.failed)
+    eq("consolidate: 失败不算 skip", 0, failer.compressSkipped)
+
     // 11. 抛异常的 compressor：failed+1，循环继续
     val throwing = object : Compressor {
         val seen = mutableListOf<String>()
-        override suspend fun compress(tagId: String, toLevel: Int): Boolean {
+        override suspend fun compress(tagId: String, toLevel: Int): CompressResult {
             seen += tagId
             if (tagId == "x1") error("boom")
-            return true
+            return CompressResult.Done(toLevel)
         }
     }
     val mixed2 = listOf(

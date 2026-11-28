@@ -152,7 +152,7 @@ private fun hitCase(registry: ModuleRegistry) {
     check("A: 带使用声明段", extra.contains("【使用声明】"))
 }
 
-// ---------- B. 未命中 → 兜底 ----------
+// ---------- B. 未命中 → 不注入任何模块 ----------
 
 private fun fallbackCase(registry: ModuleRegistry) {
     // 查询向量与所有模块向量正交
@@ -166,18 +166,19 @@ private fun fallbackCase(registry: ModuleRegistry) {
     eq("B: reason=below_min", "below_min", route.reason)
 
     val selected = ModuleSelector.select(modules, route)
-    val expected = modules.filter { ModuleSelector.hasSkill(it) }.map { it.id }.toSet()
-    eq("B: 兜底到所有 hasSkill", expected, selected)
-    check("B: 兜底非空", selected.isNotEmpty(), "expected=$expected")
+    // 不兜底：没命中就不套任何模块规范，否则模型的回答方式会被凭空改写
+    eq("B: 未命中不注入", emptySet<String>(), selected)
 
     val result = dispatcherOf(registry).dispatchInput(
-        HookSession(id = "s", activeHardModules = selected.toList()),
+        HookSession(id = "s", activeHardModules = emptyList()),
         "无关的问题",
         selected = selected
     )
-    check("B: 兜底也能注入", result is HookAResult.Context, "实际 ${result::class.simpleName}")
-    check("B: 注入多个块", (result as? HookAResult.Context)?.extra.orEmpty()
-        .let { Regex("【已加载技能】").findAll(it).count() } >= 1)
+    check("B: 未命中原样返回", result is HookAResult.Pass, "实际 ${result::class.simpleName}")
+    check(
+        "B: 注入块不含【已加载技能】",
+        !(result as? HookAResult.Context)?.extra.orEmpty().contains("【已加载技能】")
+    )
 }
 
 // ---------- C. 无启用 → 全空 ----------

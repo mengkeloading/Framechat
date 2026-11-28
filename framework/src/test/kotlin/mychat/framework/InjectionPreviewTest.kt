@@ -3,6 +3,7 @@ package mychat.framework
 import mychat.framework.hook.AuditLog
 import mychat.framework.hook.GatedHostBridge
 import mychat.framework.hook.HookAResult
+import mychat.framework.hook.HookRunner
 import mychat.framework.hook.HookSession
 import mychat.framework.hook.JsExecutor
 import mychat.framework.hook.ModuleDispatcher
@@ -43,6 +44,7 @@ fun main() {
     val snapshotDir = File(repoRoot, "framework/src/test/resources/snapshot")
     val update = System.getenv("SNAPSHOT_UPDATE") == "true"
 
+    previewNoModule(registry)
     preview(registry, snapshotDir, update, "skill_code")
     preview(registry, snapshotDir, update, "skill_novel")
     previewWithMemory(registry)
@@ -53,6 +55,35 @@ fun main() {
         failures.forEach { println("  - $it") }
         exitProcess(1)
     }
+}
+
+/**
+ * 路由没命中：不该注入任何模块规范。
+ *
+ * 这是「帮我写个 Java 的 hello world」那类输入的路径 —— 分数落空，
+ * 以前会兜底把所有 hasSkill 塞进去，模型于是以为自己该「审查代码」。
+ */
+private fun previewNoModule(registry: ModuleRegistry) {
+    val runner = HookRunner(
+        source = registry,
+        executor = JsExecutor { _, _, _ -> null },
+    )
+    val result = runner.input(
+        session = HookSession(id = "preview-none", activeHardModules = emptyList()),
+        text = "帮我写个 Java 的 hello world",
+        selected = emptySet(),
+        intentText = mychat.framework.butler.PromptByIntent.textOf("code"),
+        memoryText = null,
+    )
+    val block = (result as? HookAResult.Context)?.extra.orEmpty()
+
+    println("========== INJECT no-module ==========")
+    println(block)
+    println("========== LEN=${block.length} ==========")
+
+    check("no-module: 不含【已加载技能】", !block.contains("【已加载技能】"), block.take(120))
+    check("no-module: 只有类型片段", block.length < 400, "len=" + block.length)
+    check("no-module: 不注入 skill_novel", !block.contains("skill_novel"), block.take(120))
 }
 
 private fun preview(

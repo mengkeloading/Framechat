@@ -1,5 +1,6 @@
 package mychat.framework.memory.consolidate
 
+import mychat.framework.memory.compress.CompressResult
 import mychat.framework.memory.compress.Compressor
 import mychat.framework.memory.compress.Decay
 import mychat.framework.memory.compress.LevelPolicy
@@ -41,6 +42,8 @@ data class ConsolidateReport(
     val notDueStrength: Int = 0,
     /** 标签下没有可用的对话原文 */
     val noSource: Int = 0,
+    /** 压了但不用压（already_short 之类），既不算成功也不算失败 */
+    val compressSkipped: Int = 0,
 ) {
     /** 两者之和：日志与界面里的「没压」总数。 */
     val notDue: Int get() = notDueWindow + notDueStrength
@@ -119,6 +122,7 @@ class DefaultConsolidator(
         var notDueWindow = 0
         var notDueStrength = 0
         var noSource = 0
+        var compressSkipped = 0
         for (tag in tags) {
             scanned++
             val strength = Decay.strengthAt(
@@ -158,8 +162,14 @@ class DefaultConsolidator(
             }
             onProgress?.invoke(compressed + failed, allowed)
             // 单个失败不影响其他标签
-            val ok = runCatching { compressor.compress(tag.id, goal) }.getOrElse { false }
-            if (ok) compressed++ else failed++
+            val result = runCatching { compressor.compress(tag.id, goal) }
+                .getOrElse { CompressResult.Failed("exception") }
+            when (result) {
+                is CompressResult.Done -> compressed++
+                // already_short 之流：没压，但不是失败
+                is CompressResult.Skipped -> compressSkipped++
+                is CompressResult.Failed -> failed++
+            }
         }
 
         val report = ConsolidateReport(
@@ -172,10 +182,12 @@ class DefaultConsolidator(
             notDueWindow = notDueWindow,
             notDueStrength = notDueStrength,
             noSource = noSource,
+            compressSkipped = compressSkipped,
         )
         log(
             "consolidate:done scanned=${report.scanned} compressed=${report.compressed} " +
                 "window=${report.notDueWindow} noNeed=${report.notDueStrength} " +
+                "skipped=${report.compressSkipped} " +
                 "noSource=${report.noSource} " +
                 "failed=${report.failed} capped=${report.capped} ms=${report.durationMs}"
         )

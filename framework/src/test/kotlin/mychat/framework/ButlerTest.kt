@@ -181,9 +181,10 @@ private fun notReadyTests() {
             body = "", scripts = emptyMap(), references = mapOf("SKILL.md" to "规范")
         )
     )
+    // 模型没就绪 ≠ 兜底注入：没算出向量就是没命中
     eq(
-        "ready: 未就绪时仍能兜底",
-        setOf("skill_novel"),
+        "ready: 未就绪时不注入",
+        emptySet<String>(),
         ModuleSelector.select(modules, route)
     )
 }
@@ -258,13 +259,13 @@ private fun managerTests() {
     eq("manager: none 返回空", emptyList<String>(), manager.route("none", "帮我写个故事", modules).modules)
     eq("manager: 未知 id 回落到默认", listOf("skill_novel"), manager.route("ghost", "帮我写个故事", modules).modules)
 
-    // fail-open：管家抛异常 → 空结果 + reason=error → ModuleSelector 走兜底
+    // fail-open：管家抛异常 → 空结果 + reason=error → 不注入模块规范
     val broken = manager.route("boom", "帮我写个故事", modules)
     eq("manager: 异常时返回空", emptyList<String>(), broken.modules)
     eq("manager: 异常时 reason=error", "error", broken.reason)
     eq(
-        "manager: 异常后兜底注入 hasSkill",
-        setOf("skill_novel"),
+        "manager: 异常后不注入",
+        emptySet<String>(),
         ModuleSelector.select(modules, broken)
     )
 

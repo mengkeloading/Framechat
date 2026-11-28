@@ -127,14 +127,15 @@ private fun selectorTests() {
         setOf("sk"),
         ModuleSelector.select(modules, RouteResult(listOf("sk"), "hit"))
     )
+    // 路由没命中 → 不注入任何模块规范（兜底会误伤：0.404 的输入不该套「审查」规范）
     eq(
-        "selector: 路由为空时兜底",
-        setOf("sk"),
+        "selector: 路由为空时不注入",
+        emptySet<String>(),
         ModuleSelector.select(modules, RouteResult(emptyList(), "below_min"))
     )
     eq(
-        "selector: 路由失败也兜底",
-        setOf("sk"),
+        "selector: 路由失败也不注入",
+        emptySet<String>(),
         ModuleSelector.select(modules, RouteResult(emptyList(), "error"))
     )
 }
