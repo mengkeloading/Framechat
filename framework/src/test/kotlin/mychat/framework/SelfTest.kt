@@ -1300,6 +1300,22 @@ private fun directoryTests() {
     check("dir: 弱标签标记淡化", fading.contains("- 旧（1 条，正在淡化）"), fading)
     check("dir: 强标签不标", !fading.contains("- 新（3 条，正在淡化）"), fading)
 
+    // 展开块：排在回忆之后
+    val expandBlock = "【展开】关于「标签A」：\n更细的内容"
+    val withExpand = mychat.framework.memory.MemoryInjection.compose(
+        top, "【回忆】关于「A」的过往记录：旧内容", expandBlock
+    )!!
+    check("expand: 注入含【展开】", withExpand.contains("【展开】关于「标签A」："), withExpand)
+    check(
+        "expand: 在回忆之后",
+        withExpand.indexOf("【展开】") > withExpand.indexOf("【回忆】"),
+        withExpand.take(80)
+    )
+    check(
+        "expand: 清空后不注入",
+        !mychat.framework.memory.MemoryInjection.compose(top, null, null)!!.contains("【展开】")
+    )
+
     // 10. 目录排在回忆之前
     val composed = mychat.framework.memory.MemoryInjection.compose(
         top, "【回忆】关于「A」的过往记录：旧内容"

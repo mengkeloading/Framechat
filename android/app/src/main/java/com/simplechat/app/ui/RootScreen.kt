@@ -160,6 +160,7 @@ fun RootScreen(chat: ChatViewModel? = null, history: HistoryViewModel? = null) {
             consolidator = container.consolidator,
             memoryDump = container.memoryDump,
             memoryDirectory = container.memoryDirectory,
+            expandResolver = container.expandResolver,
         ),
     )
     val historyViewModel: HistoryViewModel = history ?: viewModel(

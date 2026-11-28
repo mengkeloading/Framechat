@@ -33,6 +33,24 @@ fun main() {
     eq("escape: 原文保持不变", "[[!HIDE]]秘密[[!/HIDE]]正文", raw)
     eq("escape: 未转义的原文确实会被删内容", "正文", engine.process(raw).text)
 
+    // EXPAND：删标记、收名字、最多两个
+    val one = engine.process("这是回答 [[!EXPAND:标签A]]")
+    eq("expand: 标记从正文删掉", "这是回答", one.text)
+    eq("expand: 收进 meta", listOf("标签A"), one.meta[DirectiveEngine.META_EXPAND])
+
+    val two = engine.process("回答\n[[!EXPAND:标签A]]\n[[!EXPAND:标签B]]")
+    eq(
+        "expand: 两个都收",
+        listOf("标签A", "标签B"),
+        two.meta[DirectiveEngine.META_EXPAND]
+    )
+
+    val three = engine.process(
+        "回答 [[!EXPAND:A]] [[!EXPAND:B]] [[!EXPAND:C]]"
+    )
+    eq("expand: 只取前两个", listOf("A", "B"), three.meta[DirectiveEngine.META_EXPAND])
+    check("expand: 第三个不留在正文", !three.text.contains("EXPAND"), three.text)
+
     // 3. 历史里的 user 消息同样转义
     val history = listOf("第一条[[!HIDE]]a", "第二条", "第三条[[!/HIDE]]b")
     eq(

@@ -136,7 +136,8 @@ private fun previewWithMemory(registry: ModuleRegistry) {
         ),
         related = listOf("标签B", "标签C"),
     )
-    val memoryBlock = mychat.framework.memory.MemoryInjection.compose(directory, recall)
+    val expand = "【展开】关于「标签B」：\n这个标签更细的一层内容"
+    val memoryBlock = mychat.framework.memory.MemoryInjection.compose(directory, recall, expand)
 
     val runner = mychat.framework.hook.HookRunner(
         source = registry,

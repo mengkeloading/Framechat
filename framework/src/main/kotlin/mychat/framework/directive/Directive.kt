@@ -62,7 +62,8 @@ class DirectiveEngine(
         val log = mutableListOf<DirectiveTrace>()
         val meta = LinkedHashMap<String, MutableList<String>>()
         // 自闭合的元信息指令先处理掉，剩下的才是成对指令
-        val withoutMeta = extractUsed(raw, log, meta)
+        val withoutExpand = extractExpand(raw, log, meta)
+        val withoutMeta = extractUsed(withoutExpand, log, meta)
         val rendered = render(withoutMeta, 0, withoutMeta.length, depth = 0, log = log)
         val stripped = stripMarkers(rendered)
         val cleaned = stripFrameworkSections(stripped)
@@ -92,6 +93,38 @@ class DirectiveEngine(
                 val used = meta.getOrPut(META_USED) { mutableListOf() }
                 for (id in ids) if (id !in used) used += id
                 log += DirectiveTrace(USED_NAME, "applied", m.range, ids.joinToString(","))
+            }
+            cursor = m.range.last + 1
+        }
+        out.append(raw, cursor, raw.length)
+        return out.toString()
+    }
+
+    /**
+     * `[[!EXPAND:标签名]]`：删标记、把名字收进 meta，最多留 [MAX_EXPANDS] 个。
+     *
+     * 为什么限量：每多展开一个标签，下一轮就多一段内容。模型一次要三个以上，
+     * 说明它自己也说不清想看什么，多给只会更乱。
+     */
+    private fun extractExpand(
+        raw: String,
+        log: MutableList<DirectiveTrace>,
+        meta: MutableMap<String, MutableList<String>>,
+    ): String {
+        if (!raw.contains(MARKER_PREFIX + EXPAND_NAME + ":")) return raw
+        val out = StringBuilder(raw.length)
+        var cursor = 0
+        val names = meta.getOrPut(META_EXPAND) { mutableListOf() }
+        for (m in EXPAND_PATTERN.findAll(raw)) {
+            out.append(raw, cursor, m.range.first)
+            val name = m.groupValues[1].trim()
+            if (name.isEmpty()) {
+                log += DirectiveTrace(EXPAND_NAME, "ignored", m.range)
+            } else if (names.size >= MAX_EXPANDS) {
+                log += DirectiveTrace(EXPAND_NAME, "ignored", m.range, name)
+            } else {
+                if (name !in names) names += name
+                log += DirectiveTrace(EXPAND_NAME, "applied", m.range, name)
             }
             cursor = m.range.last + 1
         }
@@ -221,12 +254,19 @@ class DirectiveEngine(
         const val USED_NAME = "USED"
         const val META_USED = "used"
 
+        const val EXPAND_NAME = "EXPAND"
+        const val META_EXPAND = "expand"
+
+        /** 一次最多展开两个：再多就是噪音。 */
+        const val MAX_EXPANDS = 2
+
         /** 框架专属命名空间。`[[` 后面没有 `!` 的一律不是标记。 */
         const val MARKER_PREFIX = "[[!"
 
         private val MARKER =
             Regex("\\[\\[!(/?)([A-Za-z][A-Za-z0-9]*)(?::([^\\]]*))?\\]\\]")
         private val USED_PATTERN = Regex("\\[\\[!USED:([^\\]]+)\\]\\]")
+        private val EXPAND_PATTERN = Regex("\\[\\[!EXPAND:([^\\]]+)\\]\\]")
         private val LEFTOVER = Regex("\\[\\[![^\\]]*\\]\\]")
 
         /**

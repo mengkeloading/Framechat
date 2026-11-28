@@ -214,6 +214,15 @@ class AppContainer(private val app: Application) {
         )
     }
 
+    /** `[[!EXPAND:名字]]` 的落地：把标签展开成更细一层。 */
+    val expandResolver: com.simplechat.app.hook.ExpandResolver by lazy {
+        com.simplechat.app.hook.ExpandResolver(
+            tags = database.tagDao(),
+            summaries = database.tagSummaryDao(),
+            log = { line -> if (BuildConfig.DEBUG) com.simplechat.app.hook.UsageLog.record(line) },
+        )
+    }
+
     /** 注入用的记忆目录。 */
     val memoryDirectory: mychat.framework.memory.MemoryDirectory by lazy {
         com.simplechat.app.hook.RoomMemoryDirectory(database.tagDao())

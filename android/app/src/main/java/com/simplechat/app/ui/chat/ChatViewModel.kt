@@ -125,6 +125,7 @@ class ChatViewModel(
     private val consolidator: mychat.framework.memory.consolidate.Consolidator? = null,
     private val memoryDump: (suspend () -> String)? = null,
     private val memoryDirectory: mychat.framework.memory.MemoryDirectory? = null,
+    private val expandResolver: com.simplechat.app.hook.ExpandResolver? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -200,6 +201,9 @@ class ChatViewModel(
 
     /** 指令引擎无状态，直接持有。纯文本指令在这一层落实，不进模块。 */
     private val directiveEngine = DirectiveEngine()
+
+    /** 模型上一轮点名要展开的标签名；下一轮注入后清空。 */
+    private var pendingExpands: List<String> = emptyList()
     private var pendingMemoryEnabled by mutableStateOf(true)
     private var openedMemoryEnabled by mutableStateOf(true)
     val showConversationMemorySetting: Boolean get() = stored.crossChatMemory
@@ -1011,8 +1015,19 @@ class ChatViewModel(
                     val directoryBlock = memoryDirectory?.list()?.let {
                         mychat.framework.memory.DirectoryFormatter.format(it)
                     }
+                    // 上一轮模型点名要的展开：放在回忆之后、类型之前
+                    val expandBlock = if (pendingExpands.isEmpty()) {
+                        null
+                    } else {
+                        val asked = pendingExpands
+                        pendingExpands = emptyList()
+                        val hits = asked.mapNotNull { name ->
+                            runCatching { expandResolver?.resolve(name) }.getOrNull()
+                        }
+                        expandResolver?.format(hits)
+                    }
                     val memoryBlock = mychat.framework.memory.MemoryInjection.compose(
-                        directoryBlock, recallBlock,
+                        directoryBlock, recallBlock, expandBlock,
                     )
                     if (BuildConfig.DEBUG && (directoryBlock != null || recallBlock != null)) {
                         com.simplechat.app.hook.UsageLog.record(
@@ -2942,6 +2957,12 @@ class ChatViewModel(
              * 下游的 patch 与落库都只用 finalText。
              */
             val directiveResult = directiveEngine.process(shownContent)
+            directiveResult.meta[DirectiveEngine.META_EXPAND]?.takeIf { it.isNotEmpty() }?.let { asked ->
+                pendingExpands = asked
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("MyChat/Expand", "requested=" + asked.joinToString(","))
+                }
+            }
             if (BuildConfig.DEBUG && directiveResult.log.isNotEmpty()) {
                 android.util.Log.d("MyChat/Directive", directiveResult.log.joinToString("\n"))
             }
@@ -3799,13 +3820,14 @@ class ChatViewModel(
             consolidator: mychat.framework.memory.consolidate.Consolidator? = null,
             memoryDump: (suspend () -> String)? = null,
             memoryDirectory: mychat.framework.memory.MemoryDirectory? = null,
+            expandResolver: com.simplechat.app.hook.ExpandResolver? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
                 ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
                     hookRunner, hookRouter, tagMemory, consolidator, memoryDump,
-                    memoryDirectory, state
+                    memoryDirectory, expandResolver, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

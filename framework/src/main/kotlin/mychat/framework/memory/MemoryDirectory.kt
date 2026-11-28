@@ -48,10 +48,11 @@ object DirectoryFormatter {
  */
 object MemoryInjection {
 
-    fun compose(directory: String?, recall: String?): String? {
+    fun compose(directory: String?, recall: String?, expand: String? = null): String? {
         val parts = listOfNotNull(
             directory?.takeIf { it.isNotBlank() },
             recall?.takeIf { it.isNotBlank() },
+            expand?.takeIf { it.isNotBlank() },
         )
         if (parts.isEmpty()) return null
         return parts.joinToString("\n\n")
