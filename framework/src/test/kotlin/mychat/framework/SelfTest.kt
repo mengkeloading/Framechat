@@ -1394,6 +1394,15 @@ private fun profileTests() {
     // 1. 无参数 → 显示当前值（解析成空 map）
     val bare = ProfileCommand.parse("debug:profile", debugBuild = true)
     eq("cmd: 裸命令解析为空参数", 0, bare?.size)
+    // ---- 人格段 ----
+
+    // 1. 默认注入
+    val persona = mychat.framework.profile.AssistantPersona.format(true)!!
+    check("persona: 默认注入", persona.startsWith("【助手风格】"), persona.take(20))
+    check("persona: 含不客套", persona.contains("不说「好的」"))
+    // 2. 关掉不注入
+    eq("persona: 关掉后为 null", null, mychat.framework.profile.AssistantPersona.format(false))
+
     check(
         "cmd: 空角色卡显示为空",
         ProfileCommand.describe(UserProfile()).contains("角色卡为空"),

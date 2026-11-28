@@ -49,10 +49,11 @@ class HookRunner(
         /** 回忆块（【回忆】）；空则不加。放在类型片段之前 —— 先给"相关旧内容"，再定调。 */
         memoryText: String? = null,
         profileText: String? = null,
+        personaText: String? = null,
     ): HookAResult {
         // 没有启用任何模块也要给类型片段：闲聊唯一拿到的就是它
         if (session.activeHardModules.isEmpty()) {
-            return withBlocks(HookAResult.Pass(text), text, intentText, memoryText, profileText)
+            return withBlocks(HookAResult.Pass(text), text, intentText, memoryText, profileText, personaText)
         }
 
         /*
@@ -89,7 +90,7 @@ class HookRunner(
             }
             traceLog += dispatcher.traces
         }
-        return withBlocks(result, text, intentText, memoryText, profileText)
+        return withBlocks(result, text, intentText, memoryText, profileText, personaText)
     }
 
     /**
@@ -104,9 +105,11 @@ class HookRunner(
         intentText: String?,
         memoryText: String?,
         profileText: String? = null,
+        personaText: String? = null,
     ): HookAResult {
         val parts = buildList {
-            // 角色卡最先：它是「我是谁」，后面所有内容都该按它来读
+            // 人格最先：它定的是「助手怎么说话」，比「用户是谁」更靠前
+            personaText?.takeIf { it.isNotBlank() }?.let { add(it) }
             profileText?.takeIf { it.isNotBlank() }?.let { add(it) }
             memoryText?.takeIf { it.isNotBlank() }?.let { add(it) }
             intentText?.takeIf { it.isNotBlank() }?.let { add("【对话类型】\n" + it) }

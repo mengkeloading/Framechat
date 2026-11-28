@@ -830,6 +830,14 @@ class SettingsStore(
         preferences.edit { it[Keys.LAST_CONSOLIDATE_AT] = t }
     }
 
+    /** 人格段开关，默认开。 */
+    suspend fun personaEnabled(): Boolean =
+        preferences.data.first()[Keys.PERSONA_ENABLED] ?: true
+
+    suspend fun setPersonaEnabled(enabled: Boolean) {
+        preferences.edit { it[Keys.PERSONA_ENABLED] = enabled }
+    }
+
     /** 角色卡：手写，不推断。全空 = 不注入。 */
     suspend fun userProfile(): mychat.framework.profile.UserProfile {
         val prefs = preferences.data.first()
@@ -1047,6 +1055,8 @@ class SettingsStore(
         val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
         /** 上次批量整理记忆的时间；0 = 从没跑过。 */
         val LAST_CONSOLIDATE_AT = longPreferencesKey("last_consolidate_at")
+        /** 人格段开关；缺省 = 开（老用户升级后直接生效）。 */
+        val PERSONA_ENABLED = booleanPreferencesKey("persona_enabled")
         val PROFILE_ROLE = stringPreferencesKey("profile.role")
         val PROFILE_TECH = stringPreferencesKey("profile.tech")
         val PROFILE_STYLE = stringPreferencesKey("profile.style")

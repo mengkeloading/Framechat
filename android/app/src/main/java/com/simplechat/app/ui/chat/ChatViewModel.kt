@@ -128,6 +128,7 @@ class ChatViewModel(
     private val expandResolver: com.simplechat.app.hook.ExpandResolver? = null,
     private val userProfile: (suspend () -> mychat.framework.profile.UserProfile)? = null,
     private val saveUserProfile: (suspend (mychat.framework.profile.UserProfile) -> Unit)? = null,
+    private val personaEnabled: (suspend () -> Boolean)? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -1074,6 +1075,9 @@ class ChatViewModel(
                         profileText = (currentProfile ?: userProfile?.invoke())?.let {
                             mychat.framework.profile.ProfileFormatter.format(it)
                         },
+                        personaText = mychat.framework.profile.AssistantPersona.format(
+                            personaEnabled?.invoke() ?: true
+                        ),
                     )) {
                         is HookAResult.Local -> localReply = hookA.text
                         is HookAResult.Context -> {
@@ -3930,13 +3934,15 @@ class ChatViewModel(
             expandResolver: com.simplechat.app.hook.ExpandResolver? = null,
             userProfile: (suspend () -> mychat.framework.profile.UserProfile)? = null,
             saveUserProfile: (suspend (mychat.framework.profile.UserProfile) -> Unit)? = null,
+            personaEnabled: (suspend () -> Boolean)? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
                 ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
                     hookRunner, hookRouter, tagMemory, consolidator, memoryDump,
-                    memoryDirectory, expandResolver, userProfile, saveUserProfile, state
+                    memoryDirectory, expandResolver, userProfile, saveUserProfile,
+                    personaEnabled, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

@@ -157,6 +157,7 @@ private fun previewWithMemory(registry: ModuleRegistry) {
         intentText = mychat.framework.butler.PromptByIntent.textOf("code"),
         memoryText = memoryBlock,
         profileText = profileText,
+        personaText = mychat.framework.profile.AssistantPersona.format(true),
     )
     val block = (result as? HookAResult.Context)?.extra.orEmpty()
 
@@ -164,10 +165,21 @@ private fun previewWithMemory(registry: ModuleRegistry) {
     println(block)
     println("========== LEN=${block.length} ==========")
 
+    check("persona: 输出含【助手风格】", block.contains("【助手风格】"), block.take(80))
+    check(
+        "persona: 整块第一行",
+        block.lineSequence().first().trim() == "【助手风格】",
+        block.lineSequence().first()
+    )
     check("profile: 输出含【关于你】", block.contains("【关于你】"), block.take(160))
     check(
+        "persona: 在【关于你】之前",
+        block.indexOf("【助手风格】") < block.indexOf("【关于你】"),
+        block.take(60)
+    )
+    check(
         "profile: 排在记忆目录之前",
-        block.indexOf("【关于你】") == 0 && block.indexOf("【记忆目录】") > 0,
+        block.indexOf("【关于你】") > 0 && block.indexOf("【记忆目录】") > 0,
         block.take(60)
     )
     check("memory: 输出含【记忆目录】", block.contains("【记忆目录】"), block.take(120))

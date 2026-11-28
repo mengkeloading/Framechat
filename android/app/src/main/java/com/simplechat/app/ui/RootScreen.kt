@@ -163,6 +163,7 @@ fun RootScreen(chat: ChatViewModel? = null, history: HistoryViewModel? = null) {
             expandResolver = container.expandResolver,
             userProfile = { container.settingsStore.userProfile() },
             saveUserProfile = { container.settingsStore.saveUserProfile(it) },
+            personaEnabled = { container.settingsStore.personaEnabled() },
         ),
     )
     val historyViewModel: HistoryViewModel = history ?: viewModel(
