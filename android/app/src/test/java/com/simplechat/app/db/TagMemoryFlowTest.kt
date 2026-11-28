@@ -44,7 +44,7 @@ class TagMemoryFlowTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        service = TagMemoryService(embedder, db.tagDao()) { true }
+        service = TagMemoryService(embedder, db.tagDao(), enabled = { true })
     }
 
     @After
