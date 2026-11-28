@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runTest
 import mychat.framework.profile.UserProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -15,6 +16,12 @@ import org.robolectric.RobolectricTestRunner
 class ProfileStoreTest {
 
     private fun store() = SettingsStore(ApplicationProvider.getApplicationContext<Context>())
+
+    /** DataStore 是进程级单例：同一 JVM 里的用例会看到彼此的写入，先清干净。 */
+    @Before
+    fun reset() = kotlinx.coroutines.runBlocking {
+        store().saveUserProfile(UserProfile())
+    }
 
     @Test
     fun emptyProfileIsReadable() = runTest {
