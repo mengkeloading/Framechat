@@ -3,6 +3,8 @@ package com.simplechat.app.hook
 import com.simplechat.app.db.TagDao
 import com.simplechat.app.db.TagEntity
 import mychat.framework.embedding.TextEmbedder
+import mychat.framework.memory.LayeredRecall
+import mychat.framework.memory.MemoryItem
 import mychat.framework.memory.Recall
 import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
@@ -59,46 +61,48 @@ class TagMemoryService(
                 return null
             }
             val now = System.currentTimeMillis()
-            // 先按「余弦 × 强度加权」挑最值得想起来的，再用裸余弦判断够不够像
-            val best = snapshot.maxByOrNull { tag ->
-                cosineOf(query, tag.vector) * TagStrength.weight(TagStrength.current(tag, now))
-            } ?: return null
-            val cosine = cosineOf(query, best.vector)
-            if (cosine < Recall.MIN) {
-                log("recall:miss best=" + fmt(cosine) + " threshold=" + fmt(Recall.MIN))
-                return null
-            }
-
-            val strength = TagStrength.current(best, now)
-            val depth = TagStrength.depthOf(strength)
-            if (depth == "archived") {
-                log("recall:miss reason=archived tag=" + best.id.take(8))
-                return null
-            }
-
-            val body = if (depth == "name_only") {
-                ""
-            } else {
-                tags.recentUserContents(best.id, MAX_RECALL_MESSAGES)
-                    .take(MAX_RECALL_MESSAGES)
-                    .map { it.take(EXCERPT) }
-                    .joinToString("\n---\n")
-                    .ifBlank { Recall.NO_DETAIL }
-            }
-
-            val hit = RecallHit(best.id, best.name, cosine, body, depth)
-            log(
-                "recall:hit tag=" + best.id.take(8) + " score=" + fmt(cosine) +
-                    " depth=" + depth + " len=" + body.length
+            // 三层：精确 → 模糊 → 提及。精确不看强度，所以归档的标签也可能在这里命中
+            val result = LayeredRecall.recall(
+                text = text,
+                query = query,
+                tags = snapshot,
+                summaryOf = { id -> snapshot.firstOrNull { it.id == id }?.summary },
+                recentOf = { id ->
+                    tags.recentUserContents(id, MAX_RECALL_MESSAGES).map { MemoryItem("user", it) }
+                },
+                log = { line -> log(line) },
+                now = now,
             )
+            when (result.reason) {
+                LayeredRecall.MISS -> return null
+                LayeredRecall.MENTION -> {
+                    // 只记得名字：列出来让用户点名，不假装还记得细节
+                    val names = result.hits.joinToString(" / ") { "「" + it.tagName + "」" }
+                    return "【回忆】（背景资料，不是当前任务）\n" +
+                        "还提到过：" + names + "\n（要看哪个，说它的名字）"
+                }
+            }
 
-            val boosted = TagStrength.boosted(best, now)
-            persist(boosted, boosted.strength, TagStrength.depthOf(boosted.strength), now)
+            val hit = result.first ?: return null
+            if (result.reason == LayeredRecall.FUZZY && hit.depth != "name_only") {
+                // 只有模糊命中才加强度：用户自己说出名字不该被算作「又想起来一次」
+                val tag = snapshot.firstOrNull { it.id == hit.tagId }
+                if (tag != null) {
+                    val before = TagStrength.current(tag, now)
+                    val boosted = TagStrength.boosted(tag, now)
+                    persist(boosted, boosted.strength, TagStrength.depthOf(boosted.strength), now)
+                    log(
+                        "mem:boost tag=" + tag.id.take(8) + " from=" + fmt(before) +
+                            " to=" + fmt(boosted.strength) + " reason=recall"
+                    )
+                }
+            }
             log(
-                "mem:boost tag=" + best.id.take(8) + " from=" + fmt(strength) +
-                    " to=" + fmt(boosted.strength) + " reason=recall"
+                "recall:hit tag=" + hit.tagId.take(8) + " reason=" + result.reason +
+                    " score=" + fmt(hit.score) + " depth=" + hit.depth +
+                    " len=" + hit.text.length
             )
-            Recall.formatBlock(hit, relatedNames(best.id))
+            Recall.formatBlock(hit, relatedNames(hit.tagId))
         }.getOrElse { error ->
             log("recall:error " + error.javaClass.simpleName)
             null

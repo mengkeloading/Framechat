@@ -1,5 +1,6 @@
 package mychat.framework
 
+import mychat.framework.memory.LayeredRecall
 import mychat.framework.memory.Recall
 import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
@@ -47,6 +48,7 @@ private fun tag(id: String, vector: FloatArray) =
 fun main() {
     taggingTests()
     recallTests()
+    layeredRecallTests()
     assemblyTests()
     strengthTests()
     depthTests()
@@ -128,6 +130,141 @@ private fun taggingTests() {
     // 9. 名字截断
     val long = Tagger.decide(origin, emptyList(), "一二三四五六七八九十一二三四五六七八九十多余的")
     eq("tag: 名字截到 20 字", 20, (long as? TagDecision.Create)?.name?.length)
+}
+
+private const val NOW = 1_700_000_000_000L
+
+private fun layeredRecallTests() {
+    val app = TagRecord(
+        id = "t-my", name = "我在做 MyChat 这个 App",
+        vector = floatArrayOf(1f, 0f),
+        strength = 1f, lastDecayAt = NOW,
+    )
+
+    // ① 1. 含标签名里的词 → 命中
+    eq("exact: 命中标签", "t-my", LayeredRecall.exactMatch("MyChat 的注入是不是有问题", listOf(app))?.id)
+
+    // ① 2. 归档也命中（强度 0.05）
+    val archived = app.copy(id = "t-old", strength = 0.05f, name = "MyChat 早期版本")
+    eq(
+        "exact: 归档仍命中",
+        "t-old",
+        LayeredRecall.exactMatch("聊聊 MyChat 早期版本", listOf(archived))?.id
+    )
+
+    // ① 3. 不含任何名字 → 不命中
+    eq("exact: 不相关不命中", null, LayeredRecall.exactMatch("今天天气怎么样", listOf(app)))
+
+    // ① 4. 两个都命中 → 取名字最长的
+    val short = app.copy(id = "t-short", name = "MyChat")
+    eq(
+        "exact: 取名字最长的",
+        "t-my",
+        LayeredRecall.exactMatch("MyChat 又在做 MyChat 这个 App 了", listOf(short, app))?.id
+    )
+
+    // ② 1. 精确命中 → reason=exact（即使模糊也能命中）
+    run {
+        val logs = mutableListOf<String>()
+        val result = LayeredRecall.recall(
+            text = "MyChat 有问题",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(app),
+            log = { logs += it },
+            now = NOW,
+        )
+        eq("recall: 精确优先", LayeredRecall.EXACT, result.reason)
+        check("recall: 精确日志", logs.any { it.startsWith("recall:exact") }, logs.toString())
+        check("recall: 精确命中带内容", result.first!!.text.isNotBlank())
+    }
+
+    // ② 2. 精确 miss + 模糊命中 → fuzzy
+    run {
+        val other = app.copy(id = "t-x", name = "旧话题甲")
+        val result = LayeredRecall.recall(
+            text = "完全不相关的说法",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(other),
+            recentOf = { listOf(MemoryItem("user", "上次聊到的内容")) },
+            now = NOW,
+        )
+        eq("recall: 模糊命中", LayeredRecall.FUZZY, result.reason)
+    }
+
+    // ② 3. 都 miss + mentions 命中 → 只给名字
+    run {
+        val obscure = TagRecord(
+            id = "t-m", name = "老项目",
+            vector = floatArrayOf(0f, 1f), strength = 1f, lastDecayAt = NOW,
+            mentions = listOf("旧后台"),
+        )
+        val result = LayeredRecall.recall(
+            text = "那个旧后台还在吗",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(obscure),
+            now = NOW,
+        )
+        eq("recall: 提及命中", LayeredRecall.MENTION, result.reason)
+        eq("recall: 只给名字", "老项目", result.first?.tagName)
+        eq("recall: 提及没有正文", "", result.first?.text)
+    }
+
+    // ② 4. 全 miss
+    run {
+        val logs = mutableListOf<String>()
+        val result = LayeredRecall.recall(
+            text = "毫不相干",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(TagRecord("t-f", "别的", vector = floatArrayOf(0f, 1f), lastDecayAt = NOW)),
+            log = { logs += it },
+            now = NOW,
+        )
+        eq("recall: 全 miss", LayeredRecall.MISS, result.reason)
+        check(
+            "recall: miss 日志带 best",
+            logs.any { it.startsWith("recall:miss best=") },
+            logs.toString()
+        )
+    }
+
+    // ③ 1. 归档 + 精确 → 召回
+    run {
+        val result = LayeredRecall.recall(
+            text = "MyChat 早期版本",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(archived),
+            now = NOW,
+        )
+        eq("archive: 精确仍召回", LayeredRecall.EXACT, result.reason)
+    }
+
+    // ③ 2. 归档 + 模糊 0.9 → 不召回
+    run {
+        val result = LayeredRecall.recall(
+            text = "完全不同的说法",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(archived.copy(name = "无关名字")),
+            now = NOW,
+        )
+        eq("archive: 模糊不召回", LayeredRecall.MISS, result.reason)
+    }
+
+    // ③ 3. 归档出现在 mentions → 列出名字
+    run {
+        val result = LayeredRecall.recall(
+            text = "那个旧话题乙还在吗",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(
+                archived.copy(
+                    id = "t-z", name = "无关名字", vector = floatArrayOf(0f, 1f),
+                    mentions = listOf("旧话题乙"),
+                )
+            ),
+            now = NOW,
+        )
+        eq("archive: mentions 列名字", LayeredRecall.MENTION, result.reason)
+        eq("archive: 名字正确", "无关名字", result.first?.tagName)
+    }
 }
 
 private fun recallTests() {

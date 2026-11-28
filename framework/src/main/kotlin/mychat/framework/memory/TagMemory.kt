@@ -19,6 +19,13 @@ data class TagRecord(
     val lastReadAt: Long = 0,
     /** 衰减起点；0 表示"就是现在"，避免新标签一创建就欠几十天。 */
     val lastDecayAt: Long = 0,
+    /**
+     * 这个标签的摘要里提到过的**别的标签名**。
+     *
+     * 暂时恒为空：等摘要生成时顺手把提及抽出来（下一批）。
+     * 字段先立在这儿，是让 [LayeredRecall] 的第三条路径一次写完，不用回头改签名。
+     */
+    val mentions: List<String> = emptyList(),
 ) {
     // FloatArray 的默认 equals 是引用比较，data class 生成的实现会误判
     override fun equals(other: Any?): Boolean =
