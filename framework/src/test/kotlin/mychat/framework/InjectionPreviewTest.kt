@@ -138,6 +138,13 @@ private fun previewWithMemory(registry: ModuleRegistry) {
     )
     val expand = "【展开】关于「标签B」：\n这个标签更细的一层内容"
     val memoryBlock = mychat.framework.memory.MemoryInjection.compose(directory, recall, expand)
+    val profileText = mychat.framework.profile.ProfileFormatter.format(
+        mychat.framework.profile.UserProfile(
+            role = "独立开发者，做 Android App",
+            style = "极简",
+            avoid = listOf("空话", "过度设计"),
+        )
+    )
 
     val runner = mychat.framework.hook.HookRunner(
         source = registry,
@@ -149,6 +156,7 @@ private fun previewWithMemory(registry: ModuleRegistry) {
         selected = setOf("skill_code"),
         intentText = mychat.framework.butler.PromptByIntent.textOf("code"),
         memoryText = memoryBlock,
+        profileText = profileText,
     )
     val block = (result as? HookAResult.Context)?.extra.orEmpty()
 
@@ -156,6 +164,12 @@ private fun previewWithMemory(registry: ModuleRegistry) {
     println(block)
     println("========== LEN=${block.length} ==========")
 
+    check("profile: 输出含【关于你】", block.contains("【关于你】"), block.take(160))
+    check(
+        "profile: 排在记忆目录之前",
+        block.indexOf("【关于你】") == 0 && block.indexOf("【记忆目录】") > 0,
+        block.take(60)
+    )
     check("memory: 输出含【记忆目录】", block.contains("【记忆目录】"), block.take(120))
     val dirAt = block.indexOf("【记忆目录】")
     val recallAt = block.indexOf("【回忆】")

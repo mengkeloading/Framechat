@@ -20,6 +20,8 @@ import mychat.framework.memory.consolidate.DefaultConsolidator
 import mychat.framework.debug.DebugCommands
 import mychat.framework.hook.ReferenceInliner
 import mychat.framework.butler.TranslatePolicy
+import mychat.framework.profile.ProfileFormatter
+import mychat.framework.profile.UserProfile
 import mychat.framework.memory.TagNaming
 import mychat.framework.memory.compress.DefaultCompressor
 import mychat.framework.memory.compress.Decay
@@ -95,6 +97,7 @@ fun main() {
     referenceTests()
     directoryTests()
     translateTests()
+    profileTests()
     tagNamingTests()
     promptTests()
     manifestAuditTests()
@@ -1261,6 +1264,61 @@ private fun promptTests() {
         "prompt: L3 更短",
         DefaultCompressor.buildPrompt("x", 40, 3).contains("不超过 40 字"),
         DefaultCompressor.buildPrompt("x", 40, 3)
+    )
+}
+
+// ---------- 角色卡 ----------
+
+private fun profileTests() {
+    // 1. 空 profile 不注入
+    eq("profile: 空角色卡不注入", null, ProfileFormatter.format(UserProfile()))
+    eq(
+        "profile: 只有 style 也不注入",
+        null,
+        ProfileFormatter.format(UserProfile(style = "极简"))
+    )
+
+    // 2. 只有 role
+    eq(
+        "profile: 只有身份",
+        // explain 默认 false，会显式写「不解释过程」：比不写更明确
+        "【关于你】\n独立开发者；不解释过程",
+        ProfileFormatter.format(UserProfile(role = "独立开发者"))
+    )
+
+    // 3. style=极简 → 偏好极简
+    val minimal = ProfileFormatter.format(
+        UserProfile(role = "独立开发者，做 Android App", style = "极简")
+    )!!
+    check("profile: 注入偏好", minimal.contains("偏好极简"), minimal)
+
+    // 4. avoid → 讨厌 X
+    val avoids = ProfileFormatter.format(
+        UserProfile(role = "独立开发者", avoid = listOf("空话", "过度设计"))
+    )!!
+    check("profile: 注入讨厌项", avoids.contains("讨厌空话、过度设计"), avoids)
+
+    // 5. 正文不超过 60 字
+    val long = ProfileFormatter.format(
+        UserProfile(
+            role = "独立开发者，做 Android App，写小说，也做点后端",
+            tech = listOf("Kotlin", "Android", "Ktor", "PostgreSQL"),
+            style = "详细",
+            avoid = listOf("空话", "过度设计", "啰嗦", "没有示例"),
+            current = "在重写记忆系统的第二阶段",
+        )
+    )!!
+    val body = long.lines().drop(1).joinToString("\n")
+    check(
+        "profile: 正文不超过 60 字",
+        body.length <= ProfileFormatter.MAX_LENGTH,
+        body.length.toString()
+    )
+
+    // 平衡是默认值，不写出来
+    check(
+        "profile: 默认风格不占字",
+        !ProfileFormatter.format(UserProfile(role = "开发者"))!!.contains("偏好")
     )
 }
 

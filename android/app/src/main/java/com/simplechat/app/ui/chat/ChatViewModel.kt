@@ -126,6 +126,8 @@ class ChatViewModel(
     private val memoryDump: (suspend () -> String)? = null,
     private val memoryDirectory: mychat.framework.memory.MemoryDirectory? = null,
     private val expandResolver: com.simplechat.app.hook.ExpandResolver? = null,
+    private val userProfile: mychat.framework.profile.UserProfile =
+        mychat.framework.profile.UserProfile(),
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -1044,6 +1046,7 @@ class ChatViewModel(
                         selected = selected,
                         intentText = prepared.intentText,
                         memoryText = memoryBlock,
+                        profileText = mychat.framework.profile.ProfileFormatter.format(userProfile),
                     )) {
                         is HookAResult.Local -> localReply = hookA.text
                         is HookAResult.Context -> {
@@ -3833,13 +3836,15 @@ class ChatViewModel(
             memoryDump: (suspend () -> String)? = null,
             memoryDirectory: mychat.framework.memory.MemoryDirectory? = null,
             expandResolver: com.simplechat.app.hook.ExpandResolver? = null,
+            userProfile: mychat.framework.profile.UserProfile =
+                mychat.framework.profile.UserProfile(),
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
                 ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
                     hookRunner, hookRouter, tagMemory, consolidator, memoryDump,
-                    memoryDirectory, expandResolver, state
+                    memoryDirectory, expandResolver, userProfile, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }
