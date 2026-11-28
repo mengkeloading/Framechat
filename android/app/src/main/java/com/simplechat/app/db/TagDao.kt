@@ -133,3 +133,46 @@ data class TagMessageCount(
     val tagId: String,
     val count: Int,
 )
+
+/** 标签共现的读写。 */
+@Dao
+interface TagLinkDao {
+
+    /** 共现一次：已有就 +1，没有就建。一条 SQL 完成，避免读-改-写竞态。 */
+    @Query(
+        "INSERT INTO tag_links (fromTag, toTag, coCount, updatedAt) VALUES (:from, :to, 1, :now) " +
+            "ON CONFLICT(fromTag, toTag) DO UPDATE SET " +
+            "coCount = coCount + 1, updatedAt = :now"
+    )
+    suspend fun link(from: String, to: String, now: Long)
+
+    /** 与 [tagId] 最常一起出现的标签名，按共现次数降序。 */
+    @Query(
+        "SELECT t.name FROM tag_links l JOIN tags t ON t.id = l.toTag " +
+            "WHERE l.fromTag = :tagId AND l.toTag != :tagId " +
+            "ORDER BY l.coCount DESC, l.updatedAt DESC LIMIT :limit"
+    )
+    suspend fun relatedNames(tagId: String, limit: Int): List<String>
+
+    @Query("SELECT coCount FROM tag_links WHERE fromTag = :from AND toTag = :to")
+    suspend fun coCountOf(from: String, to: String): Int?
+
+    @Query("SELECT * FROM tag_links WHERE fromTag = :from ORDER BY coCount DESC")
+    suspend fun linksOf(from: String): List<TagLinkEntity>
+}
+
+/**
+ * 标签共现：A 之后紧接着聊了 B，就记一次。
+ *
+ * 只记**有向**的一条（A→B），不做对称双写：从 A 能想到 B，不代表从 B 也想到 A。
+ */
+@Entity(
+    tableName = "tag_links",
+    primaryKeys = ["fromTag", "toTag"],
+)
+data class TagLinkEntity(
+    val fromTag: String,
+    val toTag: String,
+    val coCount: Int = 1,
+    val updatedAt: Long,
+)

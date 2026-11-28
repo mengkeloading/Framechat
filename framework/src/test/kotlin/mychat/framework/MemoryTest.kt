@@ -206,6 +206,28 @@ private fun recallRoleTests() {
     val none = Recall.select(origin, tags, { null }, { emptyList() })
     eq("recall: 都空给兜底", Recall.NO_DETAIL, none?.text)
 
+    // 相关内容：最多 5 个；没有关联就不加
+    val relatedBlock = Recall.formatBlock(sumHit!!, listOf("标签B", "标签C", "标签D"))
+    check("link: 末尾含相关内容", relatedBlock.contains("相关内容：标签B / 标签C / 标签D"), relatedBlock)
+    check("link: 说明怎么看", relatedBlock.contains("（要看哪个，说它的名字）"), relatedBlock)
+    check(
+        "link: 相关内容在块末尾",
+        relatedBlock.trimEnd().endsWith("（要看哪个，说它的名字）"),
+        relatedBlock.takeLast(40)
+    )
+    eq("link: 没有关联就不加", null, Recall.formatRelated(emptyList()))
+    check(
+        "link: 只有一个标签不注入",
+        !Recall.formatBlock(sumHit, emptyList()).contains("相关内容：")
+    )
+    eq(
+        "link: 最多五个",
+        5,
+        Recall.formatRelated(listOf("A", "B", "C", "D", "E", "F", "G"))!!
+            .lines().first { it.startsWith("相关内容：") }
+            .removePrefix("相关内容：").split(" / ").size
+    )
+
     // 摘要过长 → 截到 500
     val longTag = listOf(
         TagRecord(

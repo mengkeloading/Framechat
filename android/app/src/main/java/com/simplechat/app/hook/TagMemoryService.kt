@@ -24,6 +24,7 @@ class TagMemoryService(
     private val embedder: TextEmbedder,
     private val tags: TagDao,
     private val enabled: () -> Boolean,
+    private val links: com.simplechat.app.db.TagLinkDao? = null,
 ) {
 
     /** 一轮的记忆句柄；开关关闭、模型未就绪或算不出向量时为 null。 */
@@ -97,10 +98,31 @@ class TagMemoryService(
                 "mem:boost tag=" + best.id.take(8) + " from=" + fmt(strength) +
                     " to=" + fmt(boosted.strength) + " reason=recall"
             )
-            Recall.formatBlock(hit)
+            Recall.formatBlock(hit, relatedNames(best.id))
         }.getOrElse { error ->
             log("recall:error " + error.javaClass.simpleName)
             null
+        }
+
+        /** 上一条打上的标签：用来记「这轮话题是从哪个转过来的」。 */
+        private var lastTagId: String? = null
+
+        /** 本轮标签与上一轮不同 → 记一次共现。 */
+        private suspend fun linkFromPrevious(tagId: String) {
+            val dao = links ?: return
+            val prev = lastTagId
+            lastTagId = tagId
+            if (prev == null || prev == tagId) return
+            runCatching { dao.link(prev, tagId, System.currentTimeMillis()) }
+                .onSuccess { log("link:add from=" + prev.take(8) + " to=" + tagId.take(8)) }
+                .onFailure { log("link:fail " + it.javaClass.simpleName) }
+        }
+
+        /** 与某个标签共现最多的标签名（最多 5 个）。 */
+        private suspend fun relatedNames(tagId: String): List<String> {
+            val dao = links ?: return emptyList()
+            return runCatching { dao.relatedNames(tagId, Recall.RELATED_MAX) }
+                .getOrDefault(emptyList())
         }
 
         /** 打标：与检索用同一份快照，新建的标签本轮不参与召回。 */
@@ -145,7 +167,9 @@ class TagMemoryService(
                 }
             }.onFailure { error ->
                 log("tag:error " + error.javaClass.simpleName)
-            }.getOrNull()
+            }.getOrNull()?.also { id ->
+                runCatching { linkFromPrevious(id) }
+            }
         }
     }
 

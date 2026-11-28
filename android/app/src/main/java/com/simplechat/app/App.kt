@@ -303,6 +303,7 @@ class AppContainer(private val app: Application) {
             embedder = embedder,
             tags = database.tagDao(),
             enabled = { true },
+            links = database.tagLinkDao(),
         )
     }
 

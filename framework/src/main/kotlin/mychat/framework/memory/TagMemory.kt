@@ -221,8 +221,19 @@ object Recall {
         val depth: String,
     )
 
+    /**
+     * 「相关内容」一行：告诉模型还记着别的什么话题。
+     *
+     * 共现过的话题往往就是用户接下来要问的，点名比让它自己想起来便宜得多。
+     */
+    fun formatRelated(names: List<String>): String? {
+        val top = names.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(RELATED_MAX)
+        if (top.isEmpty()) return null
+        return "\n\n相关内容：" + top.joinToString(" / ") + "\n（要看哪个，说它的名字）"
+    }
+
     /** 拼进注入块的整段文本。边界说明是内容的一部分，不是可选装饰。 */
-    fun formatBlock(hit: RecallHit): String = buildString {
+    fun formatBlock(hit: RecallHit, related: List<String> = emptyList()): String = buildString {
         append("【回忆】（背景资料，不是当前任务）\n")
         if (hit.depth == DEPTH_NAME_ONLY) {
             append("关于「").append(hit.tagName).append("」的记忆（只记得话题，细节已淡）。\n")
@@ -233,6 +244,7 @@ object Recall {
         append("注意：以上内容仅供背景参考。\n")
         append("如果用户当前的问题与它无关，请完全忽略，直接回答当前问题。\n")
         append("不要在回答里主动提起上面的内容。")
+        formatRelated(related)?.let { append(it) }
     }
 
     private const val DEPTH_ARCHIVED = "archived"
@@ -245,6 +257,9 @@ object Recall {
 
     /** 摘要最多带多少字：再长就不如直接给原话了。 */
     const val SUMMARY_MAX = 500
+
+    /** 最多列几个相关内容：再多就是噪音。 */
+    const val RELATED_MAX = 5
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {
         var dot = 0f

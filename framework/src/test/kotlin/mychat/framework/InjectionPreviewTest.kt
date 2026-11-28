@@ -133,7 +133,8 @@ private fun previewWithMemory(registry: ModuleRegistry) {
             text = "决定用 Kotlin 重写模块系统",
             depth = "full",
             summary = "决定用 Kotlin 重写模块系统",
-        )
+        ),
+        related = listOf("标签B", "标签C"),
     )
     val memoryBlock = mychat.framework.memory.MemoryInjection.compose(directory, recall)
 

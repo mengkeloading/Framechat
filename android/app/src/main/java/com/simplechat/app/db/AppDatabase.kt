@@ -18,6 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AttachmentRefEntity::class,
         TagEntity::class,
         TagSummaryEntity::class,
+        TagLinkEntity::class,
     ],
     // v2：messages 从「槽位」改成「树」（slotIndex → parentId）
     // v3：messages 增加 attachments（图片 / 纯文本附件）
@@ -28,7 +29,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // v8：新增 attachment_refs（落盘图片的引用，删会话时据此清理文件）
     // v9：附件可被多个会话引用（分叉后删除原会话不能丢图）
     // v10：消息记录 prompt 缓存命中量（用量与余额页按命中/未命中分别计价）
-    version = 21,
+    // v22：新增 tag_links（标签共现，用于「相关内容」）
+    version = 22,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,6 +52,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
 
     abstract fun tagSummaryDao(): TagSummaryDao
+
+    abstract fun tagLinkDao(): TagLinkDao
 
     companion object {
 
@@ -204,6 +208,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v22：标签共现表。故意不加外键——删标签时由调用方清这里。 */
+        internal val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS tag_links (
+                        fromTag TEXT NOT NULL,
+                        toTag TEXT NOT NULL,
+                        coCount INTEGER NOT NULL DEFAULT 0,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY (fromTag, toTag)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         internal val MIGRATION_20_21 = object : Migration(20, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -315,6 +336,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_18_19,
                     MIGRATION_19_20,
                     MIGRATION_20_21,
+                    MIGRATION_21_22,
                 )
                 .build()
     }
