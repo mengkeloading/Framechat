@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.simplechat.app.hook.RoomCompressionSource
 import kotlinx.coroutines.test.runTest
+import mychat.framework.memory.compress.CompressResult
 import mychat.framework.memory.compress.CompressionWrite
 import mychat.framework.memory.compress.DefaultCompressor
 import mychat.framework.memory.compress.Summarizer
@@ -102,7 +103,7 @@ class TagCompressorTest {
         )
         llm.answer = "技术栈 Kotlin，团队熟"
 
-        assertTrue(compressor().compress("t1", 1))
+        assertTrue(compressor().compress("t1", 1) is CompressResult.Done)
 
         val rows = db.tagSummaryDao().allOf("t1")
         assertEquals(1, rows.size)
@@ -125,11 +126,11 @@ class TagCompressorTest {
         )
         // L1 要比 L2 的目标长度（100 字）长，否则会命中 already_short
         llm.answer = "技术栈 Kotlin，团队熟悉。" + "背景信息".repeat(30)
-        assertTrue(compressor().compress("t1", 1))
+        assertTrue(compressor().compress("t1", 1) is CompressResult.Done)
         val l1 = db.tagSummaryDao().at("t1", 1)!!
 
         llm.answer = "用 Kotlin"
-        assertTrue(compressor().compress("t1", 2))
+        assertTrue(compressor().compress("t1", 2) is CompressResult.Done)
 
         val l2 = db.tagSummaryDao().at("t1", 2)!!
         assertEquals("""["sum:${l1.id}"]""", l2.sourceRefs)
@@ -163,7 +164,7 @@ class TagCompressorTest {
         seedMessages("user" to "我在做 MyChat，" + "细节很多。".repeat(40))
         llm.answer = null
 
-        assertFalse(compressor().compress("t1", 1))
+        assertTrue(compressor().compress("t1", 1) is CompressResult.Failed)
 
         assertEquals(0, db.tagSummaryDao().allOf("t1").size)
         assertEquals(0, db.tagDao().byId("t1")!!.currentLevel)
@@ -178,7 +179,7 @@ class TagCompressorTest {
         seedMessages("user" to "用 Kotlin。".repeat(3))
         llm.answer = "不该被调用"
 
-        assertFalse(compressor().compress("t1", 1))
+        assertTrue(compressor().compress("t1", 1) is CompressResult.Skipped)
 
         assertEquals(0, db.tagSummaryDao().allOf("t1").size)
         assertTrue(logs.any { it.contains("already_short") })
@@ -191,7 +192,7 @@ class TagCompressorTest {
         seed()
         llm.answer = "不该被用到"
 
-        assertFalse(compressor().compress("t1", 1))
+        assertTrue(compressor().compress("t1", 1) is CompressResult.Skipped)
 
         assertEquals(0, db.tagSummaryDao().allOf("t1").size)
         assertTrue(logs.any { it.contains("compress:skip") && it.contains("no_source") })
