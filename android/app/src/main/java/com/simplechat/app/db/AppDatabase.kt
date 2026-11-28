@@ -30,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // v9：附件可被多个会话引用（分叉后删除原会话不能丢图）
     // v10：消息记录 prompt 缓存命中量（用量与余额页按命中/未命中分别计价）
     // v22：新增 tag_links（标签共现，用于「相关内容」）
-    version = 24,
+    version = 25,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -209,6 +209,14 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /** v22：标签共现表。故意不加外键——删标签时由调用方清这里。 */
+        /** 最近原文与最后归入时间：老标签两条都空，等价于「没记录」。 */
+        internal val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tags ADD COLUMN recentMessages TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tags ADD COLUMN lastSeenAt INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         /** 标签的 mentions 列与归入计数；老标签没有这些数据，给默认值。 */
         internal val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -356,6 +364,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_21_22,
                     MIGRATION_22_23,
                     MIGRATION_23_24,
+                    MIGRATION_24_25,
                 )
                 .build()
     }

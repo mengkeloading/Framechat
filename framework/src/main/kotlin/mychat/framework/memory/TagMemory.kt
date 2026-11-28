@@ -26,6 +26,10 @@ data class TagRecord(
      * 字段先立在这儿，是让 [LayeredRecall] 的第三条路径一次写完，不用回头改签名。
      */
     val mentions: List<String> = emptyList(),
+    /** 最近两条原文：摘要滞后时补上这一段（见 [RecentMemory]）。 */
+    val recent: List<RecentItem> = emptyList(),
+    /** 最后一次归入的时间；用来判断这个标签在本次会话里出现过没有。 */
+    val lastSeenAt: Long = 0,
 ) {
     // FloatArray 的默认 equals 是引用比较，data class 生成的实现会误判
     override fun equals(other: Any?): Boolean =

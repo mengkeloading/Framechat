@@ -50,6 +50,21 @@ object Mentions {
  * 整个话题的平均。但如果一直挪，一个聊了半年的宽泛标签会漂到"什么都像"，
  * 召回就开始乱给 —— 10 条之后固定，保住它的语义中心。
  */
+/**
+ * 「相关内容」的门槛：淡到 0.2 以下的话题不该再出现在「还记着别的什么」里。
+ *
+ * 过滤放在 Kotlin 而不是 SQL：强度是随时间衰减算出来的，落库那一列只是
+ * 上次写入时的快照，在 SQL 里比会用到过期值。
+ */
+object RelatedNames {
+
+    const val MIN_STRENGTH = 0.2f
+
+    /** pairs = (名字, 强度)。只筛不排，保持调用方给的顺序。 */
+    fun filter(pairs: List<Pair<String, Float>>, min: Float = MIN_STRENGTH): List<String> =
+        pairs.filter { it.second >= min }.map { it.first }
+}
+
 object TagCentroid {
 
     const val MAX_MESSAGES = 10

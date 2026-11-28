@@ -39,6 +39,10 @@ data class TagEntity(
     val mentions: String = "",
     /** 归入过多少条消息；质心只在它 < 10 时更新。 */
     val msgCount: Int = 0,
+    /** 最近两条原文的 JSON（见 RecentMemory）；摘要滞后时补上这一段。 */
+    val recentMessages: String = "",
+    /** 最后一次归入的时间。 */
+    val lastSeenAt: Long = 0,
 ) {
     override fun equals(other: Any?): Boolean =
         this === other || (other is TagEntity && id == other.id && name == other.name)
@@ -93,6 +97,13 @@ interface TagDao {
     @Query("UPDATE tags SET mentions = :mentions WHERE id = :id")
     suspend fun setMentions(id: String, mentions: String)
 
+    @Query("UPDATE tags SET recentMessages = :recent, lastSeenAt = :now WHERE id = :id")
+    suspend fun setRecent(id: String, recent: String, now: Long)
+
+    /** 只看名字与强度：相关内容要在 Kotlin 里按衰减后的强度过筛。 */
+    @Query("SELECT id, name, strength, readCount, lastDecayAt FROM tags WHERE id IN (:ids)")
+    suspend fun nameStrengths(ids: List<String>): List<TagNameStrength>
+
     /** 质心更新：向量与计数必须一起写，否则下次会按错误的权重加权。 */
     @Query("UPDATE tags SET embedding = :embedding, msgCount = :count WHERE id = :id")
     suspend fun setEmbedding(id: String, embedding: ByteArray, count: Int)
@@ -138,6 +149,15 @@ interface TagDao {
     )
     suspend fun recentUserContents(tagId: String, limit: Int): List<String>
 }
+
+/** 过筛「相关内容」用的投影：强度带着衰减参数一起取回来。 */
+data class TagNameStrength(
+    val id: String,
+    val name: String,
+    val strength: Float,
+    val readCount: Int,
+    val lastDecayAt: Long,
+)
 
 /** 聚合查询的投影：不是表。 */
 data class TagMessageCount(

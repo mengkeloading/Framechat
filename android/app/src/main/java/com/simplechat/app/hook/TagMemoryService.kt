@@ -29,7 +29,7 @@ class TagMemoryService(
 ) {
 
     /** 一轮的记忆句柄；开关关闭、模型未就绪或算不出向量时为 null。 */
-    suspend fun begin(text: String): Turn? {
+    suspend fun begin(text: String, sessionStartedAt: Long = 0): Turn? {
         val off = mychat.framework.memory.MemoryGate.offReason(
             enabled = enabled(),
             embedderReady = embedder.ready,
@@ -41,7 +41,7 @@ class TagMemoryService(
         }
         return runCatching {
             val query = embedder.embedQuery(text) ?: return null
-            Turn(query, load(), text)
+            Turn(query, load(), text, sessionStartedAt)
         }.getOrNull()
     }
 
@@ -50,6 +50,8 @@ class TagMemoryService(
         /** 本轮开始时加载的标签快照，**不含**本轮新建的。 */
         private val snapshot: List<TagRecord>,
         private val text: String,
+        /** 当前会话创建时间；召回时用它判断标签是不是在本次会话里出现过。 */
+        private val sessionStartedAt: Long,
     ) {
 
 
@@ -68,6 +70,7 @@ class TagMemoryService(
                 summaryOf = { id -> snapshot.firstOrNull { it.id == id }?.summary },
                 log = { line -> log(line) },
                 now = now,
+                sessionStartedAt = sessionStartedAt,
             )
             when (result.reason) {
                 LayeredRecall.MISS -> return null
@@ -132,10 +135,36 @@ class TagMemoryService(
         }
 
         /** 与某个标签共现最多的标签名（最多 5 个）。 */
+        /**
+         * 「相关内容」：按共现次数取，但**淡到 0.2 以下的不列**。
+         *
+         * 先取 id 再查强度，在 Kotlin 里按衰减后的值过筛 —— 落库的 strength
+         * 只是上次写入时的快照，直接拿它比会用到过期数字。
+         */
         private suspend fun relatedNames(tagId: String): List<String> {
             val dao = links ?: return emptyList()
-            return runCatching { dao.relatedNames(tagId, Recall.RELATED_MAX) }
+            val ids = runCatching { dao.linksOf(tagId) }
                 .getOrDefault(emptyList())
+                .sortedWith(
+                    compareByDescending<com.simplechat.app.db.TagLinkEntity> { it.coCount }
+                        .thenByDescending { it.updatedAt }
+                )
+                .map { it.toTag }
+                .filter { it != tagId }
+                .distinct()
+                .take(Recall.RELATED_MAX * 3)
+            if (ids.isEmpty()) return emptyList()
+            val now = System.currentTimeMillis()
+            val rows = runCatching { tags.nameStrengths(ids) }.getOrDefault(emptyList())
+            val byId = rows.associateBy { it.id }
+            val pairs = ids.mapNotNull { id ->
+                byId[id]?.let { row ->
+                    row.name to TagStrength.currentOf(
+                        row.strength, row.lastDecayAt, row.readCount, now,
+                    )
+                }
+            }
+            return mychat.framework.memory.RelatedNames.filter(pairs).take(Recall.RELATED_MAX)
         }
 
         /** 打标：与检索用同一份快照，新建的标签本轮不参与召回。 */
@@ -148,12 +177,14 @@ class TagMemoryService(
                         userMessageId?.let { tags.setMessageTag(it, decision.tagId) }
                         log("tag:assign id=" + decision.tagId + " score=" + fmt(decision.score))
                         moveCentroid(decision.tagId, query)
+                        rememberRecent(decision.tagId, userMessageId ?: messageId)
                         decision.tagId
                     }
                     is TagDecision.Create -> {
                         val id = UUID.randomUUID().toString()
                         val now = System.currentTimeMillis()
                         tags.insert(TagEntity(id, decision.name, null, encode(query), now, now))
+                        rememberRecent(id, userMessageId ?: messageId)
                         tags.setMessageTag(messageId, id)
                         userMessageId?.let { tags.setMessageTag(it, id) }
                         val score = if (decision.reason == "first") {
@@ -199,8 +230,27 @@ class TagMemoryService(
                 lastReadAt = entity.lastReadAt,
                 lastDecayAt = entity.lastDecayAt,
                 mentions = mychat.framework.memory.Mentions.split(entity.mentions),
+                recent = mychat.framework.memory.RecentMemory.decode(entity.recentMessages),
+                lastSeenAt = entity.lastSeenAt,
             )
         }
+    }
+
+    /**
+     * 记下最近一条原文。
+     *
+     * 摘要天然滞后（刚聊的还在 L0，摘要停在上一版），跨会话召回时把这两条
+     * 一起给出去，正好补上「摘要落后」的那一段。
+     */
+    private suspend fun rememberRecent(tagId: String, messageId: String) {
+        val tag = tags.byId(tagId) ?: return
+        val existing = mychat.framework.memory.RecentMemory.decode(tag.recentMessages)
+        val now = System.currentTimeMillis()
+        val next = mychat.framework.memory.RecentMemory.append(
+            existing,
+            mychat.framework.memory.RecentItem(id = messageId, text = text.take(EXCERPT), at = now),
+        )
+        tags.setRecent(tagId, mychat.framework.memory.RecentMemory.encode(next), now)
     }
 
     /**

@@ -2,6 +2,9 @@ package mychat.framework
 
 import mychat.framework.memory.LayeredRecall
 import mychat.framework.memory.Recall
+import mychat.framework.memory.RecentItem
+import mychat.framework.memory.RecentMemory
+import mychat.framework.memory.RelatedNames
 import mychat.framework.memory.RecallHit
 import mychat.framework.memory.TagDecision
 import mychat.framework.memory.TagRecord
@@ -54,6 +57,8 @@ fun main() {
     layeredRecallTests()
     mentionsTests()
     centroidTests()
+    recentTests()
+    relatedFilterTests()
     assemblyTests()
     strengthTests()
     depthTests()
@@ -170,6 +175,95 @@ private fun mentionsTests() {
     eq("mentions: 存库用逗号", "A,B", Mentions.join(listOf("A", "B")))
     eq("mentions: 读取时拆开", listOf("A", "B"), Mentions.split("A,B"))
     eq("mentions: 空串读出空表", emptyList<String>(), Mentions.split(""))
+}
+
+private fun recentTests() {
+    val at1 = 1_700_000_000_000L
+    val at2 = at1 + 60_000
+
+    // 1. 归入 1 条 → 长度 1
+    eq("recent: 一条", 1, RecentMemory.append(emptyList(), RecentItem("m1", "第一条", at1)).size)
+
+    // 2. 归入 3 条 → 只留最近 2 条
+    var list = emptyList<RecentItem>()
+    list = RecentMemory.append(list, RecentItem("m1", "第一条", at1))
+    list = RecentMemory.append(list, RecentItem("m2", "第二条", at1 + 1000))
+    list = RecentMemory.append(list, RecentItem("m3", "第三条", at2))
+    eq("recent: 只留两条", 2, list.size)
+    eq("recent: 留的是最新的", listOf("m2", "m3"), list.map { it.id })
+
+    // 3. 同会话召回 → 不含「最近：」
+    val sameSession = RecentMemory.format(
+        summary = "旧摘要",
+        recent = list,
+        lastSeenAt = at2,
+        sessionStartedAt = at1 - 10_000,
+        now = at2,
+    )
+    check("recent: 同会话只给摘要", sameSession == "旧摘要", sameSession)
+
+    // 4. 跨会话召回 → 含「最近：」+ 两条原文
+    val cross = RecentMemory.format(
+        summary = "旧摘要",
+        recent = list,
+        lastSeenAt = at2,
+        sessionStartedAt = at2 + 10_000,
+        now = at2,
+    )!!
+    check("recent: 跨会话带最近", cross.contains("最近："), cross)
+    check("recent: 含两条原文", cross.contains("第二条") && cross.contains("第三条"), cross)
+    check("recent: 摘要仍在前面", cross.startsWith("旧摘要"), cross)
+
+    // 5. 只有最近、没有摘要 → 不显示「暂无」
+    val noSummary = RecentMemory.format(
+        summary = null,
+        recent = list,
+        lastSeenAt = at2,
+        sessionStartedAt = at2 + 10_000,
+        now = at2,
+    )!!
+    check("recent: 无摘要不占位", !noSummary.contains("暂无"), noSummary)
+    check("recent: 无摘要也有最近", noSummary.startsWith("最近："), noSummary)
+
+    // 6. 时间戳：同一天给时分，跨天给日期
+    val day = 86_400_000L
+    check(
+        "recent: 同日时间戳是时分",
+        Regex("^\\d{2}:\\d{2}$").matches(RecentMemory.stamp(at2, at2 + 3_600_000L)),
+        RecentMemory.stamp(at2, at2 + 3_600_000L)
+    )
+    check(
+        "recent: 跨日时间戳带日期",
+        Regex("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$")
+            .matches(RecentMemory.stamp(at2, at2 + 3 * day)),
+        RecentMemory.stamp(at2, at2 + 3 * day)
+    )
+}
+
+private fun relatedFilterTests() {
+    // ⑤ 相关内容：淡化的不列
+    eq(
+        "related: 淡化标签被排除",
+        listOf("常用话题"),
+        RelatedNames.filter(listOf("常用话题" to 1.2f, "淡化话题" to 0.1f))
+    )
+    eq("related: 门槛是 0.2", 0.2f, RelatedNames.MIN_STRENGTH)
+
+    // ⑥ mentions：淡化的不提
+    val faded = TagRecord(
+        id = "t-f", name = "淡忘", vector = floatArrayOf(0f, 1f),
+        strength = 0.1f, lastDecayAt = NOW, mentions = listOf("旧后台"),
+    )
+    eq(
+        "mentions: 淡化标签不提",
+        LayeredRecall.MISS,
+        LayeredRecall.recall(
+            text = "那个旧后台还在吗",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(faded),
+            now = NOW,
+        ).reason
+    )
 }
 
 private fun centroidTests() {
@@ -339,7 +433,7 @@ private fun layeredRecallTests() {
         eq("archive: 模糊不召回", LayeredRecall.MISS, result.reason)
     }
 
-    // ③ 3. 归档出现在 mentions → 列出名字
+    // ③ 3. 归档（强度 0.05 < 0.2）不再出现在 mentions
     run {
         val result = LayeredRecall.recall(
             text = "那个旧话题乙还在吗",
@@ -352,8 +446,7 @@ private fun layeredRecallTests() {
             ),
             now = NOW,
         )
-        eq("archive: mentions 列名字", LayeredRecall.MENTION, result.reason)
-        eq("archive: 名字正确", "无关名字", result.first?.tagName)
+        eq("archive: 淡化后 mentions 不提", LayeredRecall.MISS, result.reason)
     }
 }
 

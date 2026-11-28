@@ -1049,7 +1049,15 @@ class ChatViewModel(
                         }
                     }
                     // 本轮的记忆快照：检索与打标共用，本轮新建的标签不参与本轮召回
-                    memoryTurn = if (stored.memoryEnabled) tagMemory?.begin(text) else null
+                    memoryTurn = if (stored.memoryEnabled) {
+                        // 会话创建时间决定「最近原文」给不给：同会话内摘要本来就是最新的
+                        val startedAt = currentConversationId
+                            ?.let { id -> repository.findConversation(id)?.createdAt }
+                            ?: 0L
+                        tagMemory?.begin(text, startedAt)
+                    } else {
+                        null
+                    }
                     val recallBlock = memoryTurn?.recallBlock()
                     // 目录在召回之前：先告诉模型"有哪些话题"，再说"这次想起哪个"
                     val directoryBlock = memoryDirectory?.list()?.let {

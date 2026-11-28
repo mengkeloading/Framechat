@@ -25,6 +25,9 @@ object LayeredRecall {
     /** mentions 命中最多列几个。 */
     const val MENTION_MAX = 3
 
+    /** mentions 层也遵守的强度门槛：淡到这里以下就不再被「提起」。 */
+    const val MENTION_MIN_STRENGTH = 0.2f
+
     /** 标签名里的分隔符：按这些切开后再逐词比对。 */
     private val NAME_SEPARATORS = Regex("[\\s，。、·]+")
 
@@ -56,10 +59,15 @@ object LayeredRecall {
         recentOf: (String) -> List<MemoryItem> = { emptyList() },
         log: (String) -> Unit = {},
         now: Long = System.currentTimeMillis(),
+        /** 当前会话创建时间；0 = 未知，按跨会话处理（多给最近原文）。 */
+        sessionStartedAt: Long = 0,
     ): RecallResult {
         exactMatch(text, tags)?.let { tag ->
             log("recall:exact tag=" + tag.id.take(8) + " name=" + tag.name)
-            return RecallResult(listOf(detailOf(tag, summaryOf, recentOf)), EXACT)
+            return RecallResult(
+                listOf(detailOf(tag, summaryOf, recentOf, sessionStartedAt, now)),
+                EXACT,
+            )
         }
 
         // 模糊只在够像、且强度没塌的标签里找（归档的不参与）
@@ -71,10 +79,25 @@ object LayeredRecall {
         )
         if (fuzzy != null) {
             log("recall:fuzzy tag=" + fuzzy.tagId.take(8) + " score=" + fmt(fuzzy.score))
-            return RecallResult(listOf(fuzzy), FUZZY)
+            // 模糊命中同样要补「最近原文」：摘要可能落后于这次会话
+            val tag = tags.firstOrNull { it.id == fuzzy.tagId }
+            val body = if (tag == null) {
+                fuzzy.text
+            } else {
+                RecentMemory.format(
+                    summary = fuzzy.summary,
+                    recent = tag.recent,
+                    lastSeenAt = tag.lastSeenAt,
+                    sessionStartedAt = sessionStartedAt,
+                    now = now,
+                ) ?: fuzzy.text
+            }
+            return RecallResult(listOf(fuzzy.copy(text = body)), FUZZY)
         }
 
+        // 淡到 0.2 以下的标签不再冒头：连自己都快记不住的话题，列出来只会造成「我好像提过」
         val mentioned = tags
+            .filter { TagStrength.current(it, now) >= MENTION_MIN_STRENGTH }
             .filter { tag -> tag.mentions.any { it.isNotBlank() && text.contains(it) } }
             .take(MENTION_MAX)
             .map { tag ->
@@ -101,6 +124,8 @@ object LayeredRecall {
         tag: TagRecord,
         summaryOf: (String) -> String?,
         recentOf: (String) -> List<MemoryItem>,
+        sessionStartedAt: Long,
+        now: Long,
     ): RecallHit {
         val summary = tag.summary?.takeIf { it.isNotBlank() }
             ?: runCatching { summaryOf(tag.id) }.getOrNull()?.takeIf { it.isNotBlank() }
@@ -112,7 +137,13 @@ object LayeredRecall {
             .take(2)
             .map { it.text.take(EXCERPT) }
             .joinToString("\n---\n")
-        val body = summaryText ?: fallback.ifBlank { Recall.NO_DETAIL }
+        val body = RecentMemory.format(
+            summary = summaryText,
+            recent = tag.recent,
+            lastSeenAt = tag.lastSeenAt,
+            sessionStartedAt = sessionStartedAt,
+            now = now,
+        ) ?: fallback.ifBlank { Recall.NO_DETAIL }
         return RecallHit(
             tagId = tag.id,
             tagName = tag.name,
