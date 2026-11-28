@@ -63,14 +63,19 @@ class MessageReceiptTest {
             )
         )
 
+        // 落库能读回：标记本身生效
+        assertTrue(db.messageDao().findById("a1")!!.receipt)
+        assertFalse(db.messageDao().findById("a2")!!.receipt)
+
         val path = ChatRepository(db, ApplicationProvider.getApplicationContext()).loadActivePath("c1")
-        val receipt = path.first { it.id == "a1" }
-        val normal = path.first { it.id == "a2" }
-        assertTrue(receipt.receipt)
-        assertFalse(normal.receipt)
+        val ids = path.map { it.id }
+        assertEquals("活跃路径", listOf("u1", "a1", "a2"), ids)
 
         // 「上一轮产物」取最后一条非回执 assistant
-        assertEquals("正常回答", path.last { it.role.name == "ASSISTANT" && !it.receipt }.content)
+        assertEquals(
+            "正常回答",
+            path.lastOrNull { it.role.name == "ASSISTANT" && !it.receipt }?.content
+        )
         assertEquals(1, path.count { it.receipt })
     }
 }
