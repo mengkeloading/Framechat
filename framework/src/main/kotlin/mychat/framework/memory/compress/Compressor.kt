@@ -34,6 +34,8 @@ data class CompressionWrite(
     /** `["msg:<id>", …]` 或 `["sum:<id>"]` */
     val sources: List<String>,
     val now: Long,
+    /** 摘要末尾那行 `MENTIONS:` 解析出的其他话题名。 */
+    val mentions: List<String> = emptyList(),
 )
 
 /** 取数与落库。App 侧用 Room 实现，测试用内存实现。 */
@@ -94,7 +96,15 @@ class DefaultCompressor(
             }
         if (out.isNullOrBlank()) return skip(tagId, toLevel, "llm_empty")
 
-        val text = out.trim()
+        // 摘要正文与 MENTIONS 分开：正文落摘要，话题名落 tags.mentions
+        val parsed = mychat.framework.memory.Mentions.extract(out)
+        val text = parsed.summary.ifBlank { out.trim() }
+        if (parsed.mentions.isNotEmpty()) {
+            log(
+                "compress:mentions tag=" + tagId + " count=" + parsed.mentions.size +
+                    " names=" + parsed.mentions.joinToString(",")
+            )
+        }
         val summaryId = newId()
         val ok = runCatching {
             source.write(
@@ -105,6 +115,7 @@ class DefaultCompressor(
                     text = text,
                     sources = sources,
                     now = clock(),
+                    mentions = parsed.mentions,
                 )
             )
         }.getOrElse { error ->
@@ -157,6 +168,13 @@ class DefaultCompressor(
                 - 你自己的建议（除非用户明确采纳）
 
                 保留用户的原话措辞（如果能）。
+
+                另外，提取这段对话里"提到过的其他话题名"，最多 5 个。
+                输出格式在摘要末尾：
+
+                MENTIONS: 话题A, 话题B
+
+                （如果没提到任何别的话题，就不输出这行）
 
                 写成一到三段短句，不要用列表符号。（$extra）
 

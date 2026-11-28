@@ -35,6 +35,10 @@ data class TagEntity(
     /** 0 = 还没压过（内容是原文），1..4 = 已压到第几层，见 TagSummaryEntity。 */
     val currentLevel: Int = 0,
     val lastCompressedAt: Long = 0,
+    /** 摘要里提到过的其他话题名，逗号分隔；见 Mentions。 */
+    val mentions: String = "",
+    /** 归入过多少条消息；质心只在它 < 10 时更新。 */
+    val msgCount: Int = 0,
 ) {
     override fun equals(other: Any?): Boolean =
         this === other || (other is TagEntity && id == other.id && name == other.name)
@@ -85,6 +89,13 @@ interface TagDao {
 
     @Query("UPDATE tags SET summary = :summary, currentLevel = :level, lastCompressedAt = :now WHERE id = :id")
     suspend fun setCompressed(id: String, summary: String, level: Int, now: Long)
+
+    @Query("UPDATE tags SET mentions = :mentions WHERE id = :id")
+    suspend fun setMentions(id: String, mentions: String)
+
+    /** 质心更新：向量与计数必须一起写，否则下次会按错误的权重加权。 */
+    @Query("UPDATE tags SET embedding = :embedding, msgCount = :count WHERE id = :id")
+    suspend fun setEmbedding(id: String, embedding: ByteArray, count: Int)
 
     /**
      * 把"从没衰减过"的老标签的锚点刷成 now。

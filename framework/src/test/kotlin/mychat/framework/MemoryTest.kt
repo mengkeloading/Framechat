@@ -7,6 +7,9 @@ import mychat.framework.memory.TagDecision
 import mychat.framework.memory.TagRecord
 import mychat.framework.memory.MemoryGate
 import mychat.framework.memory.MemoryFeedback
+import mychat.framework.memory.Mentions
+import mychat.framework.memory.TagCentroid
+import mychat.framework.embedding.Vectors
 import mychat.framework.memory.MemoryItem
 import mychat.framework.memory.TaggedTurn
 import mychat.framework.memory.TagStrength
@@ -49,6 +52,8 @@ fun main() {
     taggingTests()
     recallTests()
     layeredRecallTests()
+    mentionsTests()
+    centroidTests()
     assemblyTests()
     strengthTests()
     depthTests()
@@ -130,6 +135,91 @@ private fun taggingTests() {
     // 9. 名字截断
     val long = Tagger.decide(origin, emptyList(), "一二三四五六七八九十一二三四五六七八九十多余的")
     eq("tag: 名字截到 20 字", 20, (long as? TagDecision.Create)?.name?.length)
+}
+
+// ---------- mentions 与质心 ----------
+
+private fun mentionsTests() {
+    // 1. 有 MENTIONS 行 → 拆出来，正文不含该行
+    val parsed = Mentions.extract("决定用 Kotlin 重写。\nMENTIONS: 旧后台, 部署脚本")
+    eq("mentions: 解析", listOf("旧后台", "部署脚本"), parsed.mentions)
+    eq("mentions: 正文去掉该行", "决定用 Kotlin 重写。", parsed.summary)
+
+    // 2. 没有这一行 → 空
+    eq("mentions: 没有则为空", emptyList<String>(), Mentions.extract("没有提到别的话题。").mentions)
+
+    // 3. 超过 5 个只取前 5
+    val many = Mentions.extract("摘要\nMENTIONS: A, B, C, D, E, F, G")
+    eq("mentions: 最多五个", 5, many.mentions.size)
+    eq("mentions: 取前面那些", listOf("A", "B", "C", "D", "E"), many.mentions)
+
+    // 4. 解析结果进 TagRecord → mention 层能命中
+    val tag = TagRecord(
+        id = "t", name = "老项目", vector = floatArrayOf(0f, 1f),
+        strength = 1f, lastDecayAt = NOW,
+        mentions = Mentions.extract("摘要\nMENTIONS: 旧后台").mentions,
+    )
+    val result = LayeredRecall.recall(
+        text = "那个旧后台还在吗",
+        query = floatArrayOf(1f, 0f),
+        tags = listOf(tag),
+        now = NOW,
+    )
+    eq("mentions: 存进标签后能命中", LayeredRecall.MENTION, result.reason)
+
+    eq("mentions: 存库用逗号", "A,B", Mentions.join(listOf("A", "B")))
+    eq("mentions: 读取时拆开", listOf("A", "B"), Mentions.split("A,B"))
+    eq("mentions: 空串读出空表", emptyList<String>(), Mentions.split(""))
+}
+
+private fun centroidTests() {
+    // 1. 新建标签：第一次归入保持首条消息的方向
+    val afterOne = TagCentroid.updated(floatArrayOf(1f, 0f, 0f), 0, floatArrayOf(1f, 0f, 0f))
+    check("centroid: 第一次归入有结果", afterOne != null)
+    near("centroid: 与首条一致", 1f, afterOne!![0])
+
+    // 2. 归入 5 条 → 方向应接近这 5 条的朴素平均
+    //    每步都归一化，所以和朴素平均不完全相等，但方向必须几乎一样
+    var vec = floatArrayOf(1f, 0f)
+    var count = 0
+    val samples = listOf(
+        floatArrayOf(1f, 0f), floatArrayOf(1f, 0f),
+        floatArrayOf(0f, 1f), floatArrayOf(0f, 1f),
+        floatArrayOf(1f, 1f),
+    )
+    for (s in samples) {
+        TagCentroid.updated(vec, count, s)?.let { vec = it }
+        count++
+    }
+    val mean = floatArrayOf(
+        samples.sumOf { it[0].toDouble() }.toFloat() / samples.size,
+        samples.sumOf { it[1].toDouble() }.toFloat() / samples.size,
+    )
+    check(
+        "centroid: 方向接近朴素平均",
+        Vectors.cosine(vec, mean) > 0.99f,
+        "cos=" + Vectors.cosine(vec, mean)
+    )
+
+    // 3. 第 11 条不再更新
+    eq(
+        "centroid: 满 10 条后不动",
+        null,
+        TagCentroid.updated(floatArrayOf(1f, 0f), TagCentroid.MAX_MESSAGES, floatArrayOf(0f, 1f))
+    )
+
+    // 4. 质心更新后，同话题新消息的召回分数提高
+    val offTopic = floatArrayOf(1f, 0f)
+    val newTopic = floatArrayOf(0.2f, 1f)
+    var centroid = offTopic
+    var n = 0
+    repeat(5) {
+        TagCentroid.updated(centroid, n, newTopic)?.let { centroid = it }
+        n++
+    }
+    val before = Vectors.cosine(offTopic, newTopic)
+    val after = Vectors.cosine(centroid, newTopic)
+    check("centroid: 对新话题更近", after > before, "before=$before after=$after")
 }
 
 private const val NOW = 1_700_000_000_000L

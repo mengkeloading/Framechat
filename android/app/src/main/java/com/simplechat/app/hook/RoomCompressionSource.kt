@@ -45,6 +45,11 @@ class RoomCompressionSource(private val db: AppDatabase) : CompressionSource {
                 )
             )
             db.tagDao().setCompressed(write.tagId, write.text, write.level, write.now)
+            // 没有 MENTIONS 行时写空串：让「上次提取过、这次没有」能把旧值清掉
+            db.tagDao().setMentions(
+                write.tagId,
+                mychat.framework.memory.Mentions.join(write.mentions),
+            )
         }
         true
     }.getOrDefault(false)
