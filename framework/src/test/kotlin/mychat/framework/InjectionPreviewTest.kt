@@ -7,6 +7,8 @@ import mychat.framework.hook.HookSession
 import mychat.framework.hook.JsExecutor
 import mychat.framework.hook.ModuleDispatcher
 import mychat.framework.hook.ModuleRegistry
+import mychat.framework.memory.Recall
+import mychat.framework.memory.RecallHit
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -43,6 +45,7 @@ fun main() {
 
     preview(registry, snapshotDir, update, "skill_code")
     preview(registry, snapshotDir, update, "skill_novel")
+    previewWithMemory(registry)
 
     println()
     println("PASS $passed / ${passed + failures.size}")
@@ -108,6 +111,55 @@ private fun preview(
     val same = expected == block
     check("$id: 快照一致", same)
     if (!same) printDiff(expected, block)
+}
+
+/**
+ * 带记忆的完整注入块：目录 + 召回 + 类型 + 技能。
+ *
+ * 这段是模型实际看到的顺序。单测断言只能验字段，读起来顺不顺要整段看，
+ * 所以在 CI 日志里原样打出来。
+ */
+private fun previewWithMemory(registry: ModuleRegistry) {
+    val entries = listOf(
+        mychat.framework.memory.TagEntry("a", "标签A", 5, 1.5f),
+        mychat.framework.memory.TagEntry("b", "标签B", 2, 0.4f),
+    )
+    val directory = mychat.framework.memory.DirectoryFormatter.format(entries)
+    val recall = Recall.formatBlock(
+        RecallHit(
+            tagId = "a",
+            tagName = "标签A",
+            score = 0.82f,
+            text = "决定用 Kotlin 重写模块系统",
+            depth = "full",
+            summary = "决定用 Kotlin 重写模块系统",
+        )
+    )
+    val memoryBlock = mychat.framework.memory.MemoryInjection.compose(directory, recall)
+
+    val runner = mychat.framework.hook.HookRunner(
+        source = registry,
+        executor = JsExecutor { _, _, _ -> null }
+    )
+    val result = runner.input(
+        session = HookSession(id = "preview-mem", activeHardModules = listOf("skill_code")),
+        text = "预览用输入",
+        selected = setOf("skill_code"),
+        intentText = mychat.framework.butler.PromptByIntent.textOf("code"),
+        memoryText = memoryBlock,
+    )
+    val block = (result as? HookAResult.Context)?.extra.orEmpty()
+
+    println("========== INJECT with memory ==========")
+    println(block)
+    println("========== LEN=${block.length} ==========")
+
+    check("memory: 输出含【记忆目录】", block.contains("【记忆目录】"), block.take(120))
+    val dirAt = block.indexOf("【记忆目录】")
+    val recallAt = block.indexOf("【回忆】")
+    check("memory: 目录在回忆之前", dirAt >= 0 && recallAt > dirAt, "dir=$dirAt recall=$recallAt")
+    check("memory: 弱标签标淡化", block.contains("标签B（2 条，正在淡化）"), block.take(200))
+    check("memory: 召回给了摘要", block.contains("决定用 Kotlin 重写模块系统"), block.take(400))
 }
 
 private fun blockOf(registry: ModuleRegistry, id: String): String {
