@@ -73,6 +73,22 @@ private fun taggingTests() {
     eq("tag: 空表 reason=first", "first", (first as? TagDecision.Create)?.reason)
 
     // 2. 0.50 落在模糊区间
+    // 短句否定：是纠正，不建标签
+    val neg = Tagger.decide(origin, listOf(tag("a", vec(0.10f))), "不对，我说的不是这个")
+    check("tag: 否定句 Skip", neg is TagDecision.Skip, neg.toString())
+    eq("tag: 否定句原因", "negative_statement", (neg as? TagDecision.Skip)?.reason)
+    check(
+        "tag: 普通短句照常建",
+        Tagger.decide(origin, listOf(tag("a", vec(0.10f))), "帮我改一下") is TagDecision.Create
+    )
+    check(
+        "tag: 长句里的否定照常建",
+        Tagger.decide(
+            origin, listOf(tag("a", vec(0.10f))),
+            "这个不对，但我说的是另一件事，请重新看一遍"
+        ) is TagDecision.Create
+    )
+
     // 模糊（0.40~0.55）不再丢弃：建新标签，reason 标出来方便排查
     val ambiguous = Tagger.decide(origin, listOf(tag("a", vec(0.50f))), "帮我写个故事")
     check("tag: 0.50 建新标签", ambiguous is TagDecision.Create, ambiguous.toString())

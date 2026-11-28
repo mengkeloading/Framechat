@@ -221,8 +221,8 @@ class AppContainer(private val app: Application) {
             mychat.framework.memory.MemoryDump.Entry(
                 name = tag.name,
                 level = tag.currentLevel,
-                strength = mychat.framework.memory.compress.Decay.strengthAt(
-                    tag.strength, tag.lastDecayAt, now, tag.readCount,
+                strength = mychat.framework.memory.TagStrength.currentOf(
+                    tag.strength, tag.lastDecayAt, tag.readCount, now,
                 ),
                 summary = tag.summary,
             )

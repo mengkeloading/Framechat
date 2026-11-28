@@ -30,9 +30,18 @@ object TagStrength {
      * 公式在 [mychat.framework.memory.compress.Decay]：指数衰减，τ 随强度与
      * 使用次数增长。这里只负责"上次衰减到现在"的时间锚点。
      */
-    fun current(tag: TagRecord, now: Long): Float {
-        val anchor = if (tag.lastDecayAt > 0) tag.lastDecayAt else now
-        return Decay.strengthAt(tag.strength, anchor, now, tag.readCount)
+    fun current(tag: TagRecord, now: Long): Float =
+        currentOf(tag.strength, tag.lastDecayAt, tag.readCount, now)
+
+    /**
+     * 用散字段算强度：给拿不到 [TagRecord] 的调用方（比如数据库实体）用。
+     *
+     * `lastDecayAt == 0` 表示"从没衰减过"，锚点取 now。若直接把 0 传进公式，
+     * 算出来的天数以 1970 年为起点，指数一乘就是 0。
+     */
+    fun currentOf(strength: Float, lastDecayAt: Long, readCount: Int, now: Long): Float {
+        val anchor = if (lastDecayAt > 0) lastDecayAt else now
+        return Decay.strengthAt(strength, anchor, now, readCount)
     }
 
     /** 召回加权：强度不到 1.5 时按比例打折，避免弱记忆抢走强记忆的位置。 */

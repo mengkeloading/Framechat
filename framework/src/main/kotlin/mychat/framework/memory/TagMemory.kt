@@ -57,6 +57,9 @@ object Tagger {
     /** 新标签名取输入前多少字。 */
     const val NAME_LIMIT = 20
 
+    /** 超过这个长度的"否定"更可能是在讲别的事，按正常话题处理。 */
+    const val NEGATIVE_MAX_LENGTH = 15
+
     fun decide(
         query: FloatArray,
         tags: List<TagRecord>,
@@ -65,6 +68,12 @@ object Tagger {
         newMax: Float = NEW_MAX,
         maxTags: Int = MAX_TAGS,
     ): TagDecision {
+        // "不对，不是这个"是对上一轮的纠正，不是新话题：短句否定一律不建标签，
+        // 否则每纠正一次就多一个叫"不对"的标签。
+        if (text.trim().length <= NEGATIVE_MAX_LENGTH && MemoryFeedback.isNegative(text)) {
+            return TagDecision.Skip(0f, "negative_statement")
+        }
+
         // 一个标签都没有：第一轮直接建。不比较、不判模糊 —— 没有可比的东西。
         if (tags.isEmpty()) {
             return TagDecision.Create(nameOf(text), 0f, reason = "first")

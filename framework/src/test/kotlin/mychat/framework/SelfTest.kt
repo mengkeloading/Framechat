@@ -1158,6 +1158,26 @@ private fun debugCommandTests() {
             mychat.framework.memory.MemoryDump.Entry("旧话题", 0, 0.05f, null),
         )
     )
+    // 强度：0 锚点不能算出 0.00
+    val now0 = 1_700_000_000_000L
+    val fresh = mychat.framework.memory.TagStrength.currentOf(1.0f, now0, 0, now0)
+    eq("strength: 刚建的就是 1.0", 1.0f, fresh)
+    val legacy = mychat.framework.memory.TagStrength.currentOf(1.0f, 0L, 0, now0)
+    eq("strength: 0 锚点按现在算", 1.0f, legacy)
+    // 同一标签，两种算法必须一致
+    val record = mychat.framework.memory.TagRecord("t", "名", vector = floatArrayOf(1f), strength = 1.0f, lastDecayAt = 0L)
+    eq(
+        "strength: current 与 currentOf 一致",
+        mychat.framework.memory.TagStrength.current(record, now0),
+        mychat.framework.memory.TagStrength.currentOf(1.0f, 0L, 0, now0)
+    )
+    val freshDump = mychat.framework.memory.MemoryDump.render(
+        listOf(
+            mychat.framework.memory.MemoryDump.Entry("新标签", 0, fresh, null)
+        )
+    )
+    check("strength: dump 显示 1.00", freshDump.contains("strength=1.00"), freshDump)
+
     check(
         "debug: memory 输出含名字/层/强度/摘要",
         dump.contains("「MyChat 开发」") && dump.contains("L1") &&

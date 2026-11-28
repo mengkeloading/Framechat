@@ -883,11 +883,14 @@ class ChatViewModel(
          * 并直接说"去哪儿选"。
          */
         if (mychat.framework.debug.DebugCommands.isCompressCommand(text, BuildConfig.DEBUG)) {
+            // 命令也走完"发送"语义：输入框必须清掉，否则文本留在那里像没发出去
+            onPersisted()
             runDebugCompress()
             return
         }
 
         if (mychat.framework.debug.DebugCommands.isMemoryCommand(text, BuildConfig.DEBUG)) {
+            onPersisted()
             runDebugMemory()
             return
         }
