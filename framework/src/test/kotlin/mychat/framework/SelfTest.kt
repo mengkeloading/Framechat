@@ -20,6 +20,9 @@ import mychat.framework.memory.consolidate.DefaultConsolidator
 import mychat.framework.debug.DebugCommands
 import mychat.framework.hook.ReferenceInliner
 import mychat.framework.butler.TranslatePolicy
+import mychat.framework.butler.RuleTranslator
+import mychat.framework.butler.TranslateContext
+import mychat.framework.butler.TranslateGate
 import mychat.framework.profile.ProfileCommand
 import mychat.framework.profile.ProfileFormatter
 import mychat.framework.profile.UserProfile
@@ -99,6 +102,7 @@ fun main() {
     directoryTests()
     translateTests()
     profileTests()
+    translatorTests()
     tagNamingTests()
     promptTests()
     manifestAuditTests()
@@ -1265,6 +1269,75 @@ private fun promptTests() {
         "prompt: L3 更短",
         DefaultCompressor.buildPrompt("x", 40, 3).contains("不超过 40 字"),
         DefaultCompressor.buildPrompt("x", 40, 3)
+    )
+}
+
+// ---------- 输入翻译（规则版） ----------
+
+private fun translatorTests() {
+    val empty = mychat.framework.profile.UserProfile()
+
+    // 1. 空角色卡 + 无上下文 → 不翻译
+    eq(
+        "tr: 空角色卡不翻译",
+        null,
+        RuleTranslator.translate("再改改", empty, TranslateContext())
+    )
+
+    val dev = mychat.framework.profile.UserProfile(role = "独立开发者")
+
+    // 2/3/4. 约束项
+    val minimal = RuleTranslator.translate(
+        "再改改",
+        dev.copy(style = "极简", avoid = listOf("空话")),
+        TranslateContext()
+    )!!
+    check("tr: 极简给简短约束", minimal.contains("[约束] 简短，只给结论"), minimal)
+    check("tr: 不解释过程", minimal.contains("[约束] 不解释过程"), minimal)
+    check("tr: 避免项", minimal.contains("[避免] 空话"), minimal)
+
+    // 5. 有上一轮产物 → 指向它
+    val pointed = RuleTranslator.translate(
+        "再改改", dev,
+        TranslateContext(intent = "code", lastArtifact = "println(x)", lastUserText = "写个打印")
+    )!!
+    check("tr: 指向上一轮产物", pointed.contains("[指向] 上一轮的产物：println(x)"), pointed)
+
+    // 6. 命中模块不翻译
+    check("tr: 命中模块不翻译", !TranslateGate.shouldTranslate(listOf("skill_code")))
+    check("tr: 没命中才翻译", TranslateGate.shouldTranslate(emptyList()))
+
+    // 7. 没有可加的约束 → null
+    eq(
+        "tr: 没有可加的约束就返回 null",
+        null,
+        RuleTranslator.translate(
+            "写个函数",
+            mychat.framework.profile.UserProfile(role = "开发者", explain = true),
+            TranslateContext()
+        )
+    )
+
+    // 8. 膨胀上限
+    val short = RuleTranslator.translate(
+        "再改改",
+        dev.copy(style = "极简", avoid = listOf("空话", "过度设计", "啰嗦")),
+        TranslateContext(lastArtifact = "x".repeat(300))
+    )!!
+    check(
+        "tr: 短句按 200 字下限",
+        short.length <= maxOf(3 * 3, RuleTranslator.MIN_BUDGET),
+        short.length.toString()
+    )
+    val longText = "请把这段代码改成协程版本".repeat(10)
+    val longOut = RuleTranslator.translate(
+        longText, dev.copy(style = "极简", avoid = listOf("空话")),
+        TranslateContext(lastArtifact = "y".repeat(300))
+    )!!
+    check(
+        "tr: 长句按 3 倍封顶",
+        longOut.length <= longText.trim().length * RuleTranslator.MAX_RATIO,
+        longOut.length.toString()
     )
 }
 

@@ -999,28 +999,44 @@ class ChatViewModel(
                         com.simplechat.app.hook.UsageLog.record(intentLine)
                     }
                     // 模块优先：命中模块就不翻译，让模块规范说了算
-                    val translate = mychat.framework.butler.TranslatePolicy.decide(prepared.routeModules)
-                    val translated = if (translate.run) {
-                        hookRouter.normalize(text, stored.butlerId)
+                    val translateCtx = mychat.framework.butler.TranslateContext(
+                        intent = prepared.intent.orEmpty(),
+                        lastArtifact = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                            ?.content,
+                        lastUserText = messages.dropLast(1)
+                            .lastOrNull { it.role == MessageRole.USER }?.content,
+                    )
+                    val profileNow = currentProfile ?: userProfile?.invoke()
+                        ?: mychat.framework.profile.UserProfile()
+                    val translated = if (
+                        mychat.framework.butler.TranslateGate.shouldTranslate(prepared.routeModules)
+                    ) {
+                        mychat.framework.butler.RuleTranslator.translate(
+                            text, profileNow, translateCtx,
+                        )
                     } else {
                         null
                     }
-                    val hookText = translated?.takeIf { it.isNotBlank() } ?: text
+                    val hookText = translated ?: text
                     if (BuildConfig.DEBUG) {
-                        val line = if (translate.run) {
-                            mychat.framework.butler.TranslatePolicy.runLog(
-                                profile = false,
-                                ctx = prepared.intentText != null,
-                                from = text.length,
-                                to = hookText.length,
-                            )
+                        val line = if (translated != null) {
+                            "translate:run profile=" + profileNow.role.isNotBlank() +
+                                " ctx=" + (translateCtx.lastArtifact != null) +
+                                " len=" + text.length + "→" + hookText.length
+                        } else if (prepared.routeModules.isNotEmpty()) {
+                            "translate:skip reason=module_hit route=[" +
+                                prepared.routeModules.joinToString(", ") + "]"
                         } else {
-                            mychat.framework.butler.TranslatePolicy.skipLog(
-                                translate.reason, prepared.routeModules,
-                            )
+                            // 没命中模块也没翻：角色卡是空的，没有可约束的东西
+                            "translate:skip reason=no_constraints route=[]"
                         }
                         android.util.Log.d("MyChat/Butler", line)
                         com.simplechat.app.hook.UsageLog.record(line)
+                        translated?.let {
+                            com.simplechat.app.hook.UsageLog.record(
+                                "translate:out " + it.take(200)
+                            )
+                        }
                     }
                     // 本轮的记忆快照：检索与打标共用，本轮新建的标签不参与本轮召回
                     memoryTurn = if (stored.memoryEnabled) tagMemory?.begin(text) else null
