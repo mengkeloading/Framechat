@@ -129,6 +129,7 @@ class ChatViewModel(
     private val userProfile: (suspend () -> mychat.framework.profile.UserProfile)? = null,
     private val saveUserProfile: (suspend (mychat.framework.profile.UserProfile) -> Unit)? = null,
     private val personaEnabled: (suspend () -> Boolean)? = null,
+    private val savePersonaEnabled: (suspend (Boolean) -> Unit)? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -900,6 +901,12 @@ class ChatViewModel(
             // 命令也走完"发送"语义：输入框必须清掉，否则文本留在那里像没发出去
             onPersisted()
             runDebugCompress()
+            return
+        }
+
+        mychat.framework.profile.PersonaCommand.parse(text, BuildConfig.DEBUG)?.let { request ->
+            onPersisted()
+            runPersonaCommand(request)
             return
         }
 
@@ -1867,30 +1874,66 @@ class ChatViewModel(
                 }
                 mychat.framework.profile.ProfileCommand.updated(next, unknown)
             }
-            val replyId = repository.beginAssistantMessage(
-                conversationId = conversationId,
-                parentId = messages.lastOrNull()?.id ?: "root",
-                model = settings.model.id,
-            )
-            repository.finishMessage(
-                id = replyId,
-                content = text,
-                reasoning = null,
-                status = MessageStatus.DONE,
-            )
-            // 先落库、再读活跃路径：反过来的话读到的还是插入前的树
-            reloadPath(conversationId)
-            val shown = messages.any { it.id == replyId }
-            if (BuildConfig.DEBUG) {
-                com.simplechat.app.hook.UsageLog.record(
-                    "profile:reply id=" + replyId.take(8) + " shown=" + shown +
-                        " size=" + messages.size
-                )
-            }
-            // 空会话里第一条就是回执时，它可能不在活跃路径上，界面什么都看不到 ——
-            // 用横幅兜底，至少命令有反馈
-            if (!shown) banner = text
+            insertReceipt(conversationId, text)
         }
+    }
+
+    /** DEBUG 命令：查看或开关助手人格段。 */
+    private fun runPersonaCommand(request: mychat.framework.profile.PersonaCommand.Request) {
+        val read = personaEnabled
+        val write = savePersonaEnabled
+        if (read == null) {
+            banner = "没有可用的设置"
+            return
+        }
+        if (BuildConfig.DEBUG) {
+            com.simplechat.app.hook.UsageLog.record(
+                "persona:cmd set=" + (request.set?.toString() ?: "query") +
+                    " convNull=" + (currentConversationId == null)
+            )
+        }
+        viewModelScope.launch {
+            val conversationId = currentConversationId ?: ensureConversation(switchGeneration)
+            if (conversationId == null) {
+                banner = "无法创建会话"
+                return@launch
+            }
+            val before = runCatching { read() }.getOrDefault(true)
+            val text = if (request.set == null) {
+                mychat.framework.profile.PersonaCommand.describe(before)
+            } else {
+                runCatching { write?.invoke(request.set) }
+                mychat.framework.profile.PersonaCommand.updated(request.set)
+            }
+            insertReceipt(conversationId, text)
+        }
+    }
+
+    /** 命令回执：落库 → 重读活跃路径 → 没出现就走横幅。 */
+    private suspend fun insertReceipt(conversationId: String, text: String) {
+        val replyId = repository.beginAssistantMessage(
+            conversationId = conversationId,
+            parentId = messages.lastOrNull()?.id ?: "root",
+            model = settings.model.id,
+        )
+        repository.finishMessage(
+            id = replyId,
+            content = text,
+            reasoning = null,
+            status = MessageStatus.DONE,
+        )
+        // 先落库、再读活跃路径：反过来的话读到的还是插入前的树
+        reloadPath(conversationId)
+        val shown = messages.any { it.id == replyId }
+        if (BuildConfig.DEBUG) {
+            com.simplechat.app.hook.UsageLog.record(
+                "cmd:reply id=" + replyId.take(8) + " shown=" + shown +
+                    " size=" + messages.size
+            )
+        }
+        // 空会话里第一条就是回执时，它可能不在活跃路径上，界面什么都看不到 ——
+        // 用横幅兜底，至少命令有反馈
+        if (!shown) banner = text
     }
 
     /** DEBUG 命令：把当前所有标签的层、强度、摘要贴出来。 */
@@ -3935,6 +3978,7 @@ class ChatViewModel(
             userProfile: (suspend () -> mychat.framework.profile.UserProfile)? = null,
             saveUserProfile: (suspend (mychat.framework.profile.UserProfile) -> Unit)? = null,
             personaEnabled: (suspend () -> Boolean)? = null,
+            savePersonaEnabled: (suspend (Boolean) -> Unit)? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
@@ -3942,7 +3986,7 @@ class ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
                     hookRunner, hookRouter, tagMemory, consolidator, memoryDump,
                     memoryDirectory, expandResolver, userProfile, saveUserProfile,
-                    personaEnabled, state
+                    personaEnabled, savePersonaEnabled, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

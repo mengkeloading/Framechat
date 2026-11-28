@@ -1403,6 +1403,47 @@ private fun profileTests() {
     // 2. 关掉不注入
     eq("persona: 关掉后为 null", null, mychat.framework.profile.AssistantPersona.format(false))
 
+    // debug:persona
+    eq(
+        "persona: off 解析为 false",
+        false,
+        mychat.framework.profile.PersonaCommand.parse("debug:persona off", true)?.set
+    )
+    eq(
+        "persona: on 解析为 true",
+        true,
+        mychat.framework.profile.PersonaCommand.parse("debug:persona on", true)?.set
+    )
+    eq(
+        "persona: 裸命令是查询",
+        null,
+        mychat.framework.profile.PersonaCommand.parse("debug:persona", true)?.set
+    )
+    eq(
+        "persona: off 后那一轮不注入",
+        null,
+        mychat.framework.profile.AssistantPersona.format(
+            mychat.framework.profile.PersonaCommand.parse("debug:persona off", true)!!.set!!
+        )
+    )
+    eq(
+        "persona: on 后那一轮注入",
+        true,
+        mychat.framework.profile.AssistantPersona.format(
+            mychat.framework.profile.PersonaCommand.parse("debug:persona on", true)!!.set!!
+        )?.startsWith("【助手风格】")
+    )
+    eq(
+        "persona: release 不识别",
+        null,
+        mychat.framework.profile.PersonaCommand.parse("debug:persona off", false)
+    )
+    eq(
+        "persona: 回执文案",
+        "助手风格已关闭",
+        mychat.framework.profile.PersonaCommand.updated(false)
+    )
+
     check(
         "cmd: 空角色卡显示为空",
         ProfileCommand.describe(UserProfile()).contains("角色卡为空"),
