@@ -266,7 +266,7 @@ interface MessageDao {
                substr(attachments, 1, :cap) AS attachments,
                reasoning, status, errorMessage, model, excluded,
                thinkingMs, ttftMs, tps, tokens_in, tokens_out, tokens_cache_hit,
-               timeline, stopReason, imageGeneration, imageRequest, createdAt, versionGroup, trashedAt, trashOperationId, isDeletedNode
+               timeline, stopReason, imageGeneration, imageRequest, createdAt, versionGroup, trashedAt, trashOperationId, isDeletedNode, receipt
         FROM messages WHERE conversationId = :conversationId
         """,
     )
@@ -290,7 +290,7 @@ interface MessageDao {
                '' AS content, NULL AS attachments, NULL AS reasoning,
                status, NULL AS errorMessage,
                model, excluded, thinkingMs, ttftMs, tps, tokens_in, tokens_out, tokens_cache_hit,
-               NULL AS timeline, stopReason, imageGeneration, imageRequest, createdAt, versionGroup, trashedAt, trashOperationId, isDeletedNode
+               NULL AS timeline, stopReason, imageGeneration, imageRequest, createdAt, versionGroup, trashedAt, trashOperationId, isDeletedNode, receipt
         FROM messages WHERE id = :id
         """,
     )
@@ -387,7 +387,7 @@ interface MessageDao {
                substr(attachments, 1, :cap) AS attachments,
                reasoning, status, errorMessage, model, excluded,
                thinkingMs, ttftMs, tps, tokens_in, tokens_out, tokens_cache_hit,
-               timeline, stopReason, imageGeneration, imageRequest, createdAt, versionGroup, trashedAt, trashOperationId, isDeletedNode
+               timeline, stopReason, imageGeneration, imageRequest, createdAt, versionGroup, trashedAt, trashOperationId, isDeletedNode, receipt
         FROM messages WHERE id IN (:ids)
         """,
     )
