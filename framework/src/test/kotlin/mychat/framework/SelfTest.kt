@@ -92,6 +92,7 @@ fun main() {
     debugCommandTests()
     routeLogTests()
     referenceTests()
+    directoryTests()
     tagNamingTests()
     promptTests()
     manifestAuditTests()
@@ -1233,6 +1234,51 @@ private fun promptTests() {
         DefaultCompressor.buildPrompt("x", 40, 3).contains("不超过 40 字"),
         DefaultCompressor.buildPrompt("x", 40, 3)
     )
+}
+
+// ---------- 记忆目录 ----------
+
+private fun directoryTests() {
+    fun e(name: String, count: Int, strength: Float) =
+        mychat.framework.memory.TagEntry(name, name, count, strength)
+
+    // 1. 0 个标签：不注入
+    eq("dir: 空不注入", null, mychat.framework.memory.DirectoryFormatter.format(emptyList()))
+
+    // 2. 1 个标签：也不注入
+    eq(
+        "dir: 一个标签不注入",
+        null,
+        mychat.framework.memory.DirectoryFormatter.format(listOf(e("只有一个", 3, 1.0f)))
+    )
+
+    // 3. 2 个标签：两行
+    val two = mychat.framework.memory.DirectoryFormatter.format(
+        listOf(e("A", 12, 1.2f), e("B", 2, 0.9f))
+    )
+    check("dir: 两个标签两行", two != null && two.lines().size == 3, two)
+    check("dir: 带条数", two != null && two.contains("- A（12 条）") && two.contains("- B（2 条）"), two)
+
+    // 4. 12 个标签：只给前 10（按强度降序）
+    val many = (1..12).map { e("T" + it, it, it / 10f) }
+    val top = mychat.framework.memory.DirectoryFormatter.format(many)!!
+    eq("dir: 最多十项", 11, top.lines().size) // 标题 + 10 行
+    check("dir: 最强的最靠前", top.lines()[1].startsWith("- T12"), top)
+
+    // 5. 弱标签标「正在淡化」
+    val fading = mychat.framework.memory.DirectoryFormatter.format(
+        listOf(e("新", 3, 1.0f), e("旧", 1, 0.3f))
+    )!!
+    check("dir: 弱标签标记淡化", fading.contains("- 旧（1 条，正在淡化）"), fading)
+    check("dir: 强标签不标", !fading.contains("- 新（3 条，正在淡化）"), fading)
+
+    // 10. 目录排在回忆之前
+    val composed = mychat.framework.memory.MemoryInjection.compose(
+        top, "【回忆】关于「A」的过往记录：旧内容"
+    )!!
+    val dirAt = composed.indexOf("【记忆目录】")
+    val recallAt = composed.indexOf("【回忆】")
+    check("dir: 排在回忆之前", dirAt == 0 && recallAt > dirAt, composed.take(40))
 }
 
 // ---------- references 按需加载 ----------

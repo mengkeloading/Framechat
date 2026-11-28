@@ -127,6 +127,10 @@ data class RecallHit(
     val text: String,
     /** name_only / summary / full */
     val depth: String = "summary",
+    /** 这次用的摘要；null = 走的是原话 */
+    val summary: String? = null,
+    /** 原话兜底（该标签下最近的用户消息），始终算好，供调用方切换 */
+    val fallbackText: String = "",
 )
 
 object Recall {
@@ -176,27 +180,38 @@ object Recall {
         if (best.cosine < min) return null
 
         val userLines = recentOf(best.tag.id).filter { it.role.equals("user", ignoreCase = true) }
-        val text = when (best.depth) {
-            DEPTH_NAME_ONLY -> ""
-            DEPTH_FULL -> {
-                val body = summaryOf(best.tag.id) ?: userLines
-                    .take(FULL_MESSAGES).map { it.text.take(excerpt) }.joinToString("\n---\n")
-                if (body.isBlank()) NO_DETAIL else body + "\n（可展开原文）"
-            }
-            else -> {
-                val summary = summaryOf(best.tag.id)
-                if (!summary.isNullOrBlank()) {
-                    summary
-                } else {
-                    val body = userLines.take(maxMessages)
-                        .map { it.text.take(excerpt) }
-                        .joinToString("\n---\n")
-                    if (body.isBlank()) NO_DETAIL else body
-                }
-            }
+        // full 层多给几条：摘要缺失时靠原话撑起上下文
+        val fallbackText = userLines
+            .take(if (best.depth == DEPTH_FULL) FULL_MESSAGES else maxMessages)
+            .map { it.text.take(excerpt) }
+            .joinToString("\n---\n")
+
+        // 摘要优先：标签自带的那份（压缩链路落库）→ 调用方给的摘要 → 原话
+        val rawSummary = if (best.depth == DEPTH_NAME_ONLY) {
+            null
+        } else {
+            best.tag.summary?.takeIf { it.isNotBlank() }
+                ?: summaryOf(best.tag.id)?.takeIf { it.isNotBlank() }
+        }
+        val summary = rawSummary?.let { if (it.length > SUMMARY_MAX) it.take(SUMMARY_MAX) else it }
+
+        val text = when {
+            best.depth == DEPTH_NAME_ONLY -> ""
+            summary != null -> summary
+            fallbackText.isNotBlank() ->
+                fallbackText + if (best.depth == DEPTH_FULL) "\n（可展开原文）" else ""
+            else -> NO_DETAIL
         }
         if (best.depth != DEPTH_NAME_ONLY && text.isBlank()) return null
-        return RecallHit(best.tag.id, best.tag.name, best.finalScore, text, best.depth)
+        return RecallHit(
+            tagId = best.tag.id,
+            tagName = best.tag.name,
+            score = best.finalScore,
+            text = text,
+            depth = best.depth,
+            summary = summary,
+            fallbackText = fallbackText,
+        )
     }
 
     private class Scored(
@@ -227,6 +242,9 @@ object Recall {
 
     /** 标签下没有用户原话时的兜底：总比空着强。 */
     const val NO_DETAIL = "（暂无更多细节）"
+
+    /** 摘要最多带多少字：再长就不如直接给原话了。 */
+    const val SUMMARY_MAX = 500
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {
         var dot = 0f

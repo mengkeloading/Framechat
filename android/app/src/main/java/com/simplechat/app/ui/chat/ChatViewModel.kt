@@ -124,6 +124,7 @@ class ChatViewModel(
     private val tagMemory: com.simplechat.app.hook.TagMemoryService? = null,
     private val consolidator: mychat.framework.memory.consolidate.Consolidator? = null,
     private val memoryDump: (suspend () -> String)? = null,
+    private val memoryDirectory: mychat.framework.memory.MemoryDirectory? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -991,7 +992,21 @@ class ChatViewModel(
                     }
                     // 本轮的记忆快照：检索与打标共用，本轮新建的标签不参与本轮召回
                     memoryTurn = if (stored.memoryEnabled) tagMemory?.begin(text) else null
-                    val memoryBlock = memoryTurn?.recallBlock()
+                    val recallBlock = memoryTurn?.recallBlock()
+                    // 目录在召回之前：先告诉模型"有哪些话题"，再说"这次想起哪个"
+                    val directoryBlock = memoryDirectory?.list()?.let {
+                        mychat.framework.memory.DirectoryFormatter.format(it)
+                    }
+                    val memoryBlock = mychat.framework.memory.MemoryInjection.compose(
+                        directoryBlock, recallBlock,
+                    )
+                    if (BuildConfig.DEBUG && (directoryBlock != null || recallBlock != null)) {
+                        com.simplechat.app.hook.UsageLog.record(
+                            "memory:inject dir=" + (directoryBlock != null) +
+                                " recall=" + (recallBlock != null) +
+                                " len=" + (memoryBlock?.length ?: 0)
+                        )
+                    }
                     when (val hookA = hookRunner.input(
                         hookSession, hookText, historyBase,
                         selected = selected,
@@ -3769,12 +3784,14 @@ class ChatViewModel(
             tagMemory: com.simplechat.app.hook.TagMemoryService? = null,
             consolidator: mychat.framework.memory.consolidate.Consolidator? = null,
             memoryDump: (suspend () -> String)? = null,
+            memoryDirectory: mychat.framework.memory.MemoryDirectory? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
                 ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
-                    hookRunner, hookRouter, tagMemory, consolidator, memoryDump, state
+                    hookRunner, hookRouter, tagMemory, consolidator, memoryDump,
+                    memoryDirectory, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

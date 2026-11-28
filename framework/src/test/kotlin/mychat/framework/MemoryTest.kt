@@ -179,6 +179,42 @@ private fun recallRoleTests() {
     // 空列表也要给兜底，而不是 null
     val empty = Recall.select(origin, tags, { null }, { emptyList() })
     check("recall: 空列表给兜底", empty?.text?.contains(Recall.NO_DETAIL) == true, empty?.text)
+
+    // 摘要优先：标签自带的 summary 非空就用它，不再回放原话
+    val withSummary = listOf(
+        TagRecord(
+            "s", "有摘要", vector = origin, strength = 1.0f, lastDecayAt = 0,
+            summary = "决定用 Kotlin，待办是写测试"
+        )
+    )
+    val sumHit = Recall.select(origin, withSummary, { null }, { users("这段话不该出现") })
+    check("recall: 有摘要用摘要", sumHit?.text?.contains("决定用 Kotlin") == true, sumHit?.text)
+    check("recall: 有摘要就不给原话", sumHit?.text?.contains("这段话不该出现") == false, sumHit?.text)
+    eq("recall: summary 字段带出来", "决定用 Kotlin，待办是写测试", sumHit?.summary)
+
+    // 没摘要 → 原话，且 fallbackText 里能拿到
+    val noSum = Recall.select(origin, tags, { null }, { users("上次说的原话") })
+    check("recall: 无摘要用原话", noSum?.text?.contains("上次说的原话") == true, noSum?.text)
+    check(
+        "recall: fallbackText 有原话",
+        noSum?.fallbackText?.contains("上次说的原话") == true,
+        noSum?.fallbackText
+    )
+    eq("recall: 无摘要时 summary 为空", null, noSum?.summary)
+
+    // 两者都空 → 兜底文案
+    val none = Recall.select(origin, tags, { null }, { emptyList() })
+    eq("recall: 都空给兜底", Recall.NO_DETAIL, none?.text)
+
+    // 摘要过长 → 截到 500
+    val longTag = listOf(
+        TagRecord(
+            "l", "长摘要", vector = origin, strength = 1.0f, lastDecayAt = 0,
+            summary = "长".repeat(600)
+        )
+    )
+    val longHit = Recall.select(origin, longTag, { null }, { users("原话") })
+    eq("recall: 摘要截到 500", 500, longHit?.summary?.length)
 }
 
 // ---------- 组装：两轮对话后召回 ----------
