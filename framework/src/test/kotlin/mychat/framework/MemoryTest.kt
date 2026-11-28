@@ -249,18 +249,46 @@ private fun relatedFilterTests() {
     )
     eq("related: 门槛是 0.2", 0.2f, RelatedNames.MIN_STRENGTH)
 
-    // ⑥ mentions：淡化的不提
-    val faded = TagRecord(
-        id = "t-f", name = "淡忘", vector = floatArrayOf(0f, 1f),
-        strength = 0.1f, lastDecayAt = NOW, mentions = listOf("旧后台"),
+    // ⑥ mentions：归档（0.05）仍可联想，彻底淡掉（0.03）才不提
+    val archivedTag = TagRecord(
+        id = "t-a", name = "归档话题", vector = floatArrayOf(0f, 1f),
+        strength = 0.05f, lastDecayAt = NOW, mentions = listOf("旧后台"),
     )
     eq(
-        "mentions: 淡化标签不提",
+        "mentions: 0.05 仍可联想",
+        LayeredRecall.MENTION,
+        LayeredRecall.recall(
+            text = "那个旧后台还在吗",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(archivedTag),
+            now = NOW,
+        ).reason
+    )
+    val gone = archivedTag.copy(id = "t-g", strength = 0.03f)
+    eq(
+        "mentions: 0.03 不再提",
         LayeredRecall.MISS,
         LayeredRecall.recall(
             text = "那个旧后台还在吗",
             query = floatArrayOf(1f, 0f),
-            tags = listOf(faded),
+            tags = listOf(gone),
+            now = NOW,
+        ).reason
+    )
+
+    // 模糊层仍守 0.22：0.1 的标签再像也不召回
+    eq(
+        "fuzzy: 0.1 强度不召回",
+        LayeredRecall.MISS,
+        LayeredRecall.recall(
+            text = "完全不同的说法",
+            query = floatArrayOf(1f, 0f),
+            tags = listOf(
+                TagRecord(
+                    id = "t-w", name = "无关", vector = floatArrayOf(1f, 0f),
+                    strength = 0.1f, lastDecayAt = NOW,
+                )
+            ),
             now = NOW,
         ).reason
     )
@@ -433,7 +461,7 @@ private fun layeredRecallTests() {
         eq("archive: 模糊不召回", LayeredRecall.MISS, result.reason)
     }
 
-    // ③ 3. 归档（强度 0.05 < 0.2）不再出现在 mentions
+    // ③ 3. 归档（强度 0.05）仍能被 mentions 联想起来
     run {
         val result = LayeredRecall.recall(
             text = "那个旧话题乙还在吗",
@@ -446,7 +474,7 @@ private fun layeredRecallTests() {
             ),
             now = NOW,
         )
-        eq("archive: 淡化后 mentions 不提", LayeredRecall.MISS, result.reason)
+        eq("archive: mentions 仍可联想", LayeredRecall.MENTION, result.reason)
     }
 }
 

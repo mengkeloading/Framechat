@@ -25,8 +25,18 @@ object LayeredRecall {
     /** mentions 命中最多列几个。 */
     const val MENTION_MAX = 3
 
-    /** mentions 层也遵守的强度门槛：淡到这里以下就不再被「提起」。 */
-    const val MENTION_MIN_STRENGTH = 0.2f
+    /**
+     * 提及层的强度门槛。
+     *
+     * 三条路径的语义**不同**，别把它们统一：
+     * - 精确匹配：不看 strength —— 用户自己说出名字，多淡都得认
+     * - 模糊召回：strength >= [Recall.MIN_STRENGTH]（0.22）—— 主动提起，宁缺毋滥
+     * - mentions：strength >= 0.05 —— 联想通道，挡住它等于让归档标签彻底死掉
+     *
+     * 「归档」的定义是「不主动提」，不是「不存在」：用户聊到相关话题时，
+     * 它仍应能被联想激活，否则记忆就只剩最近三个月。
+     */
+    const val MENTION_MIN_STRENGTH = 0.05f
 
     /** 标签名里的分隔符：按这些切开后再逐词比对。 */
     private val NAME_SEPARATORS = Regex("[\\s，。、·]+")
@@ -95,7 +105,7 @@ object LayeredRecall {
             return RecallResult(listOf(fuzzy.copy(text = body)), FUZZY)
         }
 
-        // 淡到 0.2 以下的标签不再冒头：连自己都快记不住的话题，列出来只会造成「我好像提过」
+        // 只挡真正归档（< 0.05）的：提及是联想通道，不是主动推荐
         val mentioned = tags
             .filter { TagStrength.current(it, now) >= MENTION_MIN_STRENGTH }
             .filter { tag -> tag.mentions.any { it.isNotBlank() && text.contains(it) } }

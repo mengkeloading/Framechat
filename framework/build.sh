@@ -103,3 +103,6 @@ echo "== 自测：执行引擎注册表"
 
 echo "== 自测：标签记忆"
 "$JAVA" -cp "$OUT:$STDLIB" mychat.framework.MemoryTestKt
+
+echo "== 自测：压力（1000 标签 / 100 轮）"
+"$JAVA" -cp "$OUT:$STDLIB:$COROUTINES" mychat.framework.StressTestKt
