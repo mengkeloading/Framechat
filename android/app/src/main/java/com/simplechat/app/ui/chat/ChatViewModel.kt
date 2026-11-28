@@ -127,6 +127,15 @@ class ChatViewModel(
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
+    init {
+        if (BuildConfig.DEBUG) {
+            com.simplechat.app.hook.UsageLog.record(
+                "vm:init memoryDump=" + (memoryDump != null) +
+                    " consolidator=" + (consolidator != null)
+            )
+        }
+    }
+
     internal fun observeConversationWallpaper(id: String) = repository.observeConversationWallpaper(id)
 
     internal suspend fun saveConversationWallpaper(id: String, wallpaper: com.simplechat.app.data.ConversationWallpaper?) =
@@ -1738,12 +1747,17 @@ class ChatViewModel(
     /** DEBUG 命令：把当前所有标签的层、强度、摘要贴出来。 */
     private fun runDebugMemory() {
         val dump = memoryDump
-        val conversationId = currentConversationId
-        if (dump == null || conversationId == null) {
+        if (dump == null) {
             banner = "没有可用的记忆视图"
             return
         }
         viewModelScope.launch {
+            // 新会话里第一次输入就是命令：先建会话，否则命令看起来"没反应"
+            val conversationId = currentConversationId ?: ensureConversation(switchGeneration)
+            if (conversationId == null) {
+                banner = "无法创建会话"
+                return@launch
+            }
             val text = runCatching { dump() }.getOrElse {
                 "读取记忆失败：" + it.javaClass.simpleName
             }

@@ -73,9 +73,11 @@ private fun taggingTests() {
     eq("tag: 空表 reason=first", "first", (first as? TagDecision.Create)?.reason)
 
     // 2. 0.50 落在模糊区间
-    val ambiguous = Tagger.decide(origin, listOf(tag("a", vec(0.50f))), "x")
-    check("tag: 0.50 模糊", ambiguous is TagDecision.Skip, ambiguous.toString())
-    eq("tag: 0.50 原因", "ambiguous", (ambiguous as? TagDecision.Skip)?.reason)
+    // 模糊（0.40~0.55）不再丢弃：建新标签，reason 标出来方便排查
+    val ambiguous = Tagger.decide(origin, listOf(tag("a", vec(0.50f))), "帮我写个故事")
+    check("tag: 0.50 建新标签", ambiguous is TagDecision.Create, ambiguous.toString())
+    eq("tag: 0.50 原因", "ambiguous_new", (ambiguous as? TagDecision.Create)?.reason)
+    near("tag: 0.50 分数", 0.50f, (ambiguous as TagDecision.Create).score)
 
     // 3. 0.60 归到已有
     val assign = Tagger.decide(origin, listOf(tag("a", vec(0.60f))), "x")

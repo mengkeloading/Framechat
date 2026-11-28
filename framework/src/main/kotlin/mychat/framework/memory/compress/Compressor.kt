@@ -79,9 +79,14 @@ class DefaultCompressor(
             sources = listOf("sum:${prev.id}")
         }
 
+        val target = LevelPolicy.targetLength(toLevel)
+        // 已经比目标还短：再压只会丢信息，还白花一次模型调用
+        if (input.length <= target) {
+            return skip(tagId, toLevel, "already_short")
+        }
+
         log("compress:start tag=$tagId from=${tag.currentLevel} to=$toLevel inLen=${input.length}")
 
-        val target = LevelPolicy.targetLength(toLevel)
         val out = runCatching { summarizer.summarize(buildPrompt(input, target, toLevel)) }
             .getOrElse { error ->
                 log("compress:fail tag=$tagId to=$toLevel err=${error.javaClass.simpleName}")

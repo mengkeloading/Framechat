@@ -73,8 +73,12 @@ object Tagger {
             ?: return TagDecision.Create(nameOf(text), 0f, reason = "first")
         val score = cosine(query, best.vector)
         if (score >= assignMin) return TagDecision.Assign(best.id, score)
-        if (score >= newMax) return TagDecision.Skip(score, "ambiguous")
+        // 不够像就不能算"属于已有话题"：模糊时建新标签，而不是丢掉这一轮。
+        // 丢掉会让"帮我写个故事"这种跟哪个话题都只有 0.46 相似的输入永远进不了记忆。
         if (tags.size >= maxTags) return TagDecision.LimitReached(score)
+        if (score >= newMax) {
+            return TagDecision.Create(nameOf(text), score, reason = "ambiguous_new")
+        }
         return TagDecision.Create(nameOf(text), score)
     }
 

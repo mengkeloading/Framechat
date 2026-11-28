@@ -95,7 +95,11 @@ class TagCompressorTest {
     @Test
     fun l0_to_l1() = runTest {
         seed()
-        seedMessages("user" to "我在做 MyChat", "assistant" to "说说技术栈", "user" to "Kotlin")
+        seedMessages(
+            "user" to "我在做 MyChat，" + "这个 App 的模块系统还在设计。".repeat(12),
+            "assistant" to "说说技术栈吧。".repeat(8),
+            "user" to "Kotlin，" + "后端用 DeepSeek。".repeat(10),
+        )
         llm.answer = "技术栈 Kotlin，团队熟"
 
         assertTrue(compressor().compress("t1", 1))
@@ -115,7 +119,10 @@ class TagCompressorTest {
     @Test
     fun l1_to_l2_uses_previous_summary_as_source() = runTest {
         seed()
-        seedMessages("user" to "我在做 MyChat", "user" to "用 Kotlin")
+        seedMessages(
+            "user" to "我在做 MyChat，" + "用 Kotlin 写。".repeat(25),
+            "user" to "记忆系统也要做。".repeat(10),
+        )
         llm.answer = "技术栈 Kotlin"
         assertTrue(compressor().compress("t1", 1))
         val l1 = db.tagSummaryDao().at("t1", 1)!!
@@ -152,7 +159,7 @@ class TagCompressorTest {
     @Test
     fun llmEmptyLeavesStateUntouched() = runTest {
         seed()
-        seedMessages("user" to "我在做 MyChat")
+        seedMessages("user" to "我在做 MyChat，" + "细节很多。".repeat(40))
         llm.answer = null
 
         assertFalse(compressor().compress("t1", 1))
@@ -161,6 +168,21 @@ class TagCompressorTest {
         assertEquals(0, db.tagDao().byId("t1")!!.currentLevel)
         assertNotNull(logs.firstOrNull { it.contains("compress:start") })
         assertTrue(logs.any { it.contains("compress:skip") && it.contains("llm_empty") })
+    }
+
+    @Test
+    fun shortInputIsSkipped() = runTest {
+        seed()
+        // 约 24 字，远小于 L1 的 200 字上限
+        seedMessages("user" to "用 Kotlin。".repeat(3))
+        llm.answer = "不该被调用"
+
+        assertFalse(compressor().compress("t1", 1))
+
+        assertEquals(0, db.tagSummaryDao().allOf("t1").size)
+        assertTrue(logs.any { it.contains("already_short") })
+        // 连 start 都不打：根本没打算压
+        assertFalse(logs.any { it.contains("compress:start") })
     }
 
     @Test
