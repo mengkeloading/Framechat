@@ -140,6 +140,8 @@ internal data class PanelAppearance(
 
 /** 持久化的全局配置。 */
 data class StoredSettings(
+    /** 记忆入口图标 id；由 SettingsStore.iconVariant 提供。 */
+    val iconVariant: String = "constellation",
     val providerId: String = "DEEPSEEK",
     val baseUrl: String = "https://api.deepseek.com",
     val modelId: String = "deepseek-flash",
@@ -337,6 +339,7 @@ class SettingsStore(
 
     val flow: Flow<StoredSettings> = preferences.data.map { prefs ->
         StoredSettings(
+            iconVariant = prefs[Keys.ICON_VARIANT] ?: "constellation",
             providerId = prefs[Keys.PROVIDER] ?: StoredSettings().providerId,
             baseUrl = prefs[Keys.BASE_URL] ?: StoredSettings().baseUrl,
             modelId = effectiveModelId(prefs[Keys.BASE_URL] ?: ProviderKind.DEEPSEEK.defaultBaseUrl, prefs[Keys.MODEL] ?: DEEPSEEK_FLASH),
@@ -830,6 +833,14 @@ class SettingsStore(
         preferences.edit { it[Keys.LAST_CONSOLIDATE_AT] = t }
     }
 
+    /** 记忆入口图标，默认 constellation。 */
+    suspend fun iconVariant(): String =
+        preferences.data.first()[Keys.ICON_VARIANT] ?: "constellation"
+
+    suspend fun setIconVariant(id: String) {
+        preferences.edit { it[Keys.ICON_VARIANT] = id }
+    }
+
     /** 人格段开关，默认开。 */
     suspend fun personaEnabled(): Boolean =
         preferences.data.first()[Keys.PERSONA_ENABLED] ?: true
@@ -1057,6 +1068,8 @@ class SettingsStore(
         val LAST_CONSOLIDATE_AT = longPreferencesKey("last_consolidate_at")
         /** 人格段开关；缺省 = 开（老用户升级后直接生效）。 */
         val PERSONA_ENABLED = booleanPreferencesKey("persona_enabled")
+        /** 记忆入口图标；缺省 = constellation。 */
+        val ICON_VARIANT = stringPreferencesKey("icon_variant")
         val PROFILE_ROLE = stringPreferencesKey("profile.role")
         val PROFILE_TECH = stringPreferencesKey("profile.tech")
         val PROFILE_STYLE = stringPreferencesKey("profile.style")

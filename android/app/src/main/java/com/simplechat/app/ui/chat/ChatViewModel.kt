@@ -130,6 +130,8 @@ class ChatViewModel(
     private val saveUserProfile: (suspend (mychat.framework.profile.UserProfile) -> Unit)? = null,
     private val personaEnabled: (suspend () -> Boolean)? = null,
     private val savePersonaEnabled: (suspend (Boolean) -> Unit)? = null,
+    private val readIconVariant: (suspend () -> String)? = null,
+    private val saveIconVariant: (suspend (String) -> Unit)? = null,
     private val savedState: SavedStateHandle? = null,
 ) : ViewModel() {
 
@@ -901,6 +903,12 @@ class ChatViewModel(
             // 命令也走完"发送"语义：输入框必须清掉，否则文本留在那里像没发出去
             onPersisted()
             runDebugCompress()
+            return
+        }
+
+        if (BuildConfig.DEBUG && com.simplechat.app.ui.nav.IconCommand.matches(text)) {
+            onPersisted()
+            runIconCommand(text)
             return
         }
 
@@ -1885,6 +1893,38 @@ class ChatViewModel(
                 mychat.framework.profile.ProfileCommand.updated(next, unknown)
             }
             insertReceipt(conversationId, text)
+        }
+    }
+
+    /** DEBUG 命令：查看或切换记忆入口图标。 */
+    private fun runIconCommand(text: String) {
+        val read = readIconVariant
+        val write = saveIconVariant
+        if (read == null) {
+            banner = "没有可用的设置"
+            return
+        }
+        viewModelScope.launch {
+            val conversationId = currentConversationId ?: ensureConversation(switchGeneration)
+            if (conversationId == null) {
+                banner = "无法创建会话"
+                return@launch
+            }
+            val current = runCatching { read() }.getOrDefault(
+                com.simplechat.app.ui.nav.IconVariant.DEFAULT.id
+            )
+            val requested = com.simplechat.app.ui.nav.IconCommand.requested(text)
+            val reply = if (requested == null) {
+                com.simplechat.app.ui.nav.IconCommand.describe(current)
+            } else {
+                val variant = com.simplechat.app.ui.nav.IconVariant.of(requested)
+                runCatching { write?.invoke(variant.id) }
+                if (BuildConfig.DEBUG) {
+                    com.simplechat.app.hook.UsageLog.record("icon:update id=" + variant.id)
+                }
+                "图标已切换：" + variant.label + "（" + variant.id + "）"
+            }
+            insertReceipt(conversationId, reply)
         }
     }
 
@@ -3990,6 +4030,8 @@ class ChatViewModel(
             saveUserProfile: (suspend (mychat.framework.profile.UserProfile) -> Unit)? = null,
             personaEnabled: (suspend () -> Boolean)? = null,
             savePersonaEnabled: (suspend (Boolean) -> Unit)? = null,
+            readIconVariant: (suspend () -> String)? = null,
+            saveIconVariant: (suspend (String) -> Unit)? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val state = createSavedStateHandle()
@@ -3997,7 +4039,8 @@ class ChatViewModel(
                     chatApi, settingsStore, repository, openCodeSessionId,
                     hookRunner, hookRouter, tagMemory, consolidator, memoryDump,
                     memoryDirectory, expandResolver, userProfile, saveUserProfile,
-                    personaEnabled, savePersonaEnabled, state
+                    personaEnabled, savePersonaEnabled,
+                    readIconVariant, saveIconVariant, state
                 ).also { viewModel ->
                     state.get<String>(ActiveConversationStateKey)?.let { viewModel.openConversation(it) }
                 }

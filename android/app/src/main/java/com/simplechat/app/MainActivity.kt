@@ -183,7 +183,7 @@ class MainActivity : ComponentActivity() {
                     ),
                     LocalFloatingBaseOpacity provides (current?.wallpaperPanelAlpha ?: StoredSettings().wallpaperPanelAlpha),
                 ) {
-                    MenuBackdropHost { RootScreen() }
+                    MenuBackdropHost { com.simplechat.app.ui.nav.AppShell() }
                 }
             }
         }
