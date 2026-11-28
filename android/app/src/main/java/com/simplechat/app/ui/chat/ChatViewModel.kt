@@ -662,6 +662,8 @@ class ChatViewModel(
 
     fun openConversation(id: String, targetMessageId: String? = null, query: String = "", reasoningMatch: Boolean = false) {
         if (id == currentConversationId && targetMessageId == null) return
+        // 展开请求是「这个会话里模型想看什么」，跟着会话走，不能带进另一个话题
+        pendingExpands = emptyList()
         searchTarget = targetMessageId?.let { SearchTarget(it, query, ++searchRequest, reasoningMatch = reasoningMatch) }
         imageSkipNotice = null
         retrySkipNotice = null
@@ -761,6 +763,7 @@ class ChatViewModel(
 
     fun newConversation() {
         searchTarget = null
+        pendingExpands = emptyList()
         stop()
         cancelCompaction()
         switchJob?.cancel()

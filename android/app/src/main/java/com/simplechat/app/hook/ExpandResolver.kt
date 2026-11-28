@@ -49,8 +49,10 @@ class ExpandResolver(
     private suspend fun rawOf(tag: TagEntity): String =
         tags.recentUserContents(tag.id, 8).joinToString("\n---\n").take(rawLimit)
 
-    private suspend fun findByName(name: String): TagEntity? =
-        tags.all().firstOrNull { it.name == name }
+    private suspend fun findByName(name: String): TagEntity? {
+        val want = normalizeName(name)
+        return tags.all().firstOrNull { normalizeName(it.name) == want }
+    }
 
     /** 把若干命中拼成注入块；没有命中返回 null。 */
     fun format(hits: List<Hit>): String? {
@@ -61,6 +63,15 @@ class ExpandResolver(
     }
 
     companion object {
+        /**
+         * 模型看到的是「- 标签A（5 条）」，回写时很容易把括号里的内容一起带上。
+         * 去掉末尾的「（…）」/「(…)」再匹配，比要求模型逐字复述现实。
+         */
+        fun normalizeName(raw: String): String =
+            raw.trim().replace(TAIL_PAREN, "").trim()
+
+        private val TAIL_PAREN = Regex("\\s*[（(][^）)]*[）)]$")
+
         /** 与 [Recall.NO_DETAIL] 一致：展开不出来时不要编。 */
         const val EMPTY = Recall.NO_DETAIL
     }

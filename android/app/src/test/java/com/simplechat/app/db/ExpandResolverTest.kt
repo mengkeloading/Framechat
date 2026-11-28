@@ -77,6 +77,31 @@ class ExpandResolverTest {
     }
 
     @Test
+    fun nameIsNormalized() {
+        // 模型常把目录里的后缀一起抄回来
+        assertEquals("标签A", ExpandResolver.normalizeName("标签A（5 条）"))
+        assertEquals("标签A", ExpandResolver.normalizeName("标签A(5)"))
+        assertEquals("标签A", ExpandResolver.normalizeName(" 标签A "))
+        assertEquals("标签A", ExpandResolver.normalizeName("标签A（2 条，正在淡化）"))
+        // 括号在中间就不动
+        assertEquals("A（x）B", ExpandResolver.normalizeName("A（x）B"))
+    }
+
+    @Test
+    fun suffixedNameStillResolves() = runTest {
+        seedTag("t1", "标签A", level = 2)
+        db.tagSummaryDao().upsert(
+            TagSummaryEntity(
+                id = "s1", tagId = "t1", level = 1,
+                text = "L1 的详细摘要", sourceRefs = "[]", createdAt = 3000L,
+            )
+        )
+
+        // 带「（5 条）」也能找到
+        assertNotNull(resolver().resolve("标签A（5 条）"))
+    }
+
+    @Test
     fun levelZeroReturnsRawText() = runTest {
         seedTag("t0", "标签B", level = 0)
         db.conversationDao().upsert(
