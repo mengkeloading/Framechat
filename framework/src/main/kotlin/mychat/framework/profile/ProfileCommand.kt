@@ -41,6 +41,12 @@ object ProfileCommand {
 
     fun joinList(list: List<String>): String = list.joinToString(",")
 
+    /** 认得的字段名；拼错的要告诉用户，不能静默吞掉。 */
+    val KEYS = listOf(KEY_ROLE, KEY_TECH, KEY_STYLE, KEY_EXPLAIN, KEY_AVOID)
+
+    fun unknownKeys(args: Map<String, String>): List<String> =
+        args.keys.filter { it !in KEYS }
+
     /**
      * 只覆盖给出的字段，其余保留。
      *
@@ -57,8 +63,8 @@ object ProfileCommand {
         return next
     }
 
-    /** 设置后的回执。 */
-    fun updated(profile: UserProfile): String = buildString {
+    /** 设置后的回执。拼错的字段名附在最后，否则用户以为改成功了。 */
+    fun updated(profile: UserProfile, unknown: List<String> = emptyList()): String = buildString {
         append("角色卡已更新：\n")
         append("身份：").append(profile.role.ifBlank { "（未设置）" }).append('\n')
         append("风格：").append(profile.style.ifBlank { "平衡" }).append('\n')
@@ -69,6 +75,11 @@ object ProfileCommand {
             append('\n').append("技术：").append(profile.tech.joinToString("、"))
         }
         append('\n').append("解释过程：").append(if (profile.explain) "要" else "不要")
+        if (unknown.isNotEmpty()) {
+            append('\n').append('\n')
+            append("未识别的字段：").append(unknown.joinToString(", "))
+            append("（可选：").append(KEYS.joinToString("/")).append("）")
+        }
     }
 
     /** 裸命令的回执。 */

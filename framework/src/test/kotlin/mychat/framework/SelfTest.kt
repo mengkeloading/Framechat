@@ -1361,6 +1361,30 @@ private fun profileTests() {
     check("cmd: 回执含风格", receipt.contains("风格：极简"), receipt)
     check("cmd: 回执含讨厌", receipt.contains("讨厌：空话、过度设计"), receipt)
 
+    // 拼错的字段：要提示，且只提示未知的那些
+    val typoArgs = ProfileCommand.parse(
+        "debug:profile stlye=极简 rloe=独立开发者 style=详细", debugBuild = true
+    )!!
+    val typoUnknown = ProfileCommand.unknownKeys(typoArgs)
+    eq("cmd: 认出拼错的字段", listOf("stlye", "rloe"), typoUnknown)
+    val typoReceipt = ProfileCommand.updated(
+        ProfileCommand.apply(UserProfile(role = "x"), typoArgs), typoUnknown
+    )
+    check(
+        "cmd: 回执含未识别字段",
+        typoReceipt.contains("未识别的字段：stlye, rloe"), typoReceipt
+    )
+    check(
+        "cmd: 回执列出可选字段",
+        typoReceipt.contains("（可选：role/tech/style/explain/avoid）"), typoReceipt
+    )
+    eq("cmd: 正确的写法不报未知", emptyList<String>(), ProfileCommand.unknownKeys(args))
+    check(
+        "cmd: 全部正确时回执不含提示",
+        !ProfileCommand.updated(merged, ProfileCommand.unknownKeys(args))
+            .contains("未识别的字段")
+    )
+
     // 平衡是默认值，不写出来
     check(
         "profile: 默认风格不占字",

@@ -1824,14 +1824,16 @@ class ChatViewModel(
                 mychat.framework.profile.ProfileCommand.describe(current)
             } else {
                 val next = mychat.framework.profile.ProfileCommand.apply(current, args)
+                val unknown = mychat.framework.profile.ProfileCommand.unknownKeys(args)
                 runCatching { write?.invoke(next) }
                 currentProfile = next
                 if (BuildConfig.DEBUG) {
                     com.simplechat.app.hook.UsageLog.record(
-                        "profile:update style=" + next.style + " avoid=" + next.avoid.size
+                        "profile:update style=" + next.style + " avoid=" + next.avoid.size +
+                            (if (unknown.isEmpty()) "" else " unknown=" + unknown.joinToString(","))
                     )
                 }
-                mychat.framework.profile.ProfileCommand.updated(next)
+                mychat.framework.profile.ProfileCommand.updated(next, unknown)
             }
             val replyId = repository.beginAssistantMessage(
                 conversationId = conversationId,
